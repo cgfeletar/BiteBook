@@ -48,3 +48,27 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Firebase Project
+
+https://console.firebase.google.com/u/1/project/savorboard-5d4cc/overview
+
+## Firebase deprication
+
+DEPRECATION NOTICE: Action required to deploy after March 2026
+
+functions.config() API is deprecated.
+Cloud Runtime Configuration API, the Google Cloud service used to store function configuration data, will be shut down in March 2026. As a result, you must migrate away from using functions.config() to continue deploying your functions after March 2026.
+
+What this means for you:
+
+- The Firebase CLI commands for managing this configuration (functions:config:set, get, unset, clone, and export) are deprecated. These commands will no longer work after March 2026.
+- firebase deploy command will fail for functions that use the legacy functions.config() API after March 2026.
+
+Existing deployments will continue to work with their current configuration.
+
+See your migration options at: https://firebase.google.com/docs/functions/config-env#migrate-to-dotenv
+
+## Google LLM API Key
+
+https://aistudio.google.com/api-keys

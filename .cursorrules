@@ -1,0 +1,30 @@
+Project Context:
+We are building "Recipo," a React Native (Expo) app for iOS/iPad. It is a modern, aesthetic recipe manager that allows users to import recipes from TikTok/Instagram/Web via AI, organize them in a Pinterest-style masonry grid, and manage shopping lists.
+
+Core Tech Stack:
+
+Framework: React Native (Expo Router)
+
+Language: TypeScript
+
+Styling: NativeWind v4 (Tailwind CSS)
+
+Backend: Firebase (Auth, Firestore, Cloud Functions)
+
+State: Zustand
+
+Design Language:
+
+Minimalist, "Pinterest-like" aesthetic.
+
+Rounded UI (xl/2xl radiuses).
+
+Palette: Soft Beige (#F2EDE8), Warm Sand (#E7D8C9), Sage Green (#C7D2C0), Dusty Rose (#D7B4B3), Slate Blue (#A7B2CC), Charcoal Text (#3E3E3E).
+
+Key Features:
+
+Masonry Feed: A 2-column (responsive) grid of recipes.
+
+AI Import: A Python/Node backend function that scrapes a URL and extracts structured JSON (Ingredients, Steps, Nutrition) using an LLM.
+
+Smart Shopping List: Automatically merges ingredients (e.g., "1 cup sugar" + "0.5 cup sugar" = "1.5 cups sugar").
