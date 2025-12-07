@@ -409,3 +409,175 @@ export const extractRecipeFromUrl = functions.https.onCall(
     }
   }
 );
+
+/**
+ * Generate nutritional information from ingredients using AI
+ */
+const NUTRITION_GENERATION_PROMPT = `You are a nutrition calculation assistant. Calculate the nutritional information for a recipe based on its ingredients.
+
+Given a list of ingredients with quantities and units, calculate the total nutritional values for the ENTIRE RECIPE (not per serving).
+
+Output ONLY valid JSON matching this exact structure:
+{
+  "calories": number,
+  "protein": number (in grams),
+  "carbohydrates": number (in grams),
+  "fat": number (in grams),
+  "fiber": number (in grams, optional),
+  "sugar": number (in grams, optional),
+  "sodium": number (in milligrams, optional)
+}
+
+Rules:
+- Calculate totals for the entire recipe based on all ingredients
+- Use standard nutritional databases for common ingredients
+- Convert all units to grams/milligrams as needed
+- Round to nearest whole number
+- If an ingredient is ambiguous, make reasonable estimates
+- Include all ingredients in the calculation
+- Return null for optional fields if you cannot determine them
+
+Ingredients list:
+`;
+
+async function generateNutritionFromIngredients(
+  ingredients: Ingredient[]
+): Promise<NutritionalInfo> {
+  const ingredientsList = ingredients
+    .map((ing) => `${ing.quantity} ${ing.unit} ${ing.name}`)
+    .join("\n");
+
+  const prompt = NUTRITION_GENERATION_PROMPT + ingredientsList;
+
+  // Try OpenAI first, then Gemini
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const response = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a nutrition calculation assistant. Always respond with valid JSON only.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const responseText = response.data.choices[0].message.content;
+      const nutritionData =
+        typeof responseText === "string"
+          ? JSON.parse(responseText)
+          : responseText;
+      return nutritionData;
+    } catch (error) {
+      console.error("OpenAI nutrition generation failed:", error);
+      // Fall through to Gemini
+    }
+  }
+
+  // Try Gemini as fallback
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt,
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: "object",
+              properties: {
+                calories: { type: "number" },
+                protein: { type: "number" },
+                carbohydrates: { type: "number" },
+                fat: { type: "number" },
+                fiber: { type: "number" },
+                sugar: { type: "number" },
+                sodium: { type: "number" },
+              },
+              required: ["calories", "protein", "carbohydrates", "fat"],
+            },
+            temperature: 0.3,
+          },
+        }
+      );
+
+      const responseText = response.data.candidates[0].content.parts[0].text;
+      const nutritionData =
+        typeof responseText === "string"
+          ? JSON.parse(responseText)
+          : responseText;
+      return nutritionData;
+    } catch (error) {
+      console.error("Gemini nutrition generation failed:", error);
+      throw new Error("Failed to generate nutritional information");
+    }
+  }
+
+  throw new Error(
+    "No AI API key configured. Please set OPENAI_API_KEY or GEMINI_API_KEY."
+  );
+}
+
+/**
+ * Generate nutritional info from ingredients
+ */
+export const generateNutritionalInfo = functions.https.onCall(
+  async (data: { ingredients: Ingredient[] }, context) => {
+    // Verify authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "User must be authenticated to generate nutritional info"
+      );
+    }
+
+    // Validate input
+    if (
+      !data.ingredients ||
+      !Array.isArray(data.ingredients) ||
+      data.ingredients.length === 0
+    ) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Ingredients array is required and must not be empty"
+      );
+    }
+
+    try {
+      const nutritionalInfo = await generateNutritionFromIngredients(
+        data.ingredients
+      );
+      return nutritionalInfo;
+    } catch (error: any) {
+      console.error("Error generating nutritional info:", error);
+      throw new functions.https.HttpsError(
+        "internal",
+        `Failed to generate nutritional info: ${error.message}`
+      );
+    }
+  }
+);

@@ -71,6 +71,7 @@ export interface ShoppingItem {
   unit: string;
   isPurchased: boolean;
   originalRecipeId?: string;
+  aisle?: string;
 }
 
 /**

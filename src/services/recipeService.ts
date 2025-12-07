@@ -1,6 +1,6 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../config/firebase';
-import { RecipeCreateInput } from '../types';
+import { RecipeCreateInput, Ingredient, NutritionalInfo } from '../types';
 
 // Initialize Cloud Functions
 const functions = getFunctions(app);
@@ -47,6 +47,34 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
     } else {
       throw new Error('Failed to import recipe. Please try again.');
     }
+  }
+}
+
+/**
+ * Generate nutritional information from ingredients using AI
+ * @param ingredients - Array of ingredients
+ * @returns Generated nutritional information
+ */
+export async function generateNutritionalInfo(
+  ingredients: Ingredient[]
+): Promise<NutritionalInfo> {
+  try {
+    if (!ingredients || ingredients.length === 0) {
+      throw new Error('Ingredients are required');
+    }
+
+    const generateNutrition = httpsCallable<
+      { ingredients: Ingredient[] },
+      NutritionalInfo
+    >(functions, 'generateNutritionalInfo');
+
+    const result = await generateNutrition({ ingredients });
+    return result.data;
+  } catch (error: any) {
+    if (error.message) {
+      throw new Error(error.message);
+    }
+    throw new Error('Failed to generate nutritional information. Please try again.');
   }
 }
 

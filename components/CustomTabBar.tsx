@@ -1,8 +1,8 @@
-import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Home, Search, Plus, UtensilsCrossed, ShoppingBag } from 'lucide-react-native';
-import { useRouter, usePathname, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSegments } from "expo-router";
+import { BookOpen, Home, Plus, Search, ShoppingBag } from "lucide-react-native";
+import { useEffect, useState } from "react";
+import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export function CustomTabBar() {
   const insets = useSafeAreaInsets();
@@ -19,32 +19,67 @@ export function CustomTabBar() {
   }, [pathname]);
 
   const tabs = [
-    { name: 'index', icon: Home, route: '/(tabs)/' },
-    { name: 'search', icon: Search, route: '/(tabs)/search' },
-    { name: 'add', icon: Plus, route: '/(tabs)/add', isMiddle: true },
-    { name: 'pantry', icon: UtensilsCrossed, route: '/(tabs)/pantry' },
-    { name: 'shopping', icon: ShoppingBag, route: '/(tabs)/shopping' },
+    { name: "index", icon: Home, route: "/(tabs)/" },
+    { name: "search", icon: Search, route: "/(tabs)/search" },
+    { name: "add", icon: Plus, route: "/(tabs)/add", isMiddle: true },
+    { name: "books", icon: BookOpen, route: "/(tabs)/books" },
+    { name: "shopping", icon: ShoppingBag, route: "/(tabs)/shopping" },
   ];
 
   const isActive = (route: string) => {
     if (!isReady || !pathname) return false;
-    if (route === '/(tabs)/' || route === '/(tabs)') {
-      return pathname === '/(tabs)/' || pathname === '/(tabs)' || pathname === '/' || segments.length === 0;
+
+    // Normalize routes by removing trailing slashes
+    const normalizedRoute = route.replace(/\/$/, "");
+    const normalizedPathname = pathname.replace(/\/$/, "");
+
+    // Handle home/index route
+    if (route === "/(tabs)/" || route === "/(tabs)") {
+      const isHomeRoute =
+        normalizedPathname === "/(tabs)" ||
+        normalizedPathname === "/" ||
+        normalizedPathname === "/(tabs)/index" ||
+        (segments.length === 1 && segments[0] === "(tabs)");
+
+      // Check if second segment is index (using type assertion to avoid TS error)
+      if (segments.length === 2 && segments[0] === "(tabs)") {
+        const secondSegment = segments[1] as string;
+        return isHomeRoute || secondSegment === "index";
+      }
+
+      return isHomeRoute;
     }
-    return pathname === route || pathname?.startsWith(route);
+
+    // Check exact match
+    if (normalizedPathname === normalizedRoute) return true;
+
+    // Check if pathname starts with route (for nested routes)
+    if (normalizedPathname?.startsWith(normalizedRoute + "/")) return true;
+
+    // Check segment match - get the tab name from route
+    const routeParts = normalizedRoute.split("/");
+    const tabName = routeParts[routeParts.length - 1];
+
+    // Check if the last segment matches the tab name
+    if (tabName && segments.length > 0) {
+      const lastSegment = segments[segments.length - 1];
+      return lastSegment === tabName;
+    }
+
+    return false;
   };
 
   const handlePress = (route: string) => {
     try {
-      if (route === '/(tabs)/add') {
+      if (route === "/(tabs)/add") {
         // TODO: Open import modal or add recipe screen
-        console.log('Add button pressed');
-        router.push('/(tabs)/add');
+        console.log("Add button pressed");
+        router.push("/(tabs)/add");
         return;
       }
       router.push(route as any);
     } catch (error) {
-      console.error('Navigation error:', error);
+      console.error("Navigation error:", error);
     }
   };
 
@@ -57,7 +92,7 @@ export function CustomTabBar() {
       style={[
         styles.tabBar,
         {
-          bottom: 30 + insets.bottom,
+          bottom: insets.bottom,
         },
       ]}
     >
@@ -71,15 +106,11 @@ export function CustomTabBar() {
             key={tab.name}
             onPress={() => handlePress(tab.route)}
             activeOpacity={0.7}
-            style={[
-              styles.tabButton,
-              isMiddle && styles.middleButton,
-              active && !isMiddle && styles.activeButton,
-            ]}
+            style={[styles.tabButton, isMiddle && styles.middleButton]}
           >
             <Icon
               size={isMiddle ? 28 : 24}
-              color={isMiddle ? '#FAF9F7' : active ? '#C7D2C0' : '#9CA3AF'}
+              color={isMiddle ? "#FAF9F7" : active ? "#5A6E6C" : "#9CA3AF"}
               strokeWidth={active || isMiddle ? 2.5 : 2}
             />
           </TouchableOpacity>
@@ -91,17 +122,17 @@ export function CustomTabBar() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    position: 'absolute',
+    position: "absolute",
     left: 16,
     right: 16,
     height: 64,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
     paddingHorizontal: 8,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -116,17 +147,14 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   middleButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#C7D2C0',
+    backgroundColor: "#5A6E6C",
     marginTop: -12,
-  },
-  activeButton: {
-    backgroundColor: '#C7D2C0',
   },
 });

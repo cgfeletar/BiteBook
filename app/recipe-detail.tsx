@@ -1,41 +1,387 @@
-import { View, Text, ScrollView, TouchableOpacity, Alert, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, router } from 'expo-router';
-import { ArrowLeft, Clock } from 'lucide-react-native';
-import { RecipeCreateInput } from '@/src/types';
-import { useState, useEffect } from 'react';
-import { Image } from 'expo-image';
+import { generateNutritionalInfo } from "@/src/services/recipeService";
+import { usePantryStore } from "@/src/store/usePantryStore";
+import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
+import { useShoppingListStore } from "@/src/store/useShoppingListStore";
+import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
+import { Image } from "expo-image";
+import { router, useLocalSearchParams } from "expo-router";
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  Clock,
+  MoreVertical,
+  Share2,
+  ShoppingBag,
+  X,
+} from "lucide-react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  FlatList,
+  Modal,
+  TouchableOpacity as RNTouchableOpacity,
+  Share,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import {
+  GestureHandlerRootView,
+  Swipeable,
+} from "react-native-gesture-handler";
 import Animated, {
-  useAnimatedScrollHandler,
-  useSharedValue,
-  useAnimatedStyle,
-  interpolate,
   Extrapolate,
-} from 'react-native-reanimated';
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from "react-native-reanimated";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const HEADER_HEIGHT = 300;
 const MIN_HEADER_HEIGHT = 100;
 
-type TabType = 'ingredients' | 'instructions';
+type TabType = "ingredients" | "instructions";
 
 export default function RecipeDetailScreen() {
   const params = useLocalSearchParams();
   const [recipeData, setRecipeData] = useState<RecipeCreateInput | null>(null);
-  const [activeTab, setActiveTab] = useState<TabType>('ingredients');
-  const isImported = params.isImported === 'true';
+  const [activeTab, setActiveTab] = useState<TabType>("ingredients");
+  const [useMetric, setUseMetric] = useState(false); // true = grams, false = cups
+  const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
+  const [notes, setNotes] = useState("");
+  const [viewByServing, setViewByServing] = useState(true); // true = by serving, false = whole recipe
+  const [servings, setServings] = useState(4); // Default servings
+  const addItemsToShoppingList = useShoppingListStore(
+    (state) => state.addItems
+  );
+  const books = useRecipeBooksStore((state) => state.books);
+  const addRecipeToBook = useRecipeBooksStore((state) => state.addRecipeToBook);
+  const addRecipe = useRecipeBooksStore((state) => state.addRecipe);
+  const pantryItems = usePantryStore((state) => state.items);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showBookSelector, setShowBookSelector] = useState(false);
+  const isImported = params.isImported === "true";
+
+  // Split ingredients into two groups
+  const { ingredientsInPantry, ingredientsToBuy } = useMemo(() => {
+    if (!recipeData || !recipeData.ingredients) {
+      return { ingredientsInPantry: [], ingredientsToBuy: [] };
+    }
+
+    // Check if ingredient is in pantry
+    const isIngredientInPantry = (ingredientName: string): boolean => {
+      const normalizedName = ingredientName.toLowerCase().trim();
+      return pantryItems.some(
+        (item) => item.name.toLowerCase().trim() === normalizedName
+      );
+    };
+
+    const inPantry: typeof recipeData.ingredients = [];
+    const toBuy: typeof recipeData.ingredients = [];
+
+    recipeData.ingredients.forEach((ing) => {
+      if (isIngredientInPantry(ing.name)) {
+        inPantry.push(ing);
+      } else {
+        toBuy.push(ing);
+      }
+    });
+
+    return { ingredientsInPantry: inPantry, ingredientsToBuy: toBuy };
+  }, [recipeData?.ingredients, pantryItems]);
+
+  // Daily recommended values
+  const dailyValues = {
+    calories: 2000,
+    protein: 50, // grams
+    carbohydrates: 300, // grams
+    fat: 65, // grams
+    fiber: 25, // grams
+  };
   const scrollY = useSharedValue(0);
   const { width } = useWindowDimensions();
 
   useEffect(() => {
-    if (params.importedData) {
+    // Handle both importedData (from import flow) and recipeData (from recipe feed)
+    const dataParam = params.importedData || params.recipeData;
+    if (dataParam) {
       try {
-        const parsed = JSON.parse(params.importedData as string);
+        const parsed = JSON.parse(dataParam as string);
         setRecipeData(parsed);
       } catch (error) {
-        console.error('Failed to parse recipe data:', error);
+        console.error("Failed to parse recipe data:", error);
       }
     }
-  }, [params.importedData]);
+  }, [params.importedData, params.recipeData]);
+
+  // Check and generate nutritional info if missing
+  useEffect(() => {
+    const checkAndGenerateNutrition = async () => {
+      if (!recipeData) return;
+
+      // Check if nutritional info is missing or incomplete
+      const hasNutrition =
+        recipeData.nutritionalInfo &&
+        Object.keys(recipeData.nutritionalInfo).length > 0 &&
+        (recipeData.nutritionalInfo.calories ||
+          recipeData.nutritionalInfo.protein ||
+          recipeData.nutritionalInfo.carbohydrates ||
+          recipeData.nutritionalInfo.fat);
+
+      if (
+        !hasNutrition &&
+        recipeData.ingredients &&
+        recipeData.ingredients.length > 0
+      ) {
+        try {
+          // Generate nutritional info from ingredients
+          const generatedNutrition = await generateNutritionalInfo(
+            recipeData.ingredients
+          );
+
+          // Merge with existing (if any) - prefer source data, fill in missing with generated
+          setRecipeData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              nutritionalInfo: {
+                ...prev.nutritionalInfo,
+                // Only use generated values if source doesn't have them
+                calories:
+                  prev.nutritionalInfo?.calories ||
+                  generatedNutrition.calories ||
+                  undefined,
+                protein:
+                  prev.nutritionalInfo?.protein ||
+                  generatedNutrition.protein ||
+                  undefined,
+                carbohydrates:
+                  prev.nutritionalInfo?.carbohydrates ||
+                  generatedNutrition.carbohydrates ||
+                  undefined,
+                fat:
+                  prev.nutritionalInfo?.fat ||
+                  generatedNutrition.fat ||
+                  undefined,
+                fiber:
+                  prev.nutritionalInfo?.fiber ||
+                  generatedNutrition.fiber ||
+                  undefined,
+                sugar:
+                  prev.nutritionalInfo?.sugar ||
+                  generatedNutrition.sugar ||
+                  undefined,
+                sodium:
+                  prev.nutritionalInfo?.sodium ||
+                  generatedNutrition.sodium ||
+                  undefined,
+              },
+            };
+          });
+        } catch (error) {
+          console.error("Failed to generate nutritional info:", error);
+          // Silently fail - user can still use the recipe without nutrition info
+        }
+      }
+    };
+
+    checkAndGenerateNutrition();
+  }, [recipeData]);
+
+  // Convert units (simple conversion - can be enhanced)
+  const convertUnit = (
+    quantity: number,
+    fromUnit: string,
+    toMetric: boolean
+  ) => {
+    if (toMetric) {
+      // Convert to grams
+      if (fromUnit.toLowerCase().includes("cup")) {
+        // Rough conversions (varies by ingredient, but using common values)
+        return Math.round(quantity * 200); // 1 cup ≈ 200g (varies by ingredient)
+      }
+      if (fromUnit.toLowerCase().includes("tbsp")) {
+        return Math.round(quantity * 15); // 1 tbsp ≈ 15g
+      }
+      if (fromUnit.toLowerCase().includes("tsp")) {
+        return Math.round(quantity * 5); // 1 tsp ≈ 5g
+      }
+      return quantity; // Already in grams or unknown
+    } else {
+      // Convert to cups
+      if (fromUnit.toLowerCase().includes("g")) {
+        return (quantity / 200).toFixed(2); // 200g ≈ 1 cup
+      }
+      return quantity; // Already in cups or unknown
+    }
+  };
+
+  // Enrich instruction text with ingredient amounts
+  const enrichInstructionWithAmounts = (instruction: string): string => {
+    if (!recipeData || !recipeData.ingredients) return instruction;
+
+    let enrichedText = instruction;
+
+    // Sort ingredients by name length (longest first) to match longer names first
+    const ingredients = [...recipeData.ingredients].sort(
+      (a, b) => b.name.length - a.name.length
+    );
+
+    // Collect all matches with their positions first
+    const replacements: Array<{
+      start: number;
+      end: number;
+      replacement: string;
+    }> = [];
+
+    ingredients.forEach((ing) => {
+      const ingredientName = ing.name;
+      const normalizedName = ingredientName.toLowerCase().trim();
+
+      // Escape special regex characters in the ingredient name
+      const escapedName = ingredientName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedNormalizedName = normalizedName.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      // Create pattern to match the ingredient name as a whole word
+      const pattern = new RegExp(
+        `\\b(${escapedName}|${escapedNormalizedName})\\b`,
+        "gi"
+      );
+
+      let match;
+      while ((match = pattern.exec(instruction)) !== null) {
+        const offset = match.index;
+        const matchText = match[0];
+
+        // Check if there's already a quantity mentioned near this ingredient
+        const contextStart = Math.max(0, offset - 30);
+        const contextEnd = Math.min(
+          instruction.length,
+          offset + matchText.length + 30
+        );
+        const context = instruction.substring(contextStart, contextEnd);
+
+        // Check if quantity already exists in the context
+        const quantityPattern =
+          /\d+\s*(cup|tbsp|tsp|g|gram|oz|lb|ml|l|stick|piece|whole|clove|head|bunch|can|package|container|of)/i;
+        const hasQuantityNearby = quantityPattern.test(context);
+
+        // If there's already a quantity nearby, skip this match
+        if (!hasQuantityNearby) {
+          // Format the quantity nicely
+          const quantityStr =
+            ing.quantity % 1 === 0
+              ? ing.quantity.toString()
+              : ing.quantity.toFixed(2).replace(/\.?0+$/, "");
+
+          replacements.push({
+            start: offset,
+            end: offset + matchText.length,
+            replacement: `${quantityStr} ${ing.unit} ${ingredientName}`,
+          });
+        }
+      }
+    });
+
+    // Apply replacements in reverse order to maintain correct indices
+    replacements.sort((a, b) => b.start - a.start);
+    replacements.forEach(({ start, end, replacement }) => {
+      enrichedText =
+        enrichedText.substring(0, start) +
+        replacement +
+        enrichedText.substring(end);
+    });
+
+    return enrichedText;
+  };
+
+  const handleStepComplete = (stepId: string) => {
+    setCompletedSteps((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(stepId)) {
+        newSet.delete(stepId);
+      } else {
+        newSet.add(stepId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleShare = async () => {
+    if (!recipeData) return;
+
+    try {
+      const shareText = `${recipeData.title}\n\n${recipeData.sourceUrl || ""}`;
+      await Share.share({
+        message: shareText,
+        title: recipeData.title,
+      });
+      setShowMenu(false);
+    } catch (error) {
+      console.error("Error sharing recipe:", error);
+    }
+  };
+
+  const handleAddToBook = (bookId: string) => {
+    if (!recipeData) return;
+
+    // Convert RecipeCreateInput to Recipe format
+    const recipe: Recipe = {
+      id: `recipe-${Date.now()}-${Math.random()}`,
+      title: recipeData.title,
+      coverImage: recipeData.coverImage,
+      ingredients: recipeData.ingredients,
+      steps: recipeData.steps,
+      nutritionalInfo: recipeData.nutritionalInfo,
+      sourceUrl: recipeData.sourceUrl,
+      originalAuthor: recipeData.originalAuthor,
+      tags: recipeData.tags,
+      categoryIds: recipeData.categoryIds,
+      createdAt: new Date(),
+    };
+
+    // Add recipe to store if not already there
+    addRecipe(recipe);
+
+    // Add recipe to book with cover image
+    addRecipeToBook(bookId, recipe.id, recipe.coverImage);
+
+    Alert.alert("Success", "Recipe added to book!");
+    setShowBookSelector(false);
+    setShowMenu(false);
+  };
+
+  const renderSwipeRightAction = (step: Step, isCompleted: boolean) => {
+    return (
+      <View
+        className="bg-dark-sage rounded-xl items-center justify-center px-6"
+        style={{
+          minHeight: 44,
+          justifyContent: "center",
+          alignItems: "center",
+          width: 80,
+        }}
+      >
+        {isCompleted ? (
+          <View className="items-center">
+            <Check size={24} color="#FAF9F7" />
+            <Text className="text-off-white text-xs mt-1">Undo</Text>
+          </View>
+        ) : (
+          <View className="items-center">
+            <Check size={24} color="#FAF9F7" />
+            <Text className="text-off-white text-xs mt-1">Done</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -99,315 +445,923 @@ export default function RecipeDetailScreen() {
 
   if (!recipeData) {
     return (
-      <SafeAreaView className="flex-1 bg-off-white" edges={['top', 'bottom']}>
-        <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-charcoal-gray text-base">Loading recipe...</Text>
-        </View>
-      </SafeAreaView>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
+          <View className="flex-1 items-center justify-center px-6">
+            <Text className="text-charcoal-gray text-base">
+              Loading recipe...
+            </Text>
+          </View>
+        </SafeAreaView>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <View className="flex-1 bg-off-white">
-      <SafeAreaView className="absolute top-0 left-0 right-0 z-10" edges={['top']}>
-        {/* Header with Back Button */}
-        <Animated.View
-          style={[
-            headerOverlayStyle,
-            {
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 24,
-              paddingVertical: 12,
-              backgroundColor: '#FAF9F7',
-            },
-          ]}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View className="flex-1 bg-off-white">
+        <SafeAreaView
+          className="absolute top-0 left-0 right-0 z-10"
+          edges={["top"]}
+          pointerEvents="box-none"
         >
-          <TouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-            style={{ width: 44, height: 44, justifyContent: 'center' }}
+          {/* Header with Back Button */}
+          <Animated.View
+            style={[
+              headerOverlayStyle,
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                paddingHorizontal: 24,
+                paddingVertical: 12,
+                backgroundColor: "#FAF9F7",
+              },
+            ]}
+            pointerEvents="box-none"
           >
-            <ArrowLeft size={24} color="#3E3E3E" />
-          </TouchableOpacity>
-          <Text className="text-lg font-bold text-charcoal-gray ml-4 flex-1" numberOfLines={1}>
-            {recipeData.title}
-          </Text>
-        </Animated.View>
-      </SafeAreaView>
+            <RNTouchableOpacity
+              onPress={() => {
+                router.back();
+              }}
+              hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+              style={{
+                width: 44,
+                height: 44,
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 1000,
+              }}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={24} color="#3E3E3E" />
+            </RNTouchableOpacity>
+            <Text
+              className="text-lg font-bold text-charcoal-gray ml-4 flex-1"
+              numberOfLines={1}
+            >
+              {recipeData.title}
+            </Text>
+            <RNTouchableOpacity
+              onPress={() => setShowMenu(true)}
+              hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+              style={{
+                width: 44,
+                height: 44,
+                justifyContent: "center",
+                alignItems: "center",
+                zIndex: 1000,
+              }}
+              activeOpacity={0.7}
+            >
+              <MoreVertical size={24} color="#3E3E3E" />
+            </RNTouchableOpacity>
+          </Animated.View>
+        </SafeAreaView>
 
-      <Animated.ScrollView
-        onScroll={scrollHandler}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: HEADER_HEIGHT, paddingBottom: 24 }}
-      >
-        {/* Collapsible Header Image */}
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: HEADER_HEIGHT,
-              overflow: 'hidden',
-            },
-            headerImageStyle,
-          ]}
+        <Animated.ScrollView
+          onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingTop: HEADER_HEIGHT,
+            paddingBottom: 24,
+          }}
         >
-          {recipeData.coverImage ? (
-            <Image
-              source={{ uri: recipeData.coverImage }}
-              style={{ width: '100%', height: HEADER_HEIGHT }}
-              contentFit="cover"
-              transition={200}
-              placeholder={{ blurhash: 'LGF5]+Yk^6#M@-5c,1J5@[or[Q6.' }}
-            />
-          ) : (
-            <View className="bg-soft-beige w-full h-full items-center justify-center">
-              <Text className="text-charcoal-gray/50">No Image</Text>
+          {/* Collapsible Header Image */}
+          <Animated.View
+            style={[
+              {
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: HEADER_HEIGHT,
+                overflow: "hidden",
+              },
+              headerImageStyle,
+            ]}
+          >
+            {recipeData.coverImage ? (
+              <Image
+                source={{ uri: recipeData.coverImage }}
+                style={{ width: "100%", height: HEADER_HEIGHT }}
+                contentFit="cover"
+                transition={200}
+                placeholder={{ blurhash: "LGF5]+Yk^6#M@-5c,1J5@[or[Q6." }}
+              />
+            ) : (
+              <View className="bg-soft-beige w-full h-full items-center justify-center">
+                <Text className="text-charcoal-gray/50">No Image</Text>
+              </View>
+            )}
+
+            {/* Header Content Overlay */}
+            <SafeAreaView
+              className="absolute top-0 left-0 right-0"
+              edges={["top"]}
+              style={{ zIndex: 10, justifyContent: "flex-end" }}
+            >
+              {/* Mocha background overlay - only at bottom */}
+              <Animated.View
+                style={[
+                  headerContentStyle,
+                  {
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: 130,
+                    backgroundColor: "rgba(231, 216, 201, 0.8)",
+                  },
+                ]}
+              />
+              <View className="flex-row items-center justify-between w-full px-4">
+                <RNTouchableOpacity
+                  onPress={() => {
+                    router.back();
+                  }}
+                  hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    backgroundColor: "rgba(231, 216, 201, 0.8)",
+                    borderRadius: 22,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 16,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <ArrowLeft size={20} color="#3E3E3E" />
+                </RNTouchableOpacity>
+
+                <RNTouchableOpacity
+                  onPress={() => setShowMenu(true)}
+                  hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    backgroundColor: "rgba(231, 216, 201, 0.8)",
+                    borderRadius: 22,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 16,
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MoreVertical size={20} color="#3E3E3E" />
+                </RNTouchableOpacity>
+              </View>
+
+              {/* Content */}
+              <Animated.View
+                style={[
+                  headerContentStyle,
+                  {
+                    paddingHorizontal: 24,
+                    paddingBottom: 24,
+                    paddingTop: 12,
+                    minHeight: HEADER_HEIGHT - 110,
+                    justifyContent: "flex-end",
+                  },
+                ]}
+              >
+                <Text
+                  className="text-3xl font-bold text-charcoal-gray mb-2"
+                  numberOfLines={2}
+                >
+                  {recipeData.title}
+                </Text>
+                {recipeData.originalAuthor && (
+                  <Text className="text-base text-charcoal-gray/90">
+                    By {recipeData.originalAuthor}
+                  </Text>
+                )}
+              </Animated.View>
+            </SafeAreaView>
+          </Animated.View>
+
+          {/* Content */}
+          <View className="px-6 pt-6 pb-8">
+            {/* Imported Notice */}
+            {isImported && (
+              <View className="bg-dark-sage/20 rounded-xl p-4 mb-6">
+                <Text className="text-dark-sage font-semibold text-sm">
+                  ✓ Recipe imported successfully! Review and save when ready.
+                </Text>
+              </View>
+            )}
+
+            {/* Segmented Control */}
+            <View className="flex-row bg-soft-beige rounded-xl p-1 mb-6">
+              <RNTouchableOpacity
+                onPress={() => setActiveTab("ingredients")}
+                className={`flex-1 py-3 rounded-lg items-center ${
+                  activeTab === "ingredients" ? "bg-dark-sage" : ""
+                }`}
+                activeOpacity={0.7}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <Text
+                  className={`font-semibold ${
+                    activeTab === "ingredients"
+                      ? "text-off-white"
+                      : "text-charcoal-gray"
+                  }`}
+                >
+                  Ingredients
+                </Text>
+              </RNTouchableOpacity>
+              <RNTouchableOpacity
+                onPress={() => setActiveTab("instructions")}
+                className={`flex-1 py-3 rounded-lg items-center ${
+                  activeTab === "instructions" ? "bg-dark-sage" : ""
+                }`}
+                activeOpacity={0.7}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <Text
+                  className={`font-semibold ${
+                    activeTab === "instructions"
+                      ? "text-off-white"
+                      : "text-charcoal-gray"
+                  }`}
+                >
+                  Instructions
+                </Text>
+              </RNTouchableOpacity>
             </View>
-          )}
-          
-          {/* Gradient Overlay */}
+
+            {/* Ingredients Tab */}
+            {activeTab === "ingredients" && (
+              <View>
+                {/* Add to Shopping List Button */}
+                {ingredientsToBuy.length > 0 && (
+                  <RNTouchableOpacity
+                    onPress={() => {
+                      addItemsToShoppingList(ingredientsToBuy);
+                      Alert.alert(
+                        "Added to Shopping List",
+                        `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
+                      );
+                    }}
+                    className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
+                    activeOpacity={0.8}
+                    style={{ minHeight: 44 }}
+                  >
+                    <ShoppingBag size={20} color="#FAF9F7" />
+                    <Text className="text-off-white text-base font-semibold ml-2">
+                      Add All to Shopping List
+                    </Text>
+                  </RNTouchableOpacity>
+                )}
+
+                {/* Unit Toggle */}
+                <View className="flex-row items-center justify-end mb-4">
+                  <Text className="text-charcoal-gray/60 text-sm mr-3">
+                    Units:
+                  </Text>
+                  <View className="flex-row bg-soft-beige rounded-full p-1">
+                    <RNTouchableOpacity
+                      onPress={() => setUseMetric(true)}
+                      className={`px-4 py-2 rounded-full items-center ${
+                        useMetric ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                      style={{ minHeight: 36, justifyContent: "center" }}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          useMetric ? "text-off-white" : "text-charcoal-gray"
+                        }`}
+                      >
+                        Grams
+                      </Text>
+                    </RNTouchableOpacity>
+                    <RNTouchableOpacity
+                      onPress={() => setUseMetric(false)}
+                      className={`px-4 py-2 rounded-full items-center ${
+                        !useMetric ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                      style={{ minHeight: 36, justifyContent: "center" }}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          !useMetric ? "text-off-white" : "text-charcoal-gray"
+                        }`}
+                      >
+                        Cups
+                      </Text>
+                    </RNTouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Render Ingredient Item */}
+                {(() => {
+                  const renderIngredient = (
+                    ingredient: Ingredient,
+                    index: number
+                  ) => {
+                    const displayQuantity = useMetric
+                      ? ingredient.unit.toLowerCase().includes("cup") ||
+                        ingredient.unit.toLowerCase().includes("tbsp") ||
+                        ingredient.unit.toLowerCase().includes("tsp")
+                        ? convertUnit(
+                            ingredient.quantity,
+                            ingredient.unit,
+                            true
+                          )
+                        : ingredient.quantity
+                      : ingredient.unit.toLowerCase().includes("g")
+                      ? convertUnit(ingredient.quantity, ingredient.unit, false)
+                      : ingredient.quantity;
+
+                    const displayUnit = useMetric
+                      ? "g"
+                      : ingredient.unit.toLowerCase().includes("g")
+                      ? "cups"
+                      : ingredient.unit;
+
+                    return (
+                      <RNTouchableOpacity
+                        key={`${ingredient.name}-${index}`}
+                        className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
+                        activeOpacity={0.7}
+                        style={{ minHeight: 44 }}
+                      >
+                        <View className="w-8 h-8 bg-dark-sage rounded-full items-center justify-center mr-4">
+                          <Text className="text-off-white font-bold text-xs">
+                            {index + 1}
+                          </Text>
+                        </View>
+                        <Text className="text-charcoal-gray flex-1 text-base">
+                          <Text className="font-semibold">
+                            {displayQuantity} {displayUnit}
+                          </Text>{" "}
+                          {ingredient.name}
+                        </Text>
+                      </RNTouchableOpacity>
+                    );
+                  };
+
+                  return (
+                    <>
+                      {/* Need to Buy Section */}
+                      {ingredientsToBuy.length > 0 && (
+                        <View className="mb-6">
+                          <Text className="text-xl font-bold text-charcoal-gray mb-4">
+                            Need to Buy
+                          </Text>
+                          {ingredientsToBuy.map((ingredient, index) =>
+                            renderIngredient(ingredient, index)
+                          )}
+                        </View>
+                      )}
+
+                      {/* Already in Pantry Section */}
+                      {ingredientsInPantry.length > 0 && (
+                        <View className="mb-6">
+                          <Text className="text-xl font-bold text-charcoal-gray mb-4">
+                            Already in My Pantry
+                          </Text>
+                          {ingredientsInPantry.map((ingredient, index) =>
+                            renderIngredient(
+                              ingredient,
+                              ingredientsToBuy.length + index
+                            )
+                          )}
+                        </View>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* Nutrition Section */}
+                {recipeData.nutritionalInfo &&
+                  Object.keys(recipeData.nutritionalInfo).length > 0 && (
+                    <View className="mt-6 mb-6">
+                      <View className="flex-row items-center justify-between mb-4">
+                        <Text className="text-2xl font-bold text-charcoal-gray">
+                          Nutrition
+                        </Text>
+                        {/* Serving Toggle */}
+                        <View className="flex-row bg-soft-beige rounded-full p-1">
+                          <RNTouchableOpacity
+                            onPress={() => setViewByServing(true)}
+                            className={`px-3 py-1.5 rounded-full items-center ${
+                              viewByServing ? "bg-dark-sage" : ""
+                            }`}
+                            activeOpacity={0.7}
+                            style={{ minHeight: 32, justifyContent: "center" }}
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${
+                                viewByServing
+                                  ? "text-off-white"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              Per Serving
+                            </Text>
+                          </RNTouchableOpacity>
+                          <RNTouchableOpacity
+                            onPress={() => setViewByServing(false)}
+                            className={`px-3 py-1.5 rounded-full items-center ${
+                              !viewByServing ? "bg-dark-sage" : ""
+                            }`}
+                            activeOpacity={0.7}
+                            style={{ minHeight: 32, justifyContent: "center" }}
+                          >
+                            <Text
+                              className={`text-xs font-semibold ${
+                                !viewByServing
+                                  ? "text-off-white"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              Whole Recipe
+                            </Text>
+                          </RNTouchableOpacity>
+                        </View>
+                      </View>
+
+                      <View className="bg-soft-beige rounded-xl px-4 py-4">
+                        {recipeData.nutritionalInfo.calories && (
+                          <View className="mb-4">
+                            <View className="flex-row items-center justify-between mb-1">
+                              <Text className="text-charcoal-gray font-semibold">
+                                Calories
+                              </Text>
+                              <Text className="text-charcoal-gray font-semibold">
+                                {viewByServing
+                                  ? Math.round(
+                                      recipeData.nutritionalInfo.calories /
+                                        servings
+                                    )
+                                  : recipeData.nutritionalInfo.calories}
+                                {viewByServing && (
+                                  <Text className="text-charcoal-gray/60 text-sm">
+                                    {" "}
+                                    / {dailyValues.calories}
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                            {viewByServing && (
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      (recipeData.nutritionalInfo.calories /
+                                        servings /
+                                        dailyValues.calories) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {recipeData.nutritionalInfo.protein && (
+                          <View className="mb-4">
+                            <View className="flex-row items-center justify-between mb-1">
+                              <Text className="text-charcoal-gray font-semibold">
+                                Protein
+                              </Text>
+                              <Text className="text-charcoal-gray font-semibold">
+                                {viewByServing
+                                  ? Math.round(
+                                      recipeData.nutritionalInfo.protein /
+                                        servings
+                                    )
+                                  : recipeData.nutritionalInfo.protein}
+                                g
+                                {viewByServing && (
+                                  <Text className="text-charcoal-gray/60 text-sm">
+                                    {" "}
+                                    / {dailyValues.protein}g
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                            {viewByServing && (
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      (recipeData.nutritionalInfo.protein /
+                                        servings /
+                                        dailyValues.protein) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {recipeData.nutritionalInfo.carbohydrates && (
+                          <View className="mb-4">
+                            <View className="flex-row items-center justify-between mb-1">
+                              <Text className="text-charcoal-gray font-semibold">
+                                Carbs
+                              </Text>
+                              <Text className="text-charcoal-gray font-semibold">
+                                {viewByServing
+                                  ? Math.round(
+                                      recipeData.nutritionalInfo.carbohydrates /
+                                        servings
+                                    )
+                                  : recipeData.nutritionalInfo.carbohydrates}
+                                g
+                                {viewByServing && (
+                                  <Text className="text-charcoal-gray/60 text-sm">
+                                    {" "}
+                                    / {dailyValues.carbohydrates}g
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                            {viewByServing && (
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      (recipeData.nutritionalInfo
+                                        .carbohydrates /
+                                        servings /
+                                        dailyValues.carbohydrates) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {recipeData.nutritionalInfo.fat && (
+                          <View className="mb-4">
+                            <View className="flex-row items-center justify-between mb-1">
+                              <Text className="text-charcoal-gray font-semibold">
+                                Fat
+                              </Text>
+                              <Text className="text-charcoal-gray font-semibold">
+                                {viewByServing
+                                  ? Math.round(
+                                      recipeData.nutritionalInfo.fat / servings
+                                    )
+                                  : recipeData.nutritionalInfo.fat}
+                                g
+                                {viewByServing && (
+                                  <Text className="text-charcoal-gray/60 text-sm">
+                                    {" "}
+                                    / {dailyValues.fat}g
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                            {viewByServing && (
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      (recipeData.nutritionalInfo.fat /
+                                        servings /
+                                        dailyValues.fat) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        {recipeData.nutritionalInfo.fiber && (
+                          <View>
+                            <View className="flex-row items-center justify-between mb-1">
+                              <Text className="text-charcoal-gray font-semibold">
+                                Fiber
+                              </Text>
+                              <Text className="text-charcoal-gray font-semibold">
+                                {viewByServing
+                                  ? Math.round(
+                                      (recipeData.nutritionalInfo.fiber || 0) /
+                                        servings
+                                    )
+                                  : recipeData.nutritionalInfo.fiber || 0}
+                                g
+                                {viewByServing && (
+                                  <Text className="text-charcoal-gray/60 text-sm">
+                                    {" "}
+                                    / {dailyValues.fiber}g
+                                  </Text>
+                                )}
+                              </Text>
+                            </View>
+                            {viewByServing && (
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full"
+                                  style={{
+                                    width: `${Math.min(
+                                      100,
+                                      ((recipeData.nutritionalInfo.fiber || 0) /
+                                        servings /
+                                        dailyValues.fiber) *
+                                        100
+                                    )}%`,
+                                  }}
+                                />
+                              </View>
+                            )}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  )}
+              </View>
+            )}
+
+            {/* Instructions Tab */}
+            {activeTab === "instructions" && (
+              <View>
+                {recipeData.steps.map((step, index) => {
+                  const isCompleted = completedSteps.has(step.id);
+                  return (
+                    <Swipeable
+                      key={step.id}
+                      renderRightActions={() =>
+                        renderSwipeRightAction(step, isCompleted)
+                      }
+                      onSwipeableWillOpen={() => handleStepComplete(step.id)}
+                      overshootRight={false}
+                      friction={2}
+                    >
+                      <View
+                        className={`mb-4 rounded-xl px-4 py-4 ${
+                          isCompleted
+                            ? "bg-dark-sage/30 border-2 border-dark-sage"
+                            : "bg-soft-beige"
+                        }`}
+                        style={{ minHeight: 44 }}
+                      >
+                        <View className="flex-row items-start">
+                          <View
+                            className={`rounded-full w-10 h-10 items-center justify-center mr-4 mt-1 ${
+                              isCompleted ? "bg-dark-sage" : "bg-dark-sage"
+                            }`}
+                          >
+                            {isCompleted ? (
+                              <Check size={20} color="#FAF9F7" />
+                            ) : (
+                              <Text className="text-off-white font-bold text-base">
+                                {index + 1}
+                              </Text>
+                            )}
+                          </View>
+                          <View className="flex-1">
+                            <Text
+                              className={`text-base leading-6 ${
+                                isCompleted
+                                  ? "text-charcoal-gray/60 line-through"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              {enrichInstructionWithAmounts(step.instruction)}
+                            </Text>
+                            {step.timerDuration && (
+                              <View className="flex-row items-center mt-2">
+                                <Clock size={16} color="#9CA3AF" />
+                                <Text className="text-charcoal-gray/60 text-sm ml-2">
+                                  {Math.floor(step.timerDuration / 60)} min
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    </Swipeable>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Notes Section */}
+            {activeTab === "instructions" && (
+              <View className="mt-6 mb-6">
+                <Text className="text-2xl font-bold text-charcoal-gray mb-4">
+                  Notes
+                </Text>
+                <TextInput
+                  className="bg-soft-beige rounded-xl px-4 py-4 text-charcoal-gray text-base min-h-[120px]"
+                  placeholder="Add your notes, substitutions, or tips here..."
+                  placeholderTextColor="#9CA3AF"
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  textAlignVertical="top"
+                  style={{ minHeight: 120 }}
+                />
+              </View>
+            )}
+
+            {/* Tags */}
+            {recipeData.tags && recipeData.tags.length > 0 && (
+              <View className="mb-6">
+                <Text className="text-2xl font-bold text-charcoal-gray mb-4">
+                  Tags
+                </Text>
+                <View className="flex-row flex-wrap">
+                  {recipeData.tags.map((tag, index) => (
+                    <RNTouchableOpacity
+                      key={index}
+                      className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2"
+                      activeOpacity={0.7}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                    >
+                      <Text className="text-charcoal-gray text-sm">{tag}</Text>
+                    </RNTouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Source URL */}
+            {recipeData.sourceUrl && (
+              <View className="mb-6">
+                <Text className="text-sm text-charcoal-gray/60">
+                  Source: {recipeData.sourceUrl}
+                </Text>
+              </View>
+            )}
+
+            {/* Save Button (for imported recipes) */}
+            {isImported && (
+              <RNTouchableOpacity
+                className="bg-dark-sage rounded-xl py-4 items-center justify-center mb-8"
+                activeOpacity={0.8}
+                onPress={() => {
+                  // TODO: Implement save to Firestore
+                  Alert.alert("Success", "Recipe saved!");
+                }}
+                style={{ minHeight: 44 }}
+              >
+                <Text className="text-off-white text-base font-semibold">
+                  Save Recipe
+                </Text>
+              </RNTouchableOpacity>
+            )}
+          </View>
+        </Animated.ScrollView>
+
+        {/* Menu Modal */}
+        <Modal
+          visible={showMenu}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowMenu(false)}
+        >
+          <RNTouchableOpacity
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+            activeOpacity={1}
+            onPress={() => setShowMenu(false)}
+          >
+            <View
+              className="bg-off-white rounded-2xl p-4"
+              style={{ width: "80%", maxWidth: 300 }}
+            >
+              <View className="flex-row items-center justify-between mb-4">
+                <Text className="text-xl font-bold text-charcoal-gray">
+                  Recipe Options
+                </Text>
+                <RNTouchableOpacity
+                  onPress={() => setShowMenu(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={24} color="#3E3E3E" />
+                </RNTouchableOpacity>
+              </View>
+
+              <RNTouchableOpacity
+                onPress={handleShare}
+                className="flex-row items-center py-4 border-b border-soft-beige"
+                activeOpacity={0.7}
+              >
+                <Share2 size={20} color="#5A6E6C" style={{ marginRight: 12 }} />
+                <Text className="text-charcoal-gray text-base font-semibold">
+                  Share Recipe
+                </Text>
+              </RNTouchableOpacity>
+
+              <RNTouchableOpacity
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowBookSelector(true);
+                }}
+                className="flex-row items-center py-4"
+                activeOpacity={0.7}
+              >
+                <BookOpen
+                  size={20}
+                  color="#5A6E6C"
+                  style={{ marginRight: 12 }}
+                />
+                <Text className="text-charcoal-gray text-base font-semibold">
+                  Add to Book
+                </Text>
+              </RNTouchableOpacity>
+            </View>
+          </RNTouchableOpacity>
+        </Modal>
+
+        {/* Book Selector Modal */}
+        <Modal
+          visible={showBookSelector}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowBookSelector(false)}
+        >
           <View
             style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: 128,
-              backgroundColor: 'transparent',
+              flex: 1,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              justifyContent: "flex-end",
             }}
           >
             <View
-              style={{
-                flex: 1,
-                backgroundColor: '#FAF9F7',
-                opacity: 0.3,
-              }}
-            />
-          </View>
-          
-          {/* Header Content Overlay */}
-          <SafeAreaView className="absolute top-0 left-0 right-0" edges={['top']}>
-            <Animated.View
-              style={[
-                headerContentStyle,
-                {
-                  flex: 1,
-                  justifyContent: 'flex-end',
-                  paddingHorizontal: 24,
-                  paddingBottom: 24,
-                },
-              ]}
+              className="bg-off-white rounded-t-3xl"
+              style={{ maxHeight: "70%", paddingBottom: 40 }}
             >
-              <TouchableOpacity
-                onPress={() => router.back()}
-                hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                style={{
-                  width: 44,
-                  height: 44,
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                  borderRadius: 22,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 16,
-                }}
-              >
-                <ArrowLeft size={20} color="#3E3E3E" />
-              </TouchableOpacity>
-              
-              <Text className="text-3xl font-bold text-off-white mb-2" numberOfLines={2}>
-                {recipeData.title}
-              </Text>
-              {recipeData.originalAuthor && (
-                <Text className="text-base text-off-white/90">
-                  By {recipeData.originalAuthor}
+              <View className="flex-row items-center justify-between px-6 py-4 border-b border-soft-beige">
+                <Text className="text-xl font-bold text-charcoal-gray">
+                  Select a Book
                 </Text>
-              )}
-            </Animated.View>
-          </SafeAreaView>
-        </Animated.View>
-
-        {/* Content */}
-        <View className="px-6 pt-6 pb-8">
-          {/* Imported Notice */}
-          {isImported && (
-            <View className="bg-sage-green/20 rounded-xl p-4 mb-6">
-              <Text className="text-sage-green font-semibold text-sm">
-                ✓ Recipe imported successfully! Review and save when ready.
-              </Text>
-            </View>
-          )}
-
-          {/* Segmented Control */}
-          <View className="flex-row bg-soft-beige rounded-xl p-1 mb-6">
-            <TouchableOpacity
-              onPress={() => setActiveTab('ingredients')}
-              className={`flex-1 py-3 rounded-lg items-center ${
-                activeTab === 'ingredients' ? 'bg-sage-green' : ''
-              }`}
-              activeOpacity={0.7}
-              style={{ minHeight: 44 }}
-            >
-              <Text
-                className={`font-semibold ${
-                  activeTab === 'ingredients' ? 'text-off-white' : 'text-charcoal-gray'
-                }`}
-              >
-                Ingredients
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setActiveTab('instructions')}
-              className={`flex-1 py-3 rounded-lg items-center ${
-                activeTab === 'instructions' ? 'bg-sage-green' : ''
-              }`}
-              activeOpacity={0.7}
-              style={{ minHeight: 44 }}
-            >
-              <Text
-                className={`font-semibold ${
-                  activeTab === 'instructions' ? 'text-off-white' : 'text-charcoal-gray'
-                }`}
-              >
-                Instructions
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Ingredients Tab */}
-          {activeTab === 'ingredients' && (
-            <View>
-              {recipeData.ingredients.map((ingredient, index) => (
-                <TouchableOpacity
-                  key={index}
-                  className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
-                  activeOpacity={0.7}
-                  style={{ minHeight: 44 }}
+                <RNTouchableOpacity
+                  onPress={() => setShowBookSelector(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <View className="w-8 h-8 bg-sage-green rounded-full items-center justify-center mr-4">
-                    <Text className="text-off-white font-bold text-xs">{index + 1}</Text>
-                  </View>
-                  <Text className="text-charcoal-gray flex-1 text-base">
-                    <Text className="font-semibold">
-                      {ingredient.quantity} {ingredient.unit}
-                    </Text>{' '}
-                    {ingredient.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
+                  <X size={24} color="#3E3E3E" />
+                </RNTouchableOpacity>
+              </View>
 
-          {/* Instructions Tab */}
-          {activeTab === 'instructions' && (
-            <View>
-              {recipeData.steps.map((step, index) => (
-                <TouchableOpacity
-                  key={step.id}
-                  className="mb-4 bg-soft-beige rounded-xl px-4 py-4"
-                  activeOpacity={0.7}
-                  style={{ minHeight: 44 }}
-                >
-                  <View className="flex-row items-start">
-                    <View className="bg-sage-green rounded-full w-10 h-10 items-center justify-center mr-4 mt-1">
-                      <Text className="text-off-white font-bold text-base">{index + 1}</Text>
-                    </View>
+              <FlatList
+                data={books}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={{ paddingVertical: 8 }}
+                renderItem={({ item }) => (
+                  <RNTouchableOpacity
+                    onPress={() => handleAddToBook(item.id)}
+                    className="flex-row items-center px-6 py-4 border-b border-soft-beige"
+                    activeOpacity={0.7}
+                  >
+                    <BookOpen
+                      size={20}
+                      color="#5A6E6C"
+                      style={{ marginRight: 12 }}
+                    />
                     <View className="flex-1">
-                      <Text className="text-charcoal-gray text-base leading-6">
-                        {step.instruction}
+                      <Text className="text-charcoal-gray text-base font-semibold">
+                        {item.name}
                       </Text>
-                      {step.timerDuration && (
-                        <View className="flex-row items-center mt-2">
-                          <Clock size={16} color="#9CA3AF" />
-                          <Text className="text-charcoal-gray/60 text-sm ml-2">
-                            {Math.floor(step.timerDuration / 60)} min
-                          </Text>
-                        </View>
+                      {item.description && (
+                        <Text className="text-charcoal-gray/60 text-sm mt-1">
+                          {item.description}
+                        </Text>
                       )}
                     </View>
+                  </RNTouchableOpacity>
+                )}
+                ListEmptyComponent={
+                  <View className="px-6 py-8 items-center">
+                    <Text className="text-charcoal-gray/60 text-base">
+                      No recipe books yet
+                    </Text>
                   </View>
-                </TouchableOpacity>
-              ))}
+                }
+              />
             </View>
-          )}
-
-          {/* Nutritional Info */}
-          {recipeData.nutritionalInfo && Object.keys(recipeData.nutritionalInfo).length > 0 && (
-            <View className="mt-6 mb-6">
-              <Text className="text-2xl font-bold text-charcoal-gray mb-4">Nutrition</Text>
-              <View className="bg-soft-beige rounded-xl px-4 py-4">
-                {recipeData.nutritionalInfo.calories && (
-                  <Text className="text-charcoal-gray mb-2">
-                    Calories: {recipeData.nutritionalInfo.calories}
-                  </Text>
-                )}
-                {recipeData.nutritionalInfo.protein && (
-                  <Text className="text-charcoal-gray mb-2">
-                    Protein: {recipeData.nutritionalInfo.protein}g
-                  </Text>
-                )}
-                {recipeData.nutritionalInfo.carbohydrates && (
-                  <Text className="text-charcoal-gray mb-2">
-                    Carbs: {recipeData.nutritionalInfo.carbohydrates}g
-                  </Text>
-                )}
-                {recipeData.nutritionalInfo.fat && (
-                  <Text className="text-charcoal-gray">
-                    Fat: {recipeData.nutritionalInfo.fat}g
-                  </Text>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Tags */}
-          {recipeData.tags && recipeData.tags.length > 0 && (
-            <View className="mb-6">
-              <Text className="text-2xl font-bold text-charcoal-gray mb-4">Tags</Text>
-              <View className="flex-row flex-wrap">
-                {recipeData.tags.map((tag, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2"
-                    activeOpacity={0.7}
-                    style={{ minHeight: 44, justifyContent: 'center' }}
-                  >
-                    <Text className="text-charcoal-gray text-sm">{tag}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* Source URL */}
-          {recipeData.sourceUrl && (
-            <View className="mb-6">
-              <Text className="text-sm text-charcoal-gray/60">
-                Source: {recipeData.sourceUrl}
-              </Text>
-            </View>
-          )}
-
-          {/* Save Button (for imported recipes) */}
-          {isImported && (
-            <TouchableOpacity
-              className="bg-sage-green rounded-xl py-4 items-center justify-center mb-8"
-              activeOpacity={0.8}
-              onPress={() => {
-                // TODO: Implement save to Firestore
-                Alert.alert('Success', 'Recipe saved!');
-              }}
-              style={{ minHeight: 44 }}
-            >
-              <Text className="text-off-white text-base font-semibold">Save Recipe</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.ScrollView>
-    </View>
+          </View>
+        </Modal>
+      </View>
+    </GestureHandlerRootView>
   );
 }
