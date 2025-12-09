@@ -1,4 +1,5 @@
 import { importRecipe } from "@/src/services/recipeService";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { Link2, X } from "lucide-react-native";
@@ -24,6 +25,7 @@ interface ImportModalProps {
 export function ImportModal({ visible, onClose }: ImportModalProps) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const addRecipe = useRecipeStore((state) => state.addRecipe);
 
   const handleAutoPaste = async () => {
     try {
@@ -57,19 +59,36 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
     try {
       const recipeData = await importRecipe(url);
 
-      // Navigate to RecipeDetail screen with the imported data
-      // We'll pass it as a route param - you'll need to handle this in RecipeDetail
-      router.push({
-        pathname: "/recipe-detail",
-        params: {
-          importedData: JSON.stringify(recipeData),
-          isImported: "true",
-        },
-      });
+      // Add recipe to the store (this will make it appear on the homepage)
+      const newRecipe = addRecipe(recipeData);
 
-      // Reset and close
-      setUrl("");
-      onClose();
+      // Show success message
+      Alert.alert(
+        "Recipe Imported!",
+        `"${recipeData.title}" has been added to your recipes.`,
+        [
+          {
+            text: "View Recipe",
+            onPress: () => {
+              router.push({
+                pathname: "/recipe-detail",
+                params: {
+                  recipeData: JSON.stringify(newRecipe),
+                },
+              });
+              setUrl("");
+              onClose();
+            },
+          },
+          {
+            text: "OK",
+            onPress: () => {
+              setUrl("");
+              onClose();
+            },
+          },
+        ]
+      );
     } catch (error: any) {
       Alert.alert(
         "Import Failed",

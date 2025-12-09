@@ -52,7 +52,7 @@ interface Recipe {
 /**
  * LLM Prompt for extracting structured recipe data from messy HTML
  *
- * This prompt is designed to be used with OpenAI GPT-4, GPT-3.5, or Google Gemini.
+ * This prompt is designed to be used with Google Gemini.
  * It handles messy, unstructured recipe data from various websites.
  */
 const RECIPE_EXTRACTION_PROMPT = `You are an expert recipe data extraction assistant. Your task is to extract structured recipe information from raw HTML content and output it as a JSON object.
@@ -169,155 +169,210 @@ Raw HTML content:
 `;
 
 /**
- * Call LLM API (OpenAI or Gemini) to extract recipe data
- * Replace this with your actual LLM API call
+ * Call Gemini API to extract recipe data from HTML content
  */
 async function callLLM(
   htmlContent: string,
   sourceUrl: string
 ): Promise<Omit<Recipe, "id" | "createdAt">> {
-  // TODO: Replace with your actual LLM API call
-  // Example for OpenAI:
-  /*
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: RECIPE_EXTRACTION_PROMPT
-        },
-        {
-          role: 'user',
-          content: htmlContent
-        }
-      ],
-      temperature: 0.3,
-      response_format: { type: 'json_object' }
-    },
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    }
-  );
-  
-  const responseText = response.data.choices[0].message.content;
-  let extractedData;
-  try {
-    extractedData = typeof responseText === 'string' ? JSON.parse(responseText) : responseText;
-  } catch (parseError) {
-    throw new Error(`Failed to parse LLM response as JSON: ${parseError}`);
-  }
-  */
+  // Check for API key - try multiple sources
+  const apiKey =
+    process.env.GEMINI_API_KEY || functions.config().gemini?.api_key || null;
 
-  // Example for Google Gemini (with Schema for structured output):
-  /*
-  const response = await axios.post(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      contents: [{
-        parts: [{
-          text: RECIPE_EXTRACTION_PROMPT + '\n\n' + htmlContent
-        }]
-      }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            coverImage: { type: 'string' },
-            ingredients: {
-              type: 'array',
-              items: {
-                type: 'object',
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY is not configured. Please set it using:\n" +
+        "1. Environment variable: GEMINI_API_KEY\n" +
+        '2. Firebase config: firebase functions:config:set gemini.api_key="YOUR_KEY"\n' +
+        "3. Firebase secrets: firebase functions:secrets:set GEMINI_API_KEY"
+    );
+  }
+
+  // Truncate HTML content if too long (Gemini has token limits)
+  // Keep first 100k characters to ensure we stay within limits
+  const maxLength = 100000;
+  const truncatedContent =
+    htmlContent.length > maxLength
+      ? htmlContent.substring(0, maxLength) + "\n\n[Content truncated...]"
+      : htmlContent;
+
+  try {
+    // Use Gemini 1.5 Pro or Flash - try Pro first, fallback to Flash
+    const models = ["gemini-1.5-pro", "gemini-1.5-flash"];
+    let lastError: any = null;
+
+    for (const model of models) {
+      try {
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            contents: [
+              {
+                parts: [
+                  {
+                    text: RECIPE_EXTRACTION_PROMPT + "\n\n" + truncatedContent,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "object",
                 properties: {
-                  name: { type: 'string' },
-                  quantity: { type: 'number' },
-                  unit: { type: 'string' },
-                  isChecked: { type: 'boolean' }
+                  title: { type: "string" },
+                  coverImage: { type: "string" },
+                  ingredients: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string" },
+                        quantity: { type: "number" },
+                        unit: { type: "string" },
+                        isChecked: { type: "boolean" },
+                      },
+                      required: ["name", "quantity", "unit", "isChecked"],
+                    },
+                  },
+                  steps: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        instruction: { type: "string" },
+                        isCompleted: { type: "boolean" },
+                        isBeginnerFriendly: { type: "boolean" },
+                        timerDuration: {
+                          type: ["number", "null"],
+                        },
+                      },
+                      required: [
+                        "id",
+                        "instruction",
+                        "isCompleted",
+                        "isBeginnerFriendly",
+                      ],
+                    },
+                  },
+                  nutritionalInfo: {
+                    type: "object",
+                    properties: {
+                      calories: { type: ["number", "null"] },
+                      protein: { type: ["number", "null"] },
+                      carbohydrates: { type: ["number", "null"] },
+                      fat: { type: ["number", "null"] },
+                      fiber: { type: ["number", "null"] },
+                      sugar: { type: ["number", "null"] },
+                      sodium: { type: ["number", "null"] },
+                    },
+                  },
+                  sourceUrl: { type: "string" },
+                  originalAuthor: { type: "string" },
+                  tags: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  categoryIds: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
                 },
-                required: ['name', 'quantity', 'unit', 'isChecked']
-              }
+                required: [
+                  "title",
+                  "coverImage",
+                  "ingredients",
+                  "steps",
+                  "nutritionalInfo",
+                  "sourceUrl",
+                  "originalAuthor",
+                  "tags",
+                  "categoryIds",
+                ],
+              },
+              temperature: 0.3,
             },
-            steps: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  instruction: { type: 'string' },
-                  isCompleted: { type: 'boolean' },
-                  isBeginnerFriendly: { type: 'boolean' },
-                  timerDuration: { type: ['number', 'null'] }
-                },
-                required: ['id', 'instruction', 'isCompleted', 'isBeginnerFriendly']
-              }
-            },
-            nutritionalInfo: {
-              type: 'object',
-              properties: {
-                calories: { type: ['number', 'null'] },
-                protein: { type: ['number', 'null'] },
-                carbohydrates: { type: ['number', 'null'] },
-                fat: { type: ['number', 'null'] },
-                fiber: { type: ['number', 'null'] },
-                sugar: { type: ['number', 'null'] },
-                sodium: { type: ['number', 'null'] }
-              }
-            },
-            sourceUrl: { type: 'string' },
-            originalAuthor: { type: 'string' },
-            tags: {
-              type: 'array',
-              items: { type: 'string' }
-            },
-            categoryIds: {
-              type: 'array',
-              items: { type: 'string' }
-            }
           },
-          required: ['title', 'coverImage', 'ingredients', 'steps', 'nutritionalInfo', 'sourceUrl', 'originalAuthor', 'tags', 'categoryIds']
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+            timeout: 60000, // 60 second timeout
+          }
+        );
+
+        // Check if response has candidates
+        if (
+          !response.data.candidates ||
+          response.data.candidates.length === 0
+        ) {
+          throw new Error("No candidates in Gemini response");
         }
-      }
-    },
-    {
-      headers: {
-        'Content-Type': 'application/json'
+
+        const candidate = response.data.candidates[0];
+        if (candidate.finishReason !== "STOP") {
+          console.warn(
+            `Gemini finish reason: ${candidate.finishReason}. Model: ${model}`
+          );
+        }
+
+        const responseText = candidate.content.parts[0].text;
+        let extractedData: any;
+
+        try {
+          extractedData =
+            typeof responseText === "string"
+              ? JSON.parse(responseText)
+              : responseText;
+        } catch (parseError: any) {
+          throw new Error(
+            `Failed to parse Gemini response as JSON: ${
+              parseError.message
+            }. Response: ${responseText.substring(0, 200)}`
+          );
+        }
+
+        // Validate required fields
+        if (!extractedData.title) {
+          throw new Error("Extracted data missing required field: title");
+        }
+
+        // Ensure sourceUrl is set
+        extractedData.sourceUrl = sourceUrl;
+
+        return extractedData;
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`Failed to use model ${model}:`, error.message);
+        // Try next model
+        continue;
       }
     }
-  );
-  
-  const responseText = response.data.candidates[0].content.parts[0].text;
-  let extractedData;
-  try {
-    extractedData = typeof responseText === 'string' ? JSON.parse(responseText) : responseText;
-  } catch (parseError) {
-    throw new Error(`Failed to parse LLM response as JSON: ${parseError}`);
-  }
-  */
 
-  // Placeholder: You must implement the actual LLM call
-  throw new Error(
-    "LLM API call not implemented. Please add your OpenAI or Gemini API integration."
-  );
+    // If all models failed, throw the last error
+    throw new Error(
+      `All Gemini models failed. Last error: ${
+        lastError?.message || "Unknown error"
+      }`
+    );
+  } catch (error: any) {
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+      throw new Error(`Gemini API error (${status}): ${JSON.stringify(data)}`);
+    }
+    throw error;
+  }
 }
 
 /**
  * Extract recipe from URL using web scraping and LLM
  */
-export const extractRecipeFromUrl = functions.https.onCall(
-  async (data: { url: string }, context) => {
-    // Verify authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "User must be authenticated to extract recipes"
-      );
-    }
+export const extractRecipeFromUrl = functions
+  .region("europe-central2")
+  .https.onCall(async (data: { url: string }, context) => {
+    // Note: Authentication is optional - users can import recipes without logging in
 
     // Validate input
     if (!data.url || typeof data.url !== "string") {
@@ -407,8 +462,7 @@ export const extractRecipeFromUrl = functions.https.onCall(
         );
       }
     }
-  }
-);
+  });
 
 /**
  * Generate nutritional information from ingredients using AI
@@ -449,52 +503,27 @@ async function generateNutritionFromIngredients(
 
   const prompt = NUTRITION_GENERATION_PROMPT + ingredientsList;
 
-  // Try OpenAI first, then Gemini
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const response = await axios.post(
-        "https://api.openai.com/v1/chat/completions",
-        {
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are a nutrition calculation assistant. Always respond with valid JSON only.",
-            },
-            {
-              role: "user",
-              content: prompt,
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.3,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+  // Use Gemini for nutrition generation
+  const apiKey =
+    process.env.GEMINI_API_KEY || functions.config().gemini?.api_key || null;
 
-      const responseText = response.data.choices[0].message.content;
-      const nutritionData =
-        typeof responseText === "string"
-          ? JSON.parse(responseText)
-          : responseText;
-      return nutritionData;
-    } catch (error) {
-      console.error("OpenAI nutrition generation failed:", error);
-      // Fall through to Gemini
-    }
+  if (!apiKey) {
+    throw new Error(
+      "GEMINI_API_KEY is not configured. Please set it using:\n" +
+        "1. Environment variable: GEMINI_API_KEY\n" +
+        '2. Firebase config: firebase functions:config:set gemini.api_key="YOUR_KEY"\n' +
+        "3. Firebase secrets: firebase functions:secrets:set GEMINI_API_KEY"
+    );
   }
 
-  // Try Gemini as fallback
-  if (process.env.GEMINI_API_KEY) {
+  // Try Gemini models (Pro first, then Flash)
+  const models = ["gemini-1.5-pro", "gemini-1.5-flash"];
+  let lastError: any = null;
+
+  for (const model of models) {
     try {
       const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
           contents: [
             {
@@ -522,38 +551,67 @@ async function generateNutritionFromIngredients(
             },
             temperature: 0.3,
           },
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          timeout: 60000, // 60 second timeout
         }
       );
 
-      const responseText = response.data.candidates[0].content.parts[0].text;
-      const nutritionData =
-        typeof responseText === "string"
-          ? JSON.parse(responseText)
-          : responseText;
+      // Check if response has candidates
+      if (!response.data.candidates || response.data.candidates.length === 0) {
+        throw new Error("No candidates in Gemini response");
+      }
+
+      const candidate = response.data.candidates[0];
+      if (candidate.finishReason !== "STOP") {
+        console.warn(
+          `Gemini finish reason: ${candidate.finishReason}. Model: ${model}`
+        );
+      }
+
+      const responseText = candidate.content.parts[0].text;
+      let nutritionData: any;
+
+      try {
+        nutritionData =
+          typeof responseText === "string"
+            ? JSON.parse(responseText)
+            : responseText;
+      } catch (parseError: any) {
+        throw new Error(
+          `Failed to parse Gemini response as JSON: ${
+            parseError.message
+          }. Response: ${responseText.substring(0, 200)}`
+        );
+      }
+
       return nutritionData;
-    } catch (error) {
-      console.error("Gemini nutrition generation failed:", error);
-      throw new Error("Failed to generate nutritional information");
+    } catch (error: any) {
+      lastError = error;
+      console.warn(`Failed to use model ${model}:`, error.message);
+      // Try next model
+      continue;
     }
   }
 
+  // If all models failed, throw the last error
   throw new Error(
-    "No AI API key configured. Please set OPENAI_API_KEY or GEMINI_API_KEY."
+    `All Gemini models failed. Last error: ${
+      lastError?.message || "Unknown error"
+    }`
   );
 }
 
 /**
  * Generate nutritional info from ingredients
  */
-export const generateNutritionalInfo = functions.https.onCall(
-  async (data: { ingredients: Ingredient[] }, context) => {
-    // Verify authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "User must be authenticated to generate nutritional info"
-      );
-    }
+export const generateNutritionalInfo = functions
+  .region("europe-central2")
+  .https.onCall(async (data: { ingredients: Ingredient[] }, context) => {
+    // Note: Authentication is optional - users can generate nutritional info without logging in
 
     // Validate input
     if (
@@ -579,5 +637,4 @@ export const generateNutritionalInfo = functions.https.onCall(
         `Failed to generate nutritional info: ${error.message}`
       );
     }
-  }
-);
+  });

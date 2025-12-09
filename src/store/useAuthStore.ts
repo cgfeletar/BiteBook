@@ -1,12 +1,12 @@
-import { create } from 'zustand';
-import { 
-  User as FirebaseUser,
-  signInWithEmailAndPassword,
+import {
   createUserWithEmailAndPassword,
-  signOut,
+  User as FirebaseUser,
   onAuthStateChanged,
-} from 'firebase/auth';
-import { auth } from '../config/firebase';
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+import { create } from "zustand";
+import { auth } from "../config/firebase";
 
 // Generic User type that can be extended
 export interface User {
@@ -32,7 +32,7 @@ interface AuthState {
 // Convert Firebase User to generic User
 const mapFirebaseUser = (firebaseUser: FirebaseUser | null): User | null => {
   if (!firebaseUser) return null;
-  
+
   return {
     uid: firebaseUser.uid,
     email: firebaseUser.email,
@@ -42,20 +42,32 @@ const mapFirebaseUser = (firebaseUser: FirebaseUser | null): User | null => {
 };
 
 export const useAuthStore = create<AuthState>((set) => {
-  // Initialize auth state listener
-  const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-    set({
-      user: mapFirebaseUser(firebaseUser),
-      loading: false,
-      initialized: true,
-    });
-  });
+  // Initialize auth state listener with error handling
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    (firebaseUser) => {
+      set({
+        user: mapFirebaseUser(firebaseUser),
+        loading: false,
+        initialized: true,
+      });
+    },
+    (error) => {
+      // Handle auth state change errors silently
+      // Mark as initialized even on error so app doesn't hang
+      set({
+        user: null,
+        loading: false,
+        initialized: true,
+      });
+    }
+  );
 
   return {
     user: null,
     loading: true,
     initialized: false,
-    
+
     signIn: async (email: string, password: string) => {
       set({ loading: true });
       try {
@@ -65,7 +77,7 @@ export const useAuthStore = create<AuthState>((set) => {
         throw error;
       }
     },
-    
+
     signUp: async (email: string, password: string) => {
       set({ loading: true });
       try {
@@ -75,7 +87,7 @@ export const useAuthStore = create<AuthState>((set) => {
         throw error;
       }
     },
-    
+
     logout: async () => {
       set({ loading: true });
       try {
@@ -86,7 +98,7 @@ export const useAuthStore = create<AuthState>((set) => {
         throw error;
       }
     },
-    
+
     setUser: (user: User | null) => set({ user }),
     setLoading: (loading: boolean) => set({ loading }),
   };
@@ -97,4 +109,3 @@ export const cleanupAuthListener = () => {
   // The listener is automatically cleaned up when the store is destroyed
   // but you can add custom cleanup logic here if needed
 };
-

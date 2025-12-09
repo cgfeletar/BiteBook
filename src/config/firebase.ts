@@ -1,6 +1,6 @@
-import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { FirebaseApp, getApps, initializeApp } from "firebase/app";
+import { Auth, getAuth } from "firebase/auth";
+import { Firestore, getFirestore } from "firebase/firestore";
 
 // Firebase configuration
 const firebaseConfig = {
@@ -22,10 +22,11 @@ if (getApps().length === 0) {
 }
 
 // Initialize Firebase Auth
+// Note: In React Native, Firebase Auth automatically handles persistence
+// No need to set persistence explicitly (browserLocalPersistence is web-only)
 const auth: Auth = getAuth(app);
 
 // Initialize Firestore
 const db: Firestore = getFirestore(app);
 
 export { app, auth, db };
-
