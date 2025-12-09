@@ -790,11 +790,6 @@ export default function RecipeDetailScreen() {
                         activeOpacity={0.7}
                         style={{ minHeight: 44 }}
                       >
-                        <View className="w-8 h-8 bg-dark-sage rounded-full items-center justify-center mr-4">
-                          <Text className="text-off-white font-bold text-xs">
-                            {index + 1}
-                          </Text>
-                        </View>
                         <Text className="text-charcoal-gray flex-1 text-base">
                           <Text className="font-semibold">
                             {displayQuantity} {displayUnit}

@@ -11,9 +11,9 @@ export default function TabLayout() {
           tabBarStyle: { display: 'none' },
         }}>
         <Tabs.Screen name="index" />
-        <Tabs.Screen name="search" />
         <Tabs.Screen name="add" />
         <Tabs.Screen name="books" />
+        <Tabs.Screen name="settings" />
         <Tabs.Screen name="shopping" />
       </Tabs>
       <CustomTabBar />

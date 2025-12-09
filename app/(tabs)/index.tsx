@@ -1,5 +1,6 @@
 import { RecipeCard } from "@/components/RecipeCard";
 import "@/nativewind-setup";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Recipe } from "@/src/types";
 import { router } from "expo-router";
 import { Timestamp } from "firebase/firestore";
@@ -304,6 +305,7 @@ export default function RecipeFeed() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const recipes = useRecipeStore((state) => state.recipes);
 
   // Determine number of columns based on screen width
   const isTablet = width >= 768;
@@ -352,14 +354,14 @@ export default function RecipeFeed() {
             activeOpacity={0.7}
             style={{ minWidth: 44, minHeight: 44 }}
           >
-            <User size={20} color="#3E3E3E" />
+            <User size={20} color="white" />
           </TouchableOpacity>
         </View>
 
         {/* Search Bar */}
         <View className="px-6 mb-4">
           <View className="bg-white rounded-xl flex flex-row items-center px-4 py-3">
-            <Search size={20} color="#9CA3AF" />
+            <Search size={20} color="white" />
             <TextInput
               className="flex-1 ml-3 text-charcoal text-base"
               placeholder="Search recipes..."
@@ -384,7 +386,9 @@ export default function RecipeFeed() {
                   key={category}
                   onPress={() => setActiveCategory(category)}
                   className={`rounded-full px-4 py-2 ${
-                    isActive ? "bg-mocha" : "bg-white border border-stone-100"
+                    isActive
+                      ? "bg-dark-sage"
+                      : "bg-white border border-stone-100"
                   }`}
                   activeOpacity={0.7}
                   style={{ minHeight: 44, justifyContent: "center" }}
@@ -404,7 +408,7 @@ export default function RecipeFeed() {
 
         {/* Main Content - Recipe Grid */}
         <FlatList
-          data={dummyRecipes}
+          data={recipes.length > 0 ? recipes : dummyRecipes}
           numColumns={numColumns}
           renderItem={({ item, index }) => {
             const isLastInRow = (index + 1) % numColumns === 0;

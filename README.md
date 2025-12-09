@@ -72,3 +72,15 @@ See your migration options at: https://firebase.google.com/docs/functions/config
 ## Google LLM API Key
 
 https://aistudio.google.com/api-keys
+
+## Google cloud dashboard
+
+https://console.cloud.google.com/welcome/new?project=fabled-electron-480519-k5&authuser=1
+
+## Firebase Dashboard
+
+https://console.firebase.google.com/u/1/project/savorboard-5d4cc/overview
+
+## Firebase Commands
+
+firebase functions:list - list firebase calls and status

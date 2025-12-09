@@ -1,5 +1,11 @@
 import { usePathname, useRouter, useSegments } from "expo-router";
-import { BookOpen, Home, Plus, Search, ShoppingBag } from "lucide-react-native";
+import {
+  BookOpen,
+  Home,
+  Plus,
+  Settings,
+  ShoppingBag,
+} from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,10 +26,10 @@ export function CustomTabBar() {
 
   const tabs = [
     { name: "index", icon: Home, route: "/(tabs)/" },
-    { name: "search", icon: Search, route: "/(tabs)/search" },
-    { name: "add", icon: Plus, route: "/(tabs)/add", isMiddle: true },
     { name: "books", icon: BookOpen, route: "/(tabs)/books" },
+    { name: "add", icon: Plus, route: "/(tabs)/add", isMiddle: true },
     { name: "shopping", icon: ShoppingBag, route: "/(tabs)/shopping" },
+    { name: "settings", icon: Settings, route: "/(tabs)/settings" },
   ];
 
   const isActive = (route: string) => {

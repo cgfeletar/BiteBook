@@ -20,14 +20,14 @@ export default function RootLayout() {
   return (
     <View style={styles.container} className="flex-1 bg-off-white">
       <ThemeProvider value={DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="recipe-detail" options={{ headerShown: false, presentation: 'card' }} />
           <Stack.Screen name="book-detail" options={{ headerShown: false, presentation: 'card' }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
+        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+      </Stack>
         <StatusBar style="dark" />
-      </ThemeProvider>
+    </ThemeProvider>
     </View>
   );
 }

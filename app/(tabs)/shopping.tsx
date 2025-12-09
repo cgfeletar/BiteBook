@@ -189,9 +189,11 @@ export default function ShoppingListScreen() {
           >
             {item.name}
           </Text>
-          <Text className="text-sm text-charcoal-gray/60">
-            {item.quantity} {item.unit}
-          </Text>
+          {!isPantryMode && (
+            <Text className="text-sm text-charcoal-gray/60">
+              {item.quantity} {item.unit}
+            </Text>
+          )}
         </View>
 
         {/* Move Button */}
