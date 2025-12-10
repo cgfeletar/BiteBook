@@ -1,6 +1,7 @@
 import "@/nativewind-setup";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
+import { formatQuantity } from "@/src/utils/fractionFormatter";
 import { PantryItem, ShoppingItem } from "@/src/types";
 import {
   AISLE_ORDER,
@@ -13,10 +14,12 @@ import {
   Package,
   Plus,
   ShoppingBag,
+  Trash2,
   X,
 } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import {
+  Alert,
   FlatList,
   SectionList,
   Text,
@@ -36,10 +39,12 @@ export default function ShoppingListScreen() {
   const addShoppingItems = useShoppingListStore(
     (state) => state.addShoppingItems
   );
+  const clearShoppingList = useShoppingListStore((state) => state.clearAll);
 
   const pantryItems = usePantryStore((state) => state.items);
   const addPantryItem = usePantryStore((state) => state.addItem);
   const deletePantryItem = usePantryStore((state) => state.deleteItem);
+  const clearPantry = usePantryStore((state) => state.clearAll);
   const moveFromShoppingList = usePantryStore(
     (state) => state.moveFromShoppingList
   );
@@ -191,7 +196,7 @@ export default function ShoppingListScreen() {
           </Text>
           {!isPantryMode && (
             <Text className="text-sm text-charcoal-gray/60">
-              {item.quantity} {item.unit}
+              {formatQuantity(item.quantity, item.unit)} {item.unit}
             </Text>
           )}
         </View>
@@ -274,6 +279,69 @@ export default function ShoppingListScreen() {
           <Text className="text-2xl font-bold text-charcoal-gray">
             {isPantryMode ? "Pantry" : "Shopping List"}
           </Text>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => {
+                if (showAddForm) {
+                  setShowAddForm(false);
+                  setNewItemName("");
+                  setNewItemQuantity("");
+                  setNewItemUnit("");
+                } else {
+                  setShowAddForm(true);
+                }
+              }}
+              className={`flex-row items-center rounded-lg px-3 py-2 ${
+                showAddForm ? "bg-charcoal-gray/10" : "bg-warm-sand"
+              }`}
+              activeOpacity={0.7}
+            >
+              <Plus size={16} color="#5A6E6C" style={{ marginRight: 6 }} />
+              <Text
+                className={`font-semibold text-sm ${
+                  showAddForm ? "text-charcoal-gray" : "text-dark-sage"
+                }`}
+              >
+                Add Item
+              </Text>
+            </TouchableOpacity>
+            {currentItems.length > 0 && !showAddForm && (
+              <TouchableOpacity
+                onPress={() => {
+                  Alert.alert(
+                    `Clear ${isPantryMode ? "Pantry" : "Shopping List"}`,
+                    `Are you sure you want to clear all items from your ${
+                      isPantryMode ? "pantry" : "shopping list"
+                    }? This action cannot be undone.`,
+                    [
+                      {
+                        text: "Cancel",
+                        style: "cancel",
+                      },
+                      {
+                        text: "Clear All",
+                        style: "destructive",
+                        onPress: () => {
+                          if (isPantryMode) {
+                            clearPantry();
+                          } else {
+                            clearShoppingList();
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+                className="flex-row items-center bg-charcoal-gray/10 rounded-lg px-3 py-2"
+                activeOpacity={0.7}
+              >
+                <Trash2 size={16} color="#3E3E3E" style={{ marginRight: 6 }} />
+                <Text className="text-charcoal-gray font-semibold text-sm">
+                  Clear All
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Toggle Button */}
@@ -329,14 +397,14 @@ export default function ShoppingListScreen() {
           data={currentItems}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 20 }}
           ListEmptyComponent={
             <View className="items-center justify-center py-12 px-6">
               <Text className="text-charcoal-gray/60 text-base text-center">
                 Your pantry is empty
               </Text>
               <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
-                Tap the + button to add items
+                Tap "Add Item" to add items
               </Text>
             </View>
           }
@@ -353,7 +421,7 @@ export default function ShoppingListScreen() {
             </View>
           )}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 120 }}
+          contentContainerStyle={{ paddingBottom: 20 }}
           stickySectionHeadersEnabled={false}
           ListEmptyComponent={
             <View className="items-center justify-center py-12 px-6">
@@ -361,7 +429,7 @@ export default function ShoppingListScreen() {
                 Your shopping list is empty
               </Text>
               <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
-                Tap the + button to add items
+                Tap "Add Item" to add items
               </Text>
             </View>
           }
@@ -370,7 +438,10 @@ export default function ShoppingListScreen() {
 
       {/* Add Item Form */}
       {showAddForm && (
-        <View className="bg-soft-beige border-t border-warm-sand px-6 py-4">
+        <View 
+          className="bg-soft-beige border-t border-warm-sand px-6 py-4 absolute bottom-0 left-0 right-0"
+          style={{ paddingBottom: 80 }}
+        >
           <View className="mb-3">
             <Text className="text-sm text-charcoal-gray mb-2 ml-1">
               Item Name
@@ -433,16 +504,6 @@ export default function ShoppingListScreen() {
         </View>
       )}
 
-      {/* Add Button */}
-      {!showAddForm && (
-        <TouchableOpacity
-          onPress={() => setShowAddForm(true)}
-          className="absolute bottom-6 right-6 bg-dark-sage rounded-full w-14 h-14 items-center justify-center shadow-lg"
-          activeOpacity={0.8}
-        >
-          <Plus size={24} color="#FAF9F7" />
-        </TouchableOpacity>
-      )}
     </SafeAreaView>
   );
 }

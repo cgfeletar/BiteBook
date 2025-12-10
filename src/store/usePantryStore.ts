@@ -1,35 +1,36 @@
-import { create } from 'zustand';
-import { PantryItem, ShoppingItem } from '../types';
-import { mergeIngredients } from '../utils/shoppingListUtils';
+import { create } from "zustand";
+import { PantryItem, ShoppingItem } from "../types";
+import { mergeIngredients } from "../utils/shoppingListUtils";
 
 interface PantryState {
   items: PantryItem[];
-  addItem: (item: Omit<PantryItem, 'id'>) => void;
-  addItems: (items: Omit<PantryItem, 'id'>[]) => void;
+  addItem: (item: Omit<PantryItem, "id">) => void;
+  addItems: (items: Omit<PantryItem, "id">[]) => void;
   updateItem: (id: string, updates: Partial<PantryItem>) => void;
   deleteItem: (id: string) => void;
   moveFromShoppingList: (shoppingItem: ShoppingItem) => void;
+  clearAll: () => void;
 }
 
 export const usePantryStore = create<PantryState>((set, get) => ({
   items: [
     {
-      id: 'p1',
-      name: 'Olive Oil',
+      id: "p1",
+      name: "olive oil",
       quantity: 1,
-      unit: 'bottle',
+      unit: "bottle",
     },
     {
-      id: 'p2',
-      name: 'Salt',
+      id: "p2",
+      name: "salt",
       quantity: 1,
-      unit: 'container',
+      unit: "container",
     },
     {
-      id: 'p3',
-      name: 'Pepper',
+      id: "p3",
+      name: "pepper",
       quantity: 1,
-      unit: 'container',
+      unit: "container",
     },
   ],
 
@@ -94,7 +95,7 @@ export const usePantryStore = create<PantryState>((set, get) => ({
   },
 
   moveFromShoppingList: (shoppingItem) => {
-    const pantryItem: Omit<PantryItem, 'id'> = {
+    const pantryItem: Omit<PantryItem, "id"> = {
       name: shoppingItem.name,
       quantity: shoppingItem.quantity,
       unit: shoppingItem.unit,
@@ -102,5 +103,8 @@ export const usePantryStore = create<PantryState>((set, get) => ({
 
     get().addItem(pantryItem);
   },
-}));
 
+  clearAll: () => {
+    set({ items: [] });
+  },
+}));

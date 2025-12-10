@@ -2,9 +2,10 @@ import "@/nativewind-setup";
 import { importRecipe } from "@/src/services/recipeService";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { router } from "expo-router";
-import { Link, Loader2 } from "lucide-react-native";
+import { Link } from "lucide-react-native";
 import { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -44,42 +45,26 @@ export default function AddScreen() {
       // Add recipe to store
       const newRecipe = addRecipe(recipeData);
 
-      // Show success message
-      Alert.alert(
-        "Success!",
-        `Recipe "${recipeData.title}" has been imported successfully.`,
-        [
-          {
-            text: "View Recipe",
-            onPress: () => {
-              // Navigate to recipe detail
-              router.push({
-                pathname: "/recipe-detail",
-                params: {
-                  recipeData: JSON.stringify(newRecipe),
-                },
-              });
-              // Reset form
-              setUrl("");
-            },
-          },
-          {
-            text: "OK",
-            onPress: () => {
-              // Reset form
-              setUrl("");
-            },
-          },
-        ]
-      );
+      // Reset form
+      setUrl("");
+
+      // Automatically navigate to recipe detail page
+      router.push({
+        pathname: "/recipe-detail",
+        params: {
+          recipeData: JSON.stringify(newRecipe),
+        },
+      });
     } catch (error: any) {
       console.error("Error importing recipe:", error);
-      const errorMessage = error.message || "Failed to import recipe. Please try again.";
-      
+      const errorMessage =
+        error.message || "Failed to import recipe. Please try again.";
+
       // Show more detailed error message
       Alert.alert(
         "Import Failed",
-        errorMessage + "\n\nNote: Make sure the Cloud Functions are deployed and the URL is accessible.",
+        errorMessage +
+          "\n\nNote: Make sure the Cloud Functions are deployed and the URL is accessible.",
         [{ text: "OK" }]
       );
     } finally {
@@ -106,8 +91,8 @@ export default function AddScreen() {
               </Text>
               <Text className="text-base text-charcoal-gray/60">
                 Import a recipe from any blog or website by pasting the URL
-                below. Our AI will extract the ingredients, instructions, and
-                cover image automatically.
+                below. We will extract the ingredients, instructions, and cover
+                image automatically.
               </Text>
             </View>
 
@@ -148,7 +133,11 @@ export default function AddScreen() {
               >
                 {isLoading ? (
                   <View className="flex-row items-center">
-                    <Loader2 size={20} color="#FAF9F7" style={{ marginRight: 8 }} />
+                    <ActivityIndicator
+                      size="small"
+                      color="#FAF9F7"
+                      style={{ marginRight: 8 }}
+                    />
                     <Text className="text-off-white text-base font-semibold">
                       Importing Recipe...
                     </Text>

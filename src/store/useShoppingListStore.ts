@@ -10,6 +10,7 @@ interface ShoppingListState {
   togglePurchased: (id: string) => void;
   deleteItem: (id: string) => void;
   clearPurchased: () => void;
+  clearAll: () => void;
 }
 
 export const useShoppingListStore = create<ShoppingListState>((set) => ({
@@ -55,6 +56,10 @@ export const useShoppingListStore = create<ShoppingListState>((set) => ({
     set((state) => ({
       items: state.items.filter((item) => !item.isPurchased),
     }));
+  },
+
+  clearAll: () => {
+    set({ items: [] });
   },
 }));
 

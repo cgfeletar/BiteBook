@@ -3,6 +3,7 @@ import { usePantryStore } from "@/src/store/usePantryStore";
 import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
+import { formatQuantity } from "@/src/utils/fractionFormatter";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -65,9 +66,39 @@ export default function RecipeDetailScreen() {
   const [showBookSelector, setShowBookSelector] = useState(false);
   const isImported = params.isImported === "true";
 
+  // Combine duplicate ingredients (same name and unit)
+  const combinedIngredients = useMemo(() => {
+    if (!recipeData || !recipeData.ingredients) {
+      return [];
+    }
+
+    const ingredientMap = new Map<string, Ingredient>();
+
+    recipeData.ingredients.forEach((ing) => {
+      // Create a key from normalized name and unit
+      const key = `${ing.name.toLowerCase().trim()}|${ing.unit
+        .toLowerCase()
+        .trim()}`;
+
+      if (ingredientMap.has(key)) {
+        // Combine with existing ingredient
+        const existing = ingredientMap.get(key)!;
+        ingredientMap.set(key, {
+          ...existing,
+          quantity: existing.quantity + ing.quantity,
+        });
+      } else {
+        // Add new ingredient
+        ingredientMap.set(key, { ...ing });
+      }
+    });
+
+    return Array.from(ingredientMap.values());
+  }, [recipeData?.ingredients]);
+
   // Split ingredients into two groups
   const { ingredientsInPantry, ingredientsToBuy } = useMemo(() => {
-    if (!recipeData || !recipeData.ingredients) {
+    if (!combinedIngredients || combinedIngredients.length === 0) {
       return { ingredientsInPantry: [], ingredientsToBuy: [] };
     }
 
@@ -79,10 +110,10 @@ export default function RecipeDetailScreen() {
       );
     };
 
-    const inPantry: typeof recipeData.ingredients = [];
-    const toBuy: typeof recipeData.ingredients = [];
+    const inPantry: Ingredient[] = [];
+    const toBuy: Ingredient[] = [];
 
-    recipeData.ingredients.forEach((ing) => {
+    combinedIngredients.forEach((ing) => {
       if (isIngredientInPantry(ing.name)) {
         inPantry.push(ing);
       } else {
@@ -91,7 +122,7 @@ export default function RecipeDetailScreen() {
     });
 
     return { ingredientsInPantry: inPantry, ingredientsToBuy: toBuy };
-  }, [recipeData?.ingredients, pantryItems]);
+  }, [combinedIngredients, pantryItems]);
 
   // Daily recommended values
   const dailyValues = {
@@ -556,73 +587,61 @@ export default function RecipeDetailScreen() {
             )}
 
             {/* Header Content Overlay */}
-            <SafeAreaView
-              className="absolute top-0 left-0 right-0"
-              edges={["top"]}
+            <View
+              className="absolute top-0 left-0 right-0 bottom-0"
               style={{ zIndex: 10, justifyContent: "flex-end" }}
             >
-              {/* Mocha background overlay - only at bottom */}
+              {/* Navigation buttons at top */}
+              <SafeAreaView
+                edges={["top"]}
+                style={{ position: "absolute", top: 0, left: 0, right: 0 }}
+              >
+                <View className="flex-row items-center justify-between w-full px-4">
+                  <RNTouchableOpacity
+                    onPress={() => {
+                      router.back();
+                    }}
+                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      backgroundColor: "rgba(231, 216, 201, 0.8)",
+                      borderRadius: 22,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <ArrowLeft size={20} color="#3E3E3E" />
+                  </RNTouchableOpacity>
+
+                  <RNTouchableOpacity
+                    onPress={() => setShowMenu(true)}
+                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      backgroundColor: "rgba(231, 216, 201, 0.8)",
+                      borderRadius: 22,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <MoreVertical size={20} color="#3E3E3E" />
+                  </RNTouchableOpacity>
+                </View>
+              </SafeAreaView>
+
+              {/* Background overlay with content - aligned to bottom of image */}
               <Animated.View
                 style={[
                   headerContentStyle,
                   {
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: 130,
                     backgroundColor: "rgba(231, 216, 201, 0.8)",
-                  },
-                ]}
-              />
-              <View className="flex-row items-center justify-between w-full px-4">
-                <RNTouchableOpacity
-                  onPress={() => {
-                    router.back();
-                  }}
-                  hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    backgroundColor: "rgba(231, 216, 201, 0.8)",
-                    borderRadius: 22,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 16,
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <ArrowLeft size={20} color="#3E3E3E" />
-                </RNTouchableOpacity>
-
-                <RNTouchableOpacity
-                  onPress={() => setShowMenu(true)}
-                  hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                  style={{
-                    width: 44,
-                    height: 44,
-                    backgroundColor: "rgba(231, 216, 201, 0.8)",
-                    borderRadius: 22,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 16,
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MoreVertical size={20} color="#3E3E3E" />
-                </RNTouchableOpacity>
-              </View>
-
-              {/* Content */}
-              <Animated.View
-                style={[
-                  headerContentStyle,
-                  {
                     paddingHorizontal: 24,
                     paddingBottom: 24,
                     paddingTop: 12,
-                    minHeight: HEADER_HEIGHT - 110,
-                    justifyContent: "flex-end",
                   },
                 ]}
               >
@@ -638,7 +657,7 @@ export default function RecipeDetailScreen() {
                   </Text>
                 )}
               </Animated.View>
-            </SafeAreaView>
+            </View>
           </Animated.View>
 
           {/* Content */}
@@ -723,22 +742,6 @@ export default function RecipeDetailScreen() {
                   </Text>
                   <View className="flex-row bg-soft-beige rounded-full p-1">
                     <RNTouchableOpacity
-                      onPress={() => setUseMetric(true)}
-                      className={`px-4 py-2 rounded-full items-center ${
-                        useMetric ? "bg-dark-sage" : ""
-                      }`}
-                      activeOpacity={0.7}
-                      style={{ minHeight: 36, justifyContent: "center" }}
-                    >
-                      <Text
-                        className={`text-sm font-semibold ${
-                          useMetric ? "text-off-white" : "text-charcoal-gray"
-                        }`}
-                      >
-                        Grams
-                      </Text>
-                    </RNTouchableOpacity>
-                    <RNTouchableOpacity
                       onPress={() => setUseMetric(false)}
                       className={`px-4 py-2 rounded-full items-center ${
                         !useMetric ? "bg-dark-sage" : ""
@@ -754,6 +757,22 @@ export default function RecipeDetailScreen() {
                         Cups
                       </Text>
                     </RNTouchableOpacity>
+                    <RNTouchableOpacity
+                      onPress={() => setUseMetric(true)}
+                      className={`px-4 py-2 rounded-full items-center ${
+                        useMetric ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                      style={{ minHeight: 36, justifyContent: "center" }}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          useMetric ? "text-off-white" : "text-charcoal-gray"
+                        }`}
+                      >
+                        Grams
+                      </Text>
+                    </RNTouchableOpacity>
                   </View>
                 </View>
 
@@ -763,25 +782,70 @@ export default function RecipeDetailScreen() {
                     ingredient: Ingredient,
                     index: number
                   ) => {
-                    const displayQuantity = useMetric
-                      ? ingredient.unit.toLowerCase().includes("cup") ||
-                        ingredient.unit.toLowerCase().includes("tbsp") ||
-                        ingredient.unit.toLowerCase().includes("tsp")
-                        ? convertUnit(
-                            ingredient.quantity,
-                            ingredient.unit,
-                            true
-                          )
-                        : ingredient.quantity
-                      : ingredient.unit.toLowerCase().includes("g")
-                      ? convertUnit(ingredient.quantity, ingredient.unit, false)
-                      : ingredient.quantity;
+                    // Calculate display quantity (with unit conversion if needed)
+                    let displayQuantity: number | string = ingredient.quantity;
+                    let displayUnit = ingredient.unit;
 
-                    const displayUnit = useMetric
-                      ? "g"
-                      : ingredient.unit.toLowerCase().includes("g")
-                      ? "cups"
-                      : ingredient.unit;
+                    // Check if this is a whole item (eggs, pieces, etc.) - don't convert these
+                    const wholeItemUnits = [
+                      "egg",
+                      "eggs",
+                      "piece",
+                      "pieces",
+                      "whole",
+                      "item",
+                      "items",
+                      "large",
+                      "medium",
+                      "small",
+                    ];
+                    const isWholeItem = wholeItemUnits.some((u) =>
+                      ingredient.unit.toLowerCase().includes(u)
+                    );
+
+                    if (useMetric) {
+                      // Convert to metric
+                      if (
+                        !isWholeItem &&
+                        (ingredient.unit.toLowerCase().includes("cup") ||
+                          ingredient.unit.toLowerCase().includes("tbsp") ||
+                          ingredient.unit.toLowerCase().includes("tsp"))
+                      ) {
+                        displayQuantity = convertUnit(
+                          ingredient.quantity,
+                          ingredient.unit,
+                          true
+                        );
+                        displayUnit = "g";
+                      } else {
+                        displayQuantity = ingredient.quantity;
+                        displayUnit = ingredient.unit;
+                      }
+                    } else {
+                      // Convert from metric to imperial
+                      if (
+                        !isWholeItem &&
+                        ingredient.unit.toLowerCase().includes("g")
+                      ) {
+                        displayQuantity = convertUnit(
+                          ingredient.quantity,
+                          ingredient.unit,
+                          false
+                        );
+                        displayUnit = "cups";
+                      } else {
+                        displayQuantity = ingredient.quantity;
+                        displayUnit = ingredient.unit;
+                      }
+                    }
+
+                    // Format quantity as fraction for display (only for volume units)
+                    const formattedQuantity = formatQuantity(
+                      typeof displayQuantity === "number"
+                        ? displayQuantity
+                        : parseFloat(displayQuantity.toString()),
+                      displayUnit
+                    );
 
                     return (
                       <RNTouchableOpacity
@@ -792,7 +856,7 @@ export default function RecipeDetailScreen() {
                       >
                         <Text className="text-charcoal-gray flex-1 text-base">
                           <Text className="font-semibold">
-                            {displayQuantity} {displayUnit}
+                            {formattedQuantity} {displayUnit}
                           </Text>{" "}
                           {ingredient.name}
                         </Text>

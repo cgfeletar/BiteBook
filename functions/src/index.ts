@@ -111,8 +111,11 @@ EXTRACTION RULES:
    - Parse ingredient lists from various formats:
      * "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }
      * "1/2 tsp salt" → { name: "salt", quantity: 0.5, unit: "tsp" }
+     * "1 egg" → { name: "egg", quantity: 1, unit: "egg" } (NOT cups!)
      * "3 large eggs" → { name: "eggs", quantity: 3, unit: "large" }
-   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc.
+   - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
+   - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
+   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
    - Handle ranges: "2-3 cups" → use average (2.5) or first number (2)
    - Handle "to taste", "as needed" → quantity: 1, unit: "to taste"
    - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists
