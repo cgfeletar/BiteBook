@@ -5,7 +5,7 @@ import { Recipe } from "@/src/types";
 import { router } from "expo-router";
 import { Timestamp } from "firebase/firestore";
 import { Search, User } from "lucide-react-native";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -298,14 +298,67 @@ const dummyRecipes: Recipe[] = [
   },
 ];
 
-const categories = ["All", "Breakfast", "Vegan", "Italian"];
-
 export default function RecipeFeed() {
   const { width } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const recipes = useRecipeStore((state) => state.recipes);
+
+  // Calculate top 5 most used categories from recipe tags
+  const categories = useMemo(() => {
+    const allRecipes = recipes.length > 0 ? recipes : dummyRecipes;
+
+    // Count tag frequency
+    const tagCounts: Record<string, number> = {};
+    allRecipes.forEach((recipe) => {
+      recipe.tags?.forEach((tag) => {
+        // Capitalize first letter of each word for display
+        const formattedTag = tag
+          .split(/[-_\s]+/)
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+        tagCounts[formattedTag] = (tagCounts[formattedTag] || 0) + 1;
+      });
+    });
+
+    // Get top 5 most used tags
+    const topTags = Object.entries(tagCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([tag]) => tag);
+
+    // Always include "All" as the first category
+    return ["All", ...topTags];
+  }, [recipes]);
+
+  // Filter recipes based on active category
+  const filteredRecipes = useMemo(() => {
+    const allRecipes = recipes.length > 0 ? recipes : dummyRecipes;
+
+    if (activeCategory === "All") {
+      return allRecipes;
+    }
+
+    // Filter by tag (case-insensitive, handle formatting)
+    const categoryLower = activeCategory.toLowerCase().replace(/\s+/g, "-");
+    return allRecipes.filter((recipe) =>
+      recipe.tags?.some((tag) => {
+        const tagFormatted = tag
+          .split(/[-_\s]+/)
+          .map(
+            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          )
+          .join(" ");
+        return (
+          tagFormatted.toLowerCase() === activeCategory.toLowerCase() ||
+          tag.toLowerCase() === categoryLower
+        );
+      })
+    );
+  }, [recipes, activeCategory]);
 
   // Determine number of columns based on screen width
   const isTablet = width >= 768;
@@ -361,9 +414,9 @@ export default function RecipeFeed() {
         {/* Search Bar */}
         <View className="px-6 mb-4">
           <View className="bg-white rounded-xl flex flex-row items-center px-4 py-3">
-            <Search size={20} color="white" />
+            <Search size={18} color="#9CA3AF" />
             <TextInput
-              className="flex-1 ml-3 text-charcoal text-base"
+              className="flex-1 ml-3 mb-[4px] text-charcoal text-base"
               placeholder="Search recipes..."
               placeholderTextColor="#9CA3AF"
               value={searchQuery}
@@ -408,7 +461,7 @@ export default function RecipeFeed() {
 
         {/* Main Content - Recipe Grid */}
         <FlatList
-          data={recipes.length > 0 ? recipes : dummyRecipes}
+          data={filteredRecipes}
           numColumns={numColumns}
           renderItem={({ item, index }) => {
             const isLastInRow = (index + 1) % numColumns === 0;

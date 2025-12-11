@@ -1,13 +1,13 @@
 import "@/nativewind-setup";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
-import { formatQuantity } from "@/src/utils/fractionFormatter";
 import { PantryItem, ShoppingItem } from "@/src/types";
 import {
   AISLE_ORDER,
   Aisle,
   getAisleForIngredient,
 } from "@/src/utils/aisleMapper";
+import { formatQuantity } from "@/src/utils/fractionFormatter";
 import {
   ArrowRight,
   Check,
@@ -157,9 +157,23 @@ export default function ShoppingListScreen() {
     deletePantryItem(pantryItem.id);
   };
 
-  const renderItem = ({ item }: { item: ShoppingItem }) => {
+  const renderItem = ({
+    item,
+    index,
+    section,
+  }: {
+    item: ShoppingItem;
+    index?: number;
+    section?: { data: ShoppingItem[] };
+  }) => {
+    // Only add top margin for first item in a section (shopping list mode with sections)
+    const isFirstInSection = !isPantryMode && section && index === 0;
     return (
-      <View className="flex-row items-center bg-soft-beige rounded-xl px-4 py-3 mb-2 mx-4">
+      <View
+        className={`flex-row items-center bg-soft-beige rounded-xl px-4 py-3 mb-2 mx-4 ${
+          isFirstInSection ? "mt-3" : ""
+        }`}
+      >
         {!isPantryMode && (
           <TouchableOpacity
             onPress={() => togglePurchased(item.id)}
@@ -397,7 +411,7 @@ export default function ShoppingListScreen() {
           data={currentItems}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 20 }}
+          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 80 }}
           ListEmptyComponent={
             <View className="items-center justify-center py-12 px-6">
               <Text className="text-charcoal-gray/60 text-base text-center">
@@ -414,14 +428,14 @@ export default function ShoppingListScreen() {
           sections={groupedByAisle}
           renderItem={renderItem}
           renderSectionHeader={({ section: { title } }) => (
-            <View className="px-4 py-3 bg-warm-sand/50">
+            <View className="px-4 pt-4 pb-2 bg-warm-sand/50">
               <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
                 {title}
               </Text>
             </View>
           )}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 20 }}
+          contentContainerStyle={{ paddingBottom: 80 }}
           stickySectionHeadersEnabled={false}
           ListEmptyComponent={
             <View className="items-center justify-center py-12 px-6">
@@ -438,7 +452,7 @@ export default function ShoppingListScreen() {
 
       {/* Add Item Form */}
       {showAddForm && (
-        <View 
+        <View
           className="bg-soft-beige border-t border-warm-sand px-6 py-4 absolute bottom-0 left-0 right-0"
           style={{ paddingBottom: 80 }}
         >
@@ -503,7 +517,6 @@ export default function ShoppingListScreen() {
           </View>
         </View>
       )}
-
     </SafeAreaView>
   );
 }

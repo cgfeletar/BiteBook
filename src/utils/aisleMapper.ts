@@ -7,7 +7,7 @@ export type Aisle =
   | 'Meat & Seafood'
   | 'Bakery'
   | 'Frozen'
-  | 'Pantry'
+  | 'Baking'
   | 'Beverages'
   | 'Snacks'
   | 'Other';
@@ -18,7 +18,7 @@ export const AISLE_ORDER: Aisle[] = [
   'Dairy',
   'Bakery',
   'Frozen',
-  'Pantry',
+  'Baking',
   'Beverages',
   'Snacks',
   'Other',
@@ -144,7 +144,7 @@ export function getAisleForIngredient(ingredientName: string): Aisle {
     return 'Snacks';
   }
 
-  // Pantry (default for most dry goods)
+  // Baking (baking ingredients and dry goods)
   if (
     name.includes('flour') ||
     name.includes('sugar') ||
@@ -167,9 +167,10 @@ export function getAisleForIngredient(ingredientName: string): Aisle {
     name.includes('baking') ||
     name.includes('vanilla') ||
     name.includes('cocoa') ||
-    name.includes('chocolate')
+    name.includes('chocolate') ||
+    name.includes('chocolate chip')
   ) {
-    return 'Pantry';
+    return 'Baking';
   }
 
   return 'Other';

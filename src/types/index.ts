@@ -1,4 +1,4 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from "firebase/firestore";
 
 /**
  * Ingredient interface for recipe ingredients
@@ -49,6 +49,7 @@ export interface Recipe {
   originalAuthor: string;
   tags: string[];
   categoryIds: string[];
+  rating?: number; // 1-5 star rating
   createdAt: Timestamp | Date;
 }
 
@@ -86,21 +87,20 @@ export interface PantryItem {
 }
 
 // Type helpers for Firestore operations
-export type RecipeCreateInput = Omit<Recipe, 'id' | 'createdAt'> & {
+export type RecipeCreateInput = Omit<Recipe, "id" | "createdAt"> & {
   createdAt?: Timestamp | Date;
 };
 
-export type RecipeUpdateInput = Partial<Omit<Recipe, 'id' | 'createdAt'>>;
+export type RecipeUpdateInput = Partial<Omit<Recipe, "id" | "createdAt">>;
 
-export type CategoryCreateInput = Omit<Category, 'id'>;
+export type CategoryCreateInput = Omit<Category, "id">;
 
-export type CategoryUpdateInput = Partial<Omit<Category, 'id'>>;
+export type CategoryUpdateInput = Partial<Omit<Category, "id">>;
 
-export type ShoppingItemCreateInput = Omit<ShoppingItem, 'id'>;
+export type ShoppingItemCreateInput = Omit<ShoppingItem, "id">;
 
-export type ShoppingItemUpdateInput = Partial<Omit<ShoppingItem, 'id'>>;
+export type ShoppingItemUpdateInput = Partial<Omit<ShoppingItem, "id">>;
 
-export type PantryItemCreateInput = Omit<PantryItem, 'id'>;
+export type PantryItemCreateInput = Omit<PantryItem, "id">;
 
-export type PantryItemUpdateInput = Partial<Omit<PantryItem, 'id'>>;
-
+export type PantryItemUpdateInput = Partial<Omit<PantryItem, "id">>;

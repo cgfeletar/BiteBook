@@ -1,6 +1,7 @@
 import { generateNutritionalInfo } from "@/src/services/recipeService";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
 import { formatQuantity } from "@/src/utils/fractionFormatter";
@@ -10,17 +11,22 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  ChevronDown,
   Clock,
+  ExternalLink,
   MoreVertical,
   Share2,
   ShoppingBag,
+  Star,
   X,
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Linking,
   Modal,
+  Pressable,
   TouchableOpacity as RNTouchableOpacity,
   Share,
   Text,
@@ -55,15 +61,20 @@ export default function RecipeDetailScreen() {
   const [notes, setNotes] = useState("");
   const [viewByServing, setViewByServing] = useState(true); // true = by serving, false = whole recipe
   const [servings, setServings] = useState(4); // Default servings
+  const [recipeScale, setRecipeScale] = useState<1 | 1.5 | 2 | 3>(1);
   const addItemsToShoppingList = useShoppingListStore(
     (state) => state.addItems
   );
+  const updateRecipe = useRecipeStore((state) => state.updateRecipe);
+  const getRecipe = useRecipeStore((state) => state.getRecipe);
   const books = useRecipeBooksStore((state) => state.books);
   const addRecipeToBook = useRecipeBooksStore((state) => state.addRecipeToBook);
   const addRecipe = useRecipeBooksStore((state) => state.addRecipe);
   const pantryItems = usePantryStore((state) => state.items);
   const [showMenu, setShowMenu] = useState(false);
   const [showBookSelector, setShowBookSelector] = useState(false);
+  const [showScaleDropdown, setShowScaleDropdown] = useState(false);
+  const [showUnitsDropdown, setShowUnitsDropdown] = useState(false);
   const isImported = params.isImported === "true";
 
   // Combine duplicate ingredients (same name and unit)
@@ -140,13 +151,26 @@ export default function RecipeDetailScreen() {
     const dataParam = params.importedData || params.recipeData;
     if (dataParam) {
       try {
-        const parsed = JSON.parse(dataParam as string);
+        const parsed = JSON.parse(dataParam as string) as
+          | Recipe
+          | RecipeCreateInput;
         setRecipeData(parsed);
+
+        // Get stored recipe to load rating if it exists
+        if ("id" in parsed && parsed.id) {
+          const storedRecipe = getRecipe(parsed.id);
+          if (storedRecipe?.rating) {
+            // Update recipeData with rating from store
+            setRecipeData((prev) =>
+              prev ? { ...prev, rating: storedRecipe.rating } : null
+            );
+          }
+        }
       } catch (error) {
         console.error("Failed to parse recipe data:", error);
       }
     }
-  }, [params.importedData, params.recipeData]);
+  }, [params.importedData, params.recipeData, getRecipe]);
 
   // Check and generate nutritional info if missing
   useEffect(() => {
@@ -652,9 +676,32 @@ export default function RecipeDetailScreen() {
                   {recipeData.title}
                 </Text>
                 {recipeData.originalAuthor && (
-                  <Text className="text-base text-charcoal-gray/90">
+                  <Text className="text-base text-charcoal-gray/90 mb-1">
                     By {recipeData.originalAuthor}
                   </Text>
+                )}
+                {recipeData.sourceUrl && (
+                  <RNTouchableOpacity
+                    onPress={async () => {
+                      try {
+                        const url = recipeData.sourceUrl;
+                        const canOpen = await Linking.canOpenURL(url);
+                        if (canOpen) {
+                          await Linking.openURL(url);
+                        }
+                      } catch (error) {
+                        Alert.alert("Error", "Could not open the recipe URL");
+                      }
+                    }}
+                    className="flex-row items-center"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Text className="text-base text-charcoal-gray/90 mr-1">
+                      Original Source
+                    </Text>
+                    <ExternalLink size={16} color="#5A6E6C" />
+                  </RNTouchableOpacity>
                 )}
               </Animated.View>
             </View>
@@ -670,6 +717,50 @@ export default function RecipeDetailScreen() {
                 </Text>
               </View>
             )}
+
+            {/* Star Rating */}
+            <View className="flex-row items-center justify-center mb-4">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <RNTouchableOpacity
+                  key={star}
+                  onPress={() => {
+                    const newRating =
+                      recipeData.rating === star ? undefined : star;
+                    setRecipeData((prev) =>
+                      prev ? { ...prev, rating: newRating } : null
+                    );
+                    // Update in store if recipe exists (check if it's a Recipe with id)
+                    if (
+                      "id" in recipeData &&
+                      typeof recipeData.id === "string"
+                    ) {
+                      const storedRecipe = getRecipe(recipeData.id);
+                      if (storedRecipe) {
+                        updateRecipe(storedRecipe.id, {
+                          rating: newRating,
+                        });
+                      }
+                    }
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Star
+                    size={24}
+                    color={
+                      recipeData.rating && star <= recipeData.rating
+                        ? "#F59E0B"
+                        : "#D1D5DB"
+                    }
+                    fill={
+                      recipeData.rating && star <= recipeData.rating
+                        ? "#F59E0B"
+                        : "none"
+                    }
+                  />
+                </RNTouchableOpacity>
+              ))}
+            </View>
 
             {/* Segmented Control */}
             <View className="flex-row bg-soft-beige rounded-xl p-1 mb-6">
@@ -735,44 +826,161 @@ export default function RecipeDetailScreen() {
                   </RNTouchableOpacity>
                 )}
 
-                {/* Unit Toggle */}
-                <View className="flex-row items-center justify-end mb-4">
-                  <Text className="text-charcoal-gray/60 text-sm mr-3">
-                    Units:
-                  </Text>
-                  <View className="flex-row bg-soft-beige rounded-full p-1">
-                    <RNTouchableOpacity
-                      onPress={() => setUseMetric(false)}
-                      className={`px-4 py-2 rounded-full items-center ${
-                        !useMetric ? "bg-dark-sage" : ""
-                      }`}
-                      activeOpacity={0.7}
-                      style={{ minHeight: 36, justifyContent: "center" }}
-                    >
-                      <Text
-                        className={`text-sm font-semibold ${
-                          !useMetric ? "text-off-white" : "text-charcoal-gray"
-                        }`}
+                {/* Scale and Unit Dropdowns */}
+                {(showScaleDropdown || showUnitsDropdown) && (
+                  <Pressable
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      zIndex: 50,
+                    }}
+                    onPress={() => {
+                      setShowScaleDropdown(false);
+                      setShowUnitsDropdown(false);
+                    }}
+                  />
+                )}
+                <View className="flex-row items-center justify-between mb-4">
+                  {/* Scale Dropdown */}
+                  <View
+                    className="flex-1 mr-3 flex-row items-center"
+                    style={{ zIndex: showScaleDropdown ? 100 : 1 }}
+                  >
+                    <Text className="text-charcoal-gray/60 text-sm mr-2">
+                      Scale:
+                    </Text>
+                    <View className="flex-1">
+                      <RNTouchableOpacity
+                        onPress={() => {
+                          setShowScaleDropdown(!showScaleDropdown);
+                          setShowUnitsDropdown(false);
+                        }}
+                        className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                        activeOpacity={0.7}
+                        style={{ minHeight: 44 }}
                       >
-                        Cups
-                      </Text>
-                    </RNTouchableOpacity>
-                    <RNTouchableOpacity
-                      onPress={() => setUseMetric(true)}
-                      className={`px-4 py-2 rounded-full items-center ${
-                        useMetric ? "bg-dark-sage" : ""
-                      }`}
-                      activeOpacity={0.7}
-                      style={{ minHeight: 36, justifyContent: "center" }}
-                    >
-                      <Text
-                        className={`text-sm font-semibold ${
-                          useMetric ? "text-off-white" : "text-charcoal-gray"
-                        }`}
+                        <Text className="text-charcoal-gray font-semibold text-sm">
+                          {recipeScale}x
+                        </Text>
+                        <ChevronDown
+                          size={18}
+                          color="#3E3E3E"
+                          style={{
+                            transform: [
+                              { rotate: showScaleDropdown ? "180deg" : "0deg" },
+                            ],
+                          }}
+                        />
+                      </RNTouchableOpacity>
+                      {showScaleDropdown && (
+                        <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
+                          {([1, 1.5, 2, 3] as const).map((scale) => (
+                            <RNTouchableOpacity
+                              key={scale}
+                              onPress={() => {
+                                setRecipeScale(scale);
+                                setShowScaleDropdown(false);
+                              }}
+                              className={`px-4 py-3 ${
+                                recipeScale === scale ? "bg-dark-sage" : ""
+                              }`}
+                              activeOpacity={0.7}
+                            >
+                              <Text
+                                className={`text-sm font-semibold ${
+                                  recipeScale === scale
+                                    ? "text-off-white"
+                                    : "text-charcoal-gray"
+                                }`}
+                              >
+                                {scale}x
+                              </Text>
+                            </RNTouchableOpacity>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Units Dropdown */}
+                  <View
+                    className="flex-1 flex-row items-center"
+                    style={{ zIndex: showUnitsDropdown ? 100 : 1 }}
+                  >
+                    <Text className="text-charcoal-gray/60 text-sm mr-2">
+                      Units:
+                    </Text>
+                    <View className="flex-1">
+                      <RNTouchableOpacity
+                        onPress={() => {
+                          setShowUnitsDropdown(!showUnitsDropdown);
+                          setShowScaleDropdown(false);
+                        }}
+                        className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                        activeOpacity={0.7}
+                        style={{ minHeight: 44 }}
                       >
-                        Grams
-                      </Text>
-                    </RNTouchableOpacity>
+                        <Text className="text-charcoal-gray font-semibold text-sm">
+                          {useMetric ? "Grams" : "Cups"}
+                        </Text>
+                        <ChevronDown
+                          size={18}
+                          color="#3E3E3E"
+                          style={{
+                            transform: [
+                              { rotate: showUnitsDropdown ? "180deg" : "0deg" },
+                            ],
+                          }}
+                        />
+                      </RNTouchableOpacity>
+                      {showUnitsDropdown && (
+                        <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
+                          <RNTouchableOpacity
+                            onPress={() => {
+                              setUseMetric(false);
+                              setShowUnitsDropdown(false);
+                            }}
+                            className={`px-4 py-3 ${
+                              !useMetric ? "bg-dark-sage" : ""
+                            }`}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              className={`text-sm font-semibold ${
+                                !useMetric
+                                  ? "text-off-white"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              Cups
+                            </Text>
+                          </RNTouchableOpacity>
+                          <RNTouchableOpacity
+                            onPress={() => {
+                              setUseMetric(true);
+                              setShowUnitsDropdown(false);
+                            }}
+                            className={`px-4 py-3 ${
+                              useMetric ? "bg-dark-sage" : ""
+                            }`}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              className={`text-sm font-semibold ${
+                                useMetric
+                                  ? "text-off-white"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              Grams
+                            </Text>
+                          </RNTouchableOpacity>
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
 
@@ -782,8 +990,11 @@ export default function RecipeDetailScreen() {
                     ingredient: Ingredient,
                     index: number
                   ) => {
+                    // Apply scaling to ingredient quantity
+                    const scaledQuantity = ingredient.quantity * recipeScale;
+
                     // Calculate display quantity (with unit conversion if needed)
-                    let displayQuantity: number | string = ingredient.quantity;
+                    let displayQuantity: number | string = scaledQuantity;
                     let displayUnit = ingredient.unit;
 
                     // Check if this is a whole item (eggs, pieces, etc.) - don't convert these
@@ -812,13 +1023,13 @@ export default function RecipeDetailScreen() {
                           ingredient.unit.toLowerCase().includes("tsp"))
                       ) {
                         displayQuantity = convertUnit(
-                          ingredient.quantity,
+                          scaledQuantity,
                           ingredient.unit,
                           true
                         );
                         displayUnit = "g";
                       } else {
-                        displayQuantity = ingredient.quantity;
+                        displayQuantity = scaledQuantity;
                         displayUnit = ingredient.unit;
                       }
                     } else {
@@ -828,13 +1039,13 @@ export default function RecipeDetailScreen() {
                         ingredient.unit.toLowerCase().includes("g")
                       ) {
                         displayQuantity = convertUnit(
-                          ingredient.quantity,
+                          scaledQuantity,
                           ingredient.unit,
                           false
                         );
                         displayUnit = "cups";
                       } else {
-                        displayQuantity = ingredient.quantity;
+                        displayQuantity = scaledQuantity;
                         displayUnit = ingredient.unit;
                       }
                     }

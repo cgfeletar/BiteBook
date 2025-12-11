@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ShoppingItem, Ingredient } from '../types';
 import { mergeIngredients } from '../utils/shoppingListUtils';
 import { getAisleForIngredient } from '../utils/aisleMapper';
@@ -13,8 +15,10 @@ interface ShoppingListState {
   clearAll: () => void;
 }
 
-export const useShoppingListStore = create<ShoppingListState>((set) => ({
-  items: [],
+export const useShoppingListStore = create<ShoppingListState>()(
+  persist(
+    (set) => ({
+      items: [],
   
   addItems: (ingredients: Ingredient[], recipeId?: string) => {
     const shoppingItems: ShoppingItem[] = ingredients.map((ing) => ({
@@ -58,8 +62,14 @@ export const useShoppingListStore = create<ShoppingListState>((set) => ({
     }));
   },
 
-  clearAll: () => {
-    set({ items: [] });
-  },
-}));
+      clearAll: () => {
+        set({ items: [] });
+      },
+    }),
+    {
+      name: "shopping-list-storage",
+      storage: createJSONStorage(() => AsyncStorage),
+    }
+  )
+);
 
