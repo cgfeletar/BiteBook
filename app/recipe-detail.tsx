@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   BookOpen,
   Check,
+  ChefHat,
   ChevronDown,
   Clock,
   ExternalLink,
@@ -19,6 +20,7 @@ import {
   ShoppingBag,
   Star,
   Trash2,
+  Users,
   X,
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
@@ -59,6 +61,9 @@ export default function RecipeDetailScreen() {
   const [activeTab, setActiveTab] = useState<TabType>("ingredients");
   const [useMetric, setUseMetric] = useState(false); // true = grams, false = cups
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
+  const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(
+    new Set()
+  );
   const [notes, setNotes] = useState("");
   const [viewByServing, setViewByServing] = useState(true); // true = by serving, false = whole recipe
   const [servings, setServings] = useState(4); // Default servings
@@ -109,7 +114,7 @@ export default function RecipeDetailScreen() {
     return Array.from(ingredientMap.values());
   }, [recipeData?.ingredients]);
 
-  // Split ingredients into two groups
+  // Split ingredients into two groups (considering both pantry and checked items)
   const { ingredientsInPantry, ingredientsToBuy } = useMemo(() => {
     if (!combinedIngredients || combinedIngredients.length === 0) {
       return { ingredientsInPantry: [], ingredientsToBuy: [] };
@@ -123,11 +128,20 @@ export default function RecipeDetailScreen() {
       );
     };
 
+    // Check if ingredient is checked off
+    const isIngredientChecked = (ingredientName: string): boolean => {
+      const normalizedName = ingredientName.toLowerCase().trim();
+      return Array.from(checkedIngredients).some(
+        (checked) => checked.toLowerCase().trim() === normalizedName
+      );
+    };
+
     const inPantry: Ingredient[] = [];
     const toBuy: Ingredient[] = [];
 
     combinedIngredients.forEach((ing) => {
-      if (isIngredientInPantry(ing.name)) {
+      // Item is in pantry OR has been checked off
+      if (isIngredientInPantry(ing.name) || isIngredientChecked(ing.name)) {
         inPantry.push(ing);
       } else {
         toBuy.push(ing);
@@ -135,7 +149,15 @@ export default function RecipeDetailScreen() {
     });
 
     return { ingredientsInPantry: inPantry, ingredientsToBuy: toBuy };
-  }, [combinedIngredients, pantryItems]);
+  }, [combinedIngredients, pantryItems, checkedIngredients]);
+
+  // Calculate progress: items in pantry / total items
+  const progressInfo = useMemo(() => {
+    const total = combinedIngredients.length;
+    const inPantryCount = ingredientsInPantry.length;
+    const percentage = total > 0 ? (inPantryCount / total) * 100 : 0;
+    return { total, inPantryCount, percentage };
+  }, [combinedIngredients.length, ingredientsInPantry.length]);
 
   // Daily recommended values
   const dailyValues = {
@@ -761,6 +783,59 @@ export default function RecipeDetailScreen() {
               </View>
             )}
 
+            {/* Prep Time, Cook Time, and Servings Cards */}
+            <View className="flex-row items-center justify-between mb-4 gap-3">
+              {/* Prep Time Card */}
+              {recipeData.prepTime && (
+                <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                  <ChefHat size={20} color="#5A6E6C" />
+                  <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                    {recipeData.prepTime}
+                  </Text>
+                  <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                    prep
+                  </Text>
+                </View>
+              )}
+
+              {/* Cook Time Card */}
+              {(() => {
+                const totalSeconds =
+                  recipeData.steps?.reduce(
+                    (sum, step) => sum + (step.timerDuration || 0),
+                    0
+                  ) || 0;
+                const totalMinutes =
+                  totalSeconds > 0 ? Math.round(totalSeconds / 60) : null;
+
+                return totalMinutes !== null ? (
+                  <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                    <Clock size={20} color="#5A6E6C" />
+                    <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                      {totalMinutes}
+                    </Text>
+                    <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                      cook
+                    </Text>
+                  </View>
+                ) : null;
+              })()}
+
+              {/* Servings Card */}
+              <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                <Users size={20} color="#5A6E6C" />
+                <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                  {servings}
+                </Text>
+                <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                  servings
+                </Text>
+              </View>
+            </View>
+
+            {/* Divider Line */}
+            <View className="h-px bg-warm-sand mb-4" />
+
             {/* Star Rating */}
             <View className="flex-row items-center justify-center mb-4">
               {[1, 2, 3, 4, 5].map((star) => (
@@ -792,18 +867,21 @@ export default function RecipeDetailScreen() {
                     size={24}
                     color={
                       recipeData.rating && star <= recipeData.rating
-                        ? "#F59E0B"
+                        ? "#7A2E2A"
                         : "#D1D5DB"
                     }
                     fill={
                       recipeData.rating && star <= recipeData.rating
-                        ? "#F59E0B"
+                        ? "#7A2E2A"
                         : "none"
                     }
                   />
                 </RNTouchableOpacity>
               ))}
             </View>
+
+            {/* Divider Line */}
+            <View className="h-px bg-warm-sand mb-6" />
 
             {/* Segmented Control */}
             <View className="flex-row bg-soft-beige rounded-xl p-1 mb-6">
@@ -1029,9 +1107,49 @@ export default function RecipeDetailScreen() {
 
                 {/* Render Ingredient Item */}
                 {(() => {
+                  const handleIngredientCheck = (ingredientName: string) => {
+                    setCheckedIngredients((prev) => {
+                      const newSet = new Set(prev);
+                      const normalizedName = ingredientName
+                        .toLowerCase()
+                        .trim();
+
+                      // Check if already checked
+                      const isChecked = Array.from(newSet).some(
+                        (checked) =>
+                          checked.toLowerCase().trim() === normalizedName
+                      );
+
+                      if (isChecked) {
+                        // Uncheck - remove from set
+                        Array.from(newSet).forEach((checked) => {
+                          if (checked.toLowerCase().trim() === normalizedName) {
+                            newSet.delete(checked);
+                          }
+                        });
+                      } else {
+                        // Check - add to set (use original name for consistency)
+                        newSet.add(ingredientName);
+                      }
+
+                      return newSet;
+                    });
+                  };
+
+                  const isIngredientChecked = (
+                    ingredientName: string
+                  ): boolean => {
+                    const normalizedName = ingredientName.toLowerCase().trim();
+                    return Array.from(checkedIngredients).some(
+                      (checked) =>
+                        checked.toLowerCase().trim() === normalizedName
+                    );
+                  };
+
                   const renderIngredient = (
                     ingredient: Ingredient,
-                    index: number
+                    index: number,
+                    isInPantry: boolean
                   ) => {
                     // Apply scaling to ingredient quantity
                     const scaledQuantity = ingredient.quantity * recipeScale;
@@ -1101,14 +1219,40 @@ export default function RecipeDetailScreen() {
                       displayUnit
                     );
 
+                    const checked = isIngredientChecked(ingredient.name);
+                    const inPantry = pantryItems.some(
+                      (item) =>
+                        item.name.toLowerCase().trim() ===
+                        ingredient.name.toLowerCase().trim()
+                    );
+
                     return (
                       <RNTouchableOpacity
                         key={`${ingredient.name}-${index}`}
                         className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
                         activeOpacity={0.7}
                         style={{ minHeight: 44 }}
+                        onPress={() => handleIngredientCheck(ingredient.name)}
                       >
-                        <Text className="text-charcoal-gray flex-1 text-base">
+                        {/* Checkbox */}
+                        <View
+                          className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
+                            checked || inPantry
+                              ? "bg-dark-sage border-dark-sage"
+                              : "border-charcoal-gray/30"
+                          }`}
+                        >
+                          {(checked || inPantry) && (
+                            <Check size={16} color="#FAF9F7" />
+                          )}
+                        </View>
+                        <Text
+                          className={`flex-1 text-base ${
+                            checked || inPantry
+                              ? "text-charcoal-gray/60 line-through"
+                              : "text-charcoal-gray"
+                          }`}
+                        >
                           <Text className="font-semibold">
                             {formattedQuantity} {displayUnit}
                           </Text>{" "}
@@ -1120,6 +1264,29 @@ export default function RecipeDetailScreen() {
 
                   return (
                     <>
+                      {/* Progress Tracker */}
+                      {combinedIngredients.length > 0 && (
+                        <View className="mb-6">
+                          <View className="flex-row items-center justify-between mb-2">
+                            <Text className="text-base font-semibold text-charcoal-gray">
+                              Progress
+                            </Text>
+                            <Text className="text-sm text-charcoal-gray/60">
+                              {progressInfo.inPantryCount} /{" "}
+                              {progressInfo.total}
+                            </Text>
+                          </View>
+                          <View className="h-2 bg-warm-sand rounded-full overflow-hidden">
+                            <View
+                              className="h-full bg-dark-sage rounded-full transition-all"
+                              style={{
+                                width: `${progressInfo.percentage}%`,
+                              }}
+                            />
+                          </View>
+                        </View>
+                      )}
+
                       {/* Need to Buy Section */}
                       {ingredientsToBuy.length > 0 && (
                         <View className="mb-6">
@@ -1127,7 +1294,7 @@ export default function RecipeDetailScreen() {
                             Need to Buy
                           </Text>
                           {ingredientsToBuy.map((ingredient, index) =>
-                            renderIngredient(ingredient, index)
+                            renderIngredient(ingredient, index, false)
                           )}
                         </View>
                       )}
@@ -1136,12 +1303,13 @@ export default function RecipeDetailScreen() {
                       {ingredientsInPantry.length > 0 && (
                         <View className="mb-6">
                           <Text className="text-xl font-bold text-charcoal-gray mb-4">
-                            Already in My Pantry
+                            In My Pantry
                           </Text>
                           {ingredientsInPantry.map((ingredient, index) =>
                             renderIngredient(
                               ingredient,
-                              ingredientsToBuy.length + index
+                              ingredientsToBuy.length + index,
+                              true
                             )
                           )}
                         </View>

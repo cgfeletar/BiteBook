@@ -15,6 +15,7 @@ module.exports = {
         "dark-sage": "#5A6E6C",
         mocha: "#A1806F",
         charcoal: "#3E3E3E",
+        redwood: "#7A2E2A",
         "charcoal-gray": "#3E3E3E", // Alias for backward compatibility
         "off-white": "#FAF9F7",
       },
