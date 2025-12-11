@@ -59,6 +59,73 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
     try {
       const recipeData = await importRecipe(url);
 
+      // Validate recipe data
+      const hasIngredients =
+        recipeData.ingredients && recipeData.ingredients.length > 0;
+      const hasSteps = recipeData.steps && recipeData.steps.length > 0;
+
+      if (!hasIngredients || !hasSteps) {
+        const missingItems: string[] = [];
+        if (!hasIngredients) missingItems.push("ingredients");
+        if (!hasSteps) missingItems.push("instructions");
+
+        const missingText =
+          missingItems.length === 1
+            ? missingItems[0]
+            : `${missingItems[0]} and ${missingItems[1]}`;
+
+        Alert.alert(
+          "Incomplete Recipe",
+          `This recipe appears to be missing ${missingText}. Would you like to import it anyway?`,
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+              onPress: () => {
+                setLoading(false);
+              },
+            },
+            {
+              text: "Import Anyway",
+              onPress: () => {
+                // Add recipe to the store (this will make it appear on the homepage)
+                const newRecipe = addRecipe(recipeData);
+
+                // Show success message
+                Alert.alert(
+                  "Recipe Imported!",
+                  `"${recipeData.title}" has been added to your recipes.`,
+                  [
+                    {
+                      text: "View Recipe",
+                      onPress: () => {
+                        router.push({
+                          pathname: "/recipe-detail",
+                          params: {
+                            recipeData: JSON.stringify(newRecipe),
+                          },
+                        });
+                        setUrl("");
+                        onClose();
+                      },
+                    },
+                    {
+                      text: "OK",
+                      onPress: () => {
+                        setUrl("");
+                        onClose();
+                      },
+                    },
+                  ]
+                );
+                setLoading(false);
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       // Add recipe to the store (this will make it appear on the homepage)
       const newRecipe = addRecipe(recipeData);
 

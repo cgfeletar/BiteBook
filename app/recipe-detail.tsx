@@ -18,6 +18,7 @@ import {
   Share2,
   ShoppingBag,
   Star,
+  Trash2,
   X,
 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
@@ -66,6 +67,7 @@ export default function RecipeDetailScreen() {
     (state) => state.addItems
   );
   const updateRecipe = useRecipeStore((state) => state.updateRecipe);
+  const deleteRecipe = useRecipeStore((state) => state.deleteRecipe);
   const getRecipe = useRecipeStore((state) => state.getRecipe);
   const books = useRecipeBooksStore((state) => state.books);
   const addRecipeToBook = useRecipeBooksStore((state) => state.addRecipeToBook);
@@ -329,11 +331,8 @@ export default function RecipeDetailScreen() {
 
         // If there's already a quantity nearby, skip this match
         if (!hasQuantityNearby) {
-          // Format the quantity nicely
-          const quantityStr =
-            ing.quantity % 1 === 0
-              ? ing.quantity.toString()
-              : ing.quantity.toFixed(2).replace(/\.?0+$/, "");
+          // Format the quantity nicely using fractions when appropriate
+          const quantityStr = formatQuantity(ing.quantity, ing.unit);
 
           replacements.push({
             start: offset,
@@ -412,28 +411,64 @@ export default function RecipeDetailScreen() {
     setShowMenu(false);
   };
 
+  const handleDelete = () => {
+    if (!recipeData) return;
+
+    // Check if recipe has an id (it's a saved recipe, not just imported)
+    let recipeId: string | null = null;
+    if ("id" in recipeData && recipeData.id) {
+      recipeId =
+        typeof recipeData.id === "string"
+          ? recipeData.id
+          : String(recipeData.id);
+    }
+
+    if (!recipeId) {
+      Alert.alert(
+        "Cannot Delete",
+        "This recipe hasn't been saved yet. Only saved recipes can be deleted."
+      );
+      setShowMenu(false);
+      return;
+    }
+
+    Alert.alert(
+      "Delete Recipe",
+      `Are you sure you want to delete "${recipeData.title}"? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => setShowMenu(false),
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteRecipe(recipeId as string);
+            setShowMenu(false);
+            router.back();
+          },
+        },
+      ]
+    );
+  };
+
   const renderSwipeRightAction = (step: Step, isCompleted: boolean) => {
     return (
       <View
         className="bg-dark-sage rounded-xl items-center justify-center px-6"
         style={{
-          minHeight: 44,
+          height: "100%",
           justifyContent: "center",
           alignItems: "center",
           width: 80,
         }}
       >
-        {isCompleted ? (
-          <View className="items-center">
-            <Check size={24} color="#FAF9F7" />
-            <Text className="text-off-white text-xs mt-1">Undo</Text>
-          </View>
-        ) : (
-          <View className="items-center">
-            <Check size={24} color="#FAF9F7" />
-            <Text className="text-off-white text-xs mt-1">Done</Text>
-          </View>
-        )}
+        <View className="items-center">
+          <Check size={24} color="#FAF9F7" />
+          <Text className="text-off-white text-xs mt-1">Done</Text>
+        </View>
       </View>
     );
   };
@@ -553,6 +588,7 @@ export default function RecipeDetailScreen() {
             <Text
               className="text-lg font-bold text-charcoal-gray ml-4 flex-1"
               numberOfLines={1}
+              style={{ fontFamily: "Lora_700Bold" }}
             >
               {recipeData.title}
             </Text>
@@ -672,37 +708,44 @@ export default function RecipeDetailScreen() {
                 <Text
                   className="text-3xl font-bold text-charcoal-gray mb-2"
                   numberOfLines={2}
+                  style={{ fontFamily: "Lora_700Bold" }}
                 >
                   {recipeData.title}
                 </Text>
-                {recipeData.originalAuthor && (
-                  <Text className="text-base text-charcoal-gray/90 mb-1">
-                    By {recipeData.originalAuthor}
-                  </Text>
-                )}
-                {recipeData.sourceUrl && (
-                  <RNTouchableOpacity
-                    onPress={async () => {
-                      try {
-                        const url = recipeData.sourceUrl;
-                        const canOpen = await Linking.canOpenURL(url);
-                        if (canOpen) {
-                          await Linking.openURL(url);
-                        }
-                      } catch (error) {
-                        Alert.alert("Error", "Could not open the recipe URL");
-                      }
-                    }}
-                    className="flex-row items-center"
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    activeOpacity={0.7}
-                  >
-                    <Text className="text-base text-charcoal-gray/90 mr-1">
-                      Original Source
+                <View className="flex flex-row items-center justify-between">
+                  {recipeData.originalAuthor ? (
+                    <Text className="text-base text-charcoal-gray/90">
+                      By {recipeData.originalAuthor}
                     </Text>
-                    <ExternalLink size={16} color="#5A6E6C" />
-                  </RNTouchableOpacity>
-                )}
+                  ) : (
+                    <View />
+                  )}
+                  {recipeData.sourceUrl ? (
+                    <RNTouchableOpacity
+                      onPress={async () => {
+                        try {
+                          const url = recipeData.sourceUrl;
+                          const canOpen = await Linking.canOpenURL(url);
+                          if (canOpen) {
+                            await Linking.openURL(url);
+                          }
+                        } catch (error) {
+                          Alert.alert("Error", "Could not open the recipe URL");
+                        }
+                      }}
+                      className="flex-row items-center"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-base text-charcoal-gray/90 mr-1">
+                        Source
+                      </Text>
+                      <ExternalLink size={16} color="#5A6E6C" />
+                    </RNTouchableOpacity>
+                  ) : (
+                    <View />
+                  )}
+                </View>
               </Animated.View>
             </View>
           </Animated.View>
@@ -1470,15 +1513,6 @@ export default function RecipeDetailScreen() {
               </View>
             )}
 
-            {/* Source URL */}
-            {recipeData.sourceUrl && (
-              <View className="mb-6">
-                <Text className="text-sm text-charcoal-gray/60">
-                  Source: {recipeData.sourceUrl}
-                </Text>
-              </View>
-            )}
-
             {/* Save Button (for imported recipes) */}
             {isImported && (
               <RNTouchableOpacity
@@ -1547,7 +1581,7 @@ export default function RecipeDetailScreen() {
                   setShowMenu(false);
                   setShowBookSelector(true);
                 }}
-                className="flex-row items-center py-4"
+                className="flex-row items-center py-4 border-b border-soft-beige"
                 activeOpacity={0.7}
               >
                 <BookOpen
@@ -1557,6 +1591,17 @@ export default function RecipeDetailScreen() {
                 />
                 <Text className="text-charcoal-gray text-base font-semibold">
                   Add to Book
+                </Text>
+              </RNTouchableOpacity>
+
+              <RNTouchableOpacity
+                onPress={handleDelete}
+                className="flex-row items-center py-4"
+                activeOpacity={0.7}
+              >
+                <Trash2 size={20} color="#DC2626" style={{ marginRight: 12 }} />
+                <Text className="text-red-600 text-base font-semibold">
+                  Delete Recipe
                 </Text>
               </RNTouchableOpacity>
             </View>

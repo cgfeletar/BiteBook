@@ -42,6 +42,56 @@ export default function AddScreen() {
       // Import recipe from URL
       const recipeData = await importRecipe(url.trim());
 
+      // Validate recipe data
+      const hasIngredients =
+        recipeData.ingredients && recipeData.ingredients.length > 0;
+      const hasSteps = recipeData.steps && recipeData.steps.length > 0;
+
+      if (!hasIngredients || !hasSteps) {
+        const missingItems: string[] = [];
+        if (!hasIngredients) missingItems.push("ingredients");
+        if (!hasSteps) missingItems.push("instructions");
+
+        const missingText =
+          missingItems.length === 1
+            ? missingItems[0]
+            : `${missingItems[0]} and ${missingItems[1]}`;
+
+        Alert.alert(
+          "Incomplete Recipe",
+          `This recipe appears to be missing ${missingText}. Would you like to import it anyway?`,
+          [
+            {
+              text: "Cancel",
+              style: "cancel",
+              onPress: () => {
+                setIsLoading(false);
+              },
+            },
+            {
+              text: "Import Anyway",
+              onPress: () => {
+                // Add recipe to store
+                const newRecipe = addRecipe(recipeData);
+
+                // Reset form
+                setUrl("");
+
+                // Automatically navigate to recipe detail page
+                router.push({
+                  pathname: "/recipe-detail",
+                  params: {
+                    recipeData: JSON.stringify(newRecipe),
+                  },
+                });
+                setIsLoading(false);
+              },
+            },
+          ]
+        );
+        return;
+      }
+
       // Add recipe to store
       const newRecipe = addRecipe(recipeData);
 

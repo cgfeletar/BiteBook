@@ -399,7 +399,10 @@ export default function RecipeFeed() {
       <View style={{ flex: 1 }} className="flex-1">
         {/* Header Row */}
         <View className="flex-row items-center justify-between px-6 pt-4 pb-4">
-          <Text className="text-2xl font-bold text-charcoal">
+          <Text
+            className="text-2xl font-bold text-charcoal"
+            style={{ fontFamily: "Lora_700Bold" }}
+          >
             What are we making?
           </Text>
           <TouchableOpacity

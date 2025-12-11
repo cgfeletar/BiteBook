@@ -184,7 +184,7 @@ async function callLLM(
 ): Promise<Omit<Recipe, "id" | "createdAt">> {
   // Access API key from secret
   const apiKeyRaw = OPENAI_API_KEY.value();
-  
+
   if (!apiKeyRaw) {
     throw new Error(
       "OPENAI_API_KEY is not configured. Please set it using:\n" +
@@ -196,8 +196,8 @@ async function callLLM(
   const apiKey = apiKeyRaw.trim().replace(/\s+/g, "");
 
   // Truncate HTML content if too long (OpenAI has token limits)
-  // Keep first 100k characters to ensure we stay within limits
-  const maxLength = 100000;
+  // Reduced to 50k characters for faster processing - most recipe content fits in this
+  const maxLength = 50000;
   const truncatedContent =
     htmlContent.length > maxLength
       ? htmlContent.substring(0, maxLength) + "\n\n[Content truncated...]"
@@ -207,7 +207,7 @@ async function callLLM(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o", // Using GPT-4o for best results, can fallback to gpt-3.5-turbo if needed
+        model: "gpt-4o-mini", // Using GPT-4o-mini for faster, cost-effective results
         messages: [
           {
             role: "system",
@@ -221,7 +221,7 @@ async function callLLM(
         ],
         response_format: { type: "json_object" },
         temperature: 0.3,
-        max_tokens: 4000,
+        max_tokens: 3000, // Reduced from 4000 - sufficient for most recipes
       },
       {
         headers: {
@@ -297,6 +297,35 @@ export const extractRecipeFromUrl = functions
       );
     }
 
+    // Normalize URL for caching (remove trailing slashes, fragments, etc.)
+    const normalizedUrl = data.url
+      .trim()
+      .replace(/\/$/, "")
+      .split("#")[0]
+      .split("?")[0];
+    const cacheKey = `recipe-cache-${Buffer.from(normalizedUrl)
+      .toString("base64")
+      .replace(/[+/=]/g, "")}`;
+
+    // Check cache first (cache expires after 7 days)
+    const db = admin.firestore();
+    const cacheRef = db.collection("recipeCache").doc(cacheKey);
+    const cachedDoc = await cacheRef.get();
+
+    if (cachedDoc.exists) {
+      const cachedData = cachedDoc.data();
+      const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
+      const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+      if (cacheAge < cacheExpiry) {
+        console.log(`Cache hit for URL: ${normalizedUrl}`);
+        return cachedData!.recipe;
+      } else {
+        // Cache expired, delete it
+        await cacheRef.delete();
+      }
+    }
+
     try {
       // Fetch HTML content
       const response = await axios.get(data.url, {
@@ -313,8 +342,10 @@ export const extractRecipeFromUrl = functions
       // Parse HTML with Cheerio
       const $ = cheerio.load(response.data);
 
-      // Remove script and style tags
-      $("script, style, noscript").remove();
+      // Remove script, style, and non-essential elements first
+      $(
+        "script, style, noscript, iframe, embed, object, video, audio, .comments, .comment, #comments"
+      ).remove();
 
       // Extract main content (prioritize article, main, or body)
       let htmlContent = "";
@@ -355,6 +386,19 @@ export const extractRecipeFromUrl = functions
         tags: extractedData.tags || [],
         categoryIds: extractedData.categoryIds || [],
       };
+
+      // Cache the result for future requests
+      try {
+        await cacheRef.set({
+          recipe,
+          cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+          url: normalizedUrl,
+        });
+        console.log(`Cached recipe for URL: ${normalizedUrl}`);
+      } catch (cacheError) {
+        // Don't fail the request if caching fails
+        console.warn("Failed to cache recipe:", cacheError);
+      }
 
       return recipe;
     } catch (error: any) {
@@ -420,7 +464,7 @@ async function generateNutritionFromIngredients(
 
   // Access API key from secret
   const apiKeyRaw = OPENAI_API_KEY.value();
-  
+
   if (!apiKeyRaw) {
     throw new Error(
       "OPENAI_API_KEY is not configured. Please set it using:\n" +
@@ -435,7 +479,7 @@ async function generateNutritionFromIngredients(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o", // Using GPT-4o for best results
+        model: "gpt-4o-mini", // Using GPT-4o-mini for faster, cost-effective results
         messages: [
           {
             role: "system",
@@ -449,7 +493,7 @@ async function generateNutritionFromIngredients(
         ],
         response_format: { type: "json_object" },
         temperature: 0.3,
-        max_tokens: 2000,
+        max_tokens: 1500, // Reduced from 2000 - nutrition data is relatively small
       },
       {
         headers: {
