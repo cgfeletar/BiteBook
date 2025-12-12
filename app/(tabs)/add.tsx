@@ -42,12 +42,17 @@ export default function AddScreen() {
       // Import recipe from URL
       const recipeData = await importRecipe(url.trim());
 
+      // Check if this is a TikTok/video recipe (has "video recipe" tag)
+      const isVideoRecipe = recipeData.tags?.includes("video recipe") || false;
+
       // Validate recipe data
+      // For video recipes, be more lenient - allow saving even without full recipe data
       const hasIngredients =
         recipeData.ingredients && recipeData.ingredients.length > 0;
       const hasSteps = recipeData.steps && recipeData.steps.length > 0;
 
-      if (!hasIngredients || !hasSteps) {
+      // For video recipes, always allow import (they might not have full recipe data)
+      if (!isVideoRecipe && (!hasIngredients || !hasSteps)) {
         const missingItems: string[] = [];
         if (!hasIngredients) missingItems.push("ingredients");
         if (!hasSteps) missingItems.push("instructions");
@@ -140,9 +145,9 @@ export default function AddScreen() {
                 Add Recipe
               </Text>
               <Text className="text-base text-charcoal-gray/60">
-                Import a recipe from any blog or website by pasting the URL
-                below. We will extract the ingredients, instructions, and cover
-                image automatically.
+                Import a recipe from any blog, website, or TikTok by pasting the
+                URL below. We will extract the ingredients, instructions, and
+                cover image automatically.
               </Text>
             </View>
 
@@ -152,10 +157,10 @@ export default function AddScreen() {
                 <Text className="text-base font-semibold text-charcoal-gray mb-2">
                   Recipe URL
                 </Text>
-                <View className="flex-row items-center bg-soft-beige rounded-xl px-4 py-3 border border-warm-sand/50">
+                <View className="flex-row items-center bg-soft-beige rounded-xl px-4 py-1 border border-warm-sand/50">
                   <Link size={20} color="#5A6E6C" style={{ marginRight: 12 }} />
                   <TextInput
-                    className="flex-1 text-base text-charcoal-gray"
+                    className="flex-1 text-base text-charcoal-gray mb-1"
                     placeholder="https://example.com/recipe"
                     placeholderTextColor="#9CA3AF"
                     value={url}
@@ -206,7 +211,7 @@ export default function AddScreen() {
                 How it works:
               </Text>
               <Text className="text-sm text-charcoal-gray/70 mb-1">
-                • Paste a recipe URL from any blog or website
+                • Paste a recipe URL from any blog, website, or TikTok
               </Text>
               <Text className="text-sm text-charcoal-gray/70 mb-1">
                 • AI extracts ingredients, instructions, and nutrition info

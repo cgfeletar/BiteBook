@@ -4,10 +4,11 @@ import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Recipe } from "@/src/types";
 import { router } from "expo-router";
 import { Timestamp } from "firebase/firestore";
-import { Search, User } from "lucide-react-native";
+import { ChevronDown, Filter, Search, User } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import {
   FlatList,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -17,6 +18,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+type SortOption = "recent" | "prepTime" | "cookTime" | "rating";
 
 // Dummy recipe data matching the Recipe interface
 const dummyRecipes: Recipe[] = [
@@ -303,6 +306,8 @@ export default function RecipeFeed() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
+  const [sortOption, setSortOption] = useState<SortOption>("recent");
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
   const recipes = useRecipeStore((state) => state.recipes);
 
   // Calculate top 5 most used categories from recipe tags
@@ -334,31 +339,83 @@ export default function RecipeFeed() {
     return ["All", ...topTags];
   }, [recipes]);
 
-  // Filter recipes based on active category
-  const filteredRecipes = useMemo(() => {
+  // Filter and sort recipes
+  const filteredAndSortedRecipes = useMemo(() => {
     const allRecipes = recipes.length > 0 ? recipes : dummyRecipes;
 
-    if (activeCategory === "All") {
-      return allRecipes;
+    // First, filter by category
+    let filtered = allRecipes;
+    if (activeCategory !== "All") {
+      const categoryLower = activeCategory.toLowerCase().replace(/\s+/g, "-");
+      filtered = allRecipes.filter((recipe) =>
+        recipe.tags?.some((tag) => {
+          const tagFormatted = tag
+            .split(/[-_\s]+/)
+            .map(
+              (word) =>
+                word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+            )
+            .join(" ");
+          return (
+            tagFormatted.toLowerCase() === activeCategory.toLowerCase() ||
+            tag.toLowerCase() === categoryLower
+          );
+        })
+      );
     }
 
-    // Filter by tag (case-insensitive, handle formatting)
-    const categoryLower = activeCategory.toLowerCase().replace(/\s+/g, "-");
-    return allRecipes.filter((recipe) =>
-      recipe.tags?.some((tag) => {
-        const tagFormatted = tag
-          .split(/[-_\s]+/)
-          .map(
-            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-          )
-          .join(" ");
-        return (
-          tagFormatted.toLowerCase() === activeCategory.toLowerCase() ||
-          tag.toLowerCase() === categoryLower
-        );
-      })
-    );
-  }, [recipes, activeCategory]);
+    // Then, sort the filtered results
+    const sorted = [...filtered].sort((a, b) => {
+      switch (sortOption) {
+        case "recent":
+          // Most recent first (newest createdAt)
+          const aTime =
+            a.createdAt instanceof Timestamp
+              ? a.createdAt.toMillis()
+              : a.createdAt instanceof Date
+              ? a.createdAt.getTime()
+              : 0;
+          const bTime =
+            b.createdAt instanceof Timestamp
+              ? b.createdAt.toMillis()
+              : b.createdAt instanceof Date
+              ? b.createdAt.getTime()
+              : 0;
+          return bTime - aTime;
+
+        case "prepTime":
+          // Shortest prep time first
+          const aPrep = a.prepTime ?? Infinity;
+          const bPrep = b.prepTime ?? Infinity;
+          return aPrep - bPrep;
+
+        case "cookTime":
+          // Shortest cook time first
+          const aCook =
+            a.steps?.reduce(
+              (sum, step) => sum + (step.timerDuration || 0),
+              0
+            ) || Infinity;
+          const bCook =
+            b.steps?.reduce(
+              (sum, step) => sum + (step.timerDuration || 0),
+              0
+            ) || Infinity;
+          return aCook - bCook;
+
+        case "rating":
+          // Highest rated first
+          const aRating = a.rating ?? 0;
+          const bRating = b.rating ?? 0;
+          return bRating - aRating;
+
+        default:
+          return 0;
+      }
+    });
+
+    return sorted;
+  }, [recipes, activeCategory, sortOption]);
 
   // Determine number of columns based on screen width
   const isTablet = width >= 768;
@@ -428,6 +485,155 @@ export default function RecipeFeed() {
           </View>
         </View>
 
+        {/* Sort Dropdown */}
+        <View className="px-6 mb-4">
+          {(showSortDropdown || false) && (
+            <Pressable
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 50,
+              }}
+              onPress={() => setShowSortDropdown(false)}
+            />
+          )}
+          <View
+            className="flex-row items-center gap-3"
+            style={{ zIndex: showSortDropdown ? 100 : 1 }}
+          >
+            <View className="flex-1 flex-row items-center">
+              <View className="flex-1">
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowSortDropdown(!showSortDropdown);
+                  }}
+                  className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                  activeOpacity={0.7}
+                  style={{ minHeight: 44 }}
+                >
+                  <Text className="text-charcoal-gray font-semibold text-sm">
+                    {sortOption === "recent"
+                      ? "Most Recent"
+                      : sortOption === "prepTime"
+                      ? "Shortest Prep Time"
+                      : sortOption === "cookTime"
+                      ? "Shortest Cook Time"
+                      : "Highest Rated"}
+                  </Text>
+                  <ChevronDown
+                    size={18}
+                    color="#3E3E3E"
+                    style={{
+                      transform: [
+                        { rotate: showSortDropdown ? "180deg" : "0deg" },
+                      ],
+                    }}
+                  />
+                </TouchableOpacity>
+                {showSortDropdown && (
+                  <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSortOption("recent");
+                        setShowSortDropdown(false);
+                      }}
+                      className={`px-4 py-3 ${
+                        sortOption === "recent" ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          sortOption === "recent"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Most Recent
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSortOption("prepTime");
+                        setShowSortDropdown(false);
+                      }}
+                      className={`px-4 py-3 ${
+                        sortOption === "prepTime" ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          sortOption === "prepTime"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Shortest Prep Time
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSortOption("cookTime");
+                        setShowSortDropdown(false);
+                      }}
+                      className={`px-4 py-3 ${
+                        sortOption === "cookTime" ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          sortOption === "cookTime"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Shortest Cook Time
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSortOption("rating");
+                        setShowSortDropdown(false);
+                      }}
+                      className={`px-4 py-3 ${
+                        sortOption === "rating" ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          sortOption === "rating"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Highest Rated
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Filter Icon */}
+            <TouchableOpacity
+              onPress={() => {
+                // TODO: Implement filter functionality
+              }}
+              className="bg-soft-beige rounded-xl items-center justify-center"
+              activeOpacity={0.7}
+              style={{ width: 44, height: 44 }}
+            >
+              <Filter size={20} color="#3E3E3E" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Category Chips */}
         <View className="mb-4">
           <ScrollView
@@ -444,7 +650,7 @@ export default function RecipeFeed() {
                   className={`rounded-full px-4 py-2 ${
                     isActive
                       ? "bg-dark-sage"
-                      : "bg-white border border-stone-100"
+                      : "bg-soft-beige border border-stone-100"
                   }`}
                   activeOpacity={0.7}
                   style={{ minHeight: 44, justifyContent: "center" }}
@@ -464,7 +670,7 @@ export default function RecipeFeed() {
 
         {/* Main Content - Recipe Grid */}
         <FlatList
-          data={filteredRecipes}
+          data={filteredAndSortedRecipes}
           numColumns={numColumns}
           renderItem={({ item, index }) => {
             const isLastInRow = (index + 1) % numColumns === 0;

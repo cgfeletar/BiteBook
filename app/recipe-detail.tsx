@@ -16,6 +16,7 @@ import {
   Clock,
   ExternalLink,
   MoreVertical,
+  Pencil,
   Share2,
   ShoppingBag,
   Star,
@@ -82,6 +83,8 @@ export default function RecipeDetailScreen() {
   const [showBookSelector, setShowBookSelector] = useState(false);
   const [showScaleDropdown, setShowScaleDropdown] = useState(false);
   const [showUnitsDropdown, setShowUnitsDropdown] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editedTitle, setEditedTitle] = useState("");
   const isImported = params.isImported === "true";
 
   // Combine duplicate ingredients (same name and unit)
@@ -476,6 +479,58 @@ export default function RecipeDetailScreen() {
     );
   };
 
+  const handleStartEditTitle = () => {
+    if (!recipeData) return;
+    setEditedTitle(recipeData.title);
+    setIsEditingTitle(true);
+  };
+
+  const handleSaveTitle = () => {
+    if (!recipeData) return;
+
+    // Check if recipe has an id (it's a saved recipe, not just imported)
+    let recipeId: string | null = null;
+    if ("id" in recipeData && recipeData.id) {
+      recipeId =
+        typeof recipeData.id === "string"
+          ? recipeData.id
+          : String(recipeData.id);
+    }
+
+    if (!recipeId) {
+      Alert.alert(
+        "Cannot Edit",
+        "This recipe hasn't been saved yet. Please save the recipe first before editing."
+      );
+      setIsEditingTitle(false);
+      return;
+    }
+
+    const trimmedTitle = editedTitle.trim();
+
+    if (!trimmedTitle) {
+      Alert.alert("Error", "Recipe title cannot be empty.");
+      return;
+    }
+
+    if (trimmedTitle.length > 30) {
+      Alert.alert("Error", "Recipe title cannot exceed 30 characters.");
+      return;
+    }
+
+    // Update the recipe in the store
+    updateRecipe(recipeId, { title: trimmedTitle });
+
+    // Update local state
+    setRecipeData({ ...recipeData, title: trimmedTitle });
+    setIsEditingTitle(false);
+  };
+
+  const handleCancelEditTitle = () => {
+    setIsEditingTitle(false);
+    setEditedTitle("");
+  };
+
   const renderSwipeRightAction = (step: Step, isCompleted: boolean) => {
     return (
       <View
@@ -727,13 +782,62 @@ export default function RecipeDetailScreen() {
                   },
                 ]}
               >
-                <Text
-                  className="text-3xl font-bold text-charcoal-gray mb-2"
-                  numberOfLines={2}
-                  style={{ fontFamily: "Lora_700Bold" }}
-                >
-                  {recipeData.title}
-                </Text>
+                <View className="flex-row items-center mb-2">
+                  {isEditingTitle ? (
+                    <View className="flex-1 flex-row items-center">
+                      <TextInput
+                        value={editedTitle}
+                        onChangeText={(text) => {
+                          if (text.length <= 30) {
+                            setEditedTitle(text);
+                          }
+                        }}
+                        maxLength={30}
+                        className="flex-1 text-3xl font-bold text-charcoal-gray"
+                        style={{ fontFamily: "Lora_700Bold" }}
+                        autoFocus
+                        onSubmitEditing={handleSaveTitle}
+                        onBlur={handleSaveTitle}
+                      />
+                      <RNTouchableOpacity
+                        onPress={handleSaveTitle}
+                        className="ml-2 p-2"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Check size={20} color="#5A6E6C" />
+                      </RNTouchableOpacity>
+                      <RNTouchableOpacity
+                        onPress={handleCancelEditTitle}
+                        className="ml-1 p-2"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <X size={20} color="#5A6E6C" />
+                      </RNTouchableOpacity>
+                    </View>
+                  ) : (
+                    <>
+                      <Text
+                        className="text-3xl font-bold text-charcoal-gray flex-1"
+                        numberOfLines={2}
+                        style={{ fontFamily: "Lora_700Bold" }}
+                      >
+                        {recipeData.title}
+                      </Text>
+                      {"id" in recipeData && recipeData.id && (
+                        <RNTouchableOpacity
+                          onPress={handleStartEditTitle}
+                          className="ml-2 p-2"
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Pencil size={20} color="#5A6E6C" />
+                        </RNTouchableOpacity>
+                      )}
+                    </>
+                  )}
+                </View>
                 <View className="flex flex-row items-center justify-between">
                   {recipeData.originalAuthor ? (
                     <Text className="text-base text-charcoal-gray/90">
@@ -793,7 +897,7 @@ export default function RecipeDetailScreen() {
                     {recipeData.prepTime}
                   </Text>
                   <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                    prep
+                    min prep
                   </Text>
                 </View>
               )}
@@ -1269,7 +1373,7 @@ export default function RecipeDetailScreen() {
                         <View className="mb-6">
                           <View className="flex-row items-center justify-between mb-2">
                             <Text className="text-base font-semibold text-charcoal-gray">
-                              Progress
+                              Ingredients in Pantry
                             </Text>
                             <Text className="text-sm text-charcoal-gray/60">
                               {progressInfo.inPantryCount} /{" "}

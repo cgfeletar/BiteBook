@@ -59,12 +59,17 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
     try {
       const recipeData = await importRecipe(url);
 
+      // Check if this is a TikTok/video recipe (has "video recipe" tag)
+      const isVideoRecipe = recipeData.tags?.includes("video recipe") || false;
+
       // Validate recipe data
+      // For video recipes, be more lenient - allow saving even without full recipe data
       const hasIngredients =
         recipeData.ingredients && recipeData.ingredients.length > 0;
       const hasSteps = recipeData.steps && recipeData.steps.length > 0;
 
-      if (!hasIngredients || !hasSteps) {
+      // For video recipes, always allow import (they might not have full recipe data)
+      if (!isVideoRecipe && (!hasIngredients || !hasSteps)) {
         const missingItems: string[] = [];
         if (!hasIngredients) missingItems.push("ingredients");
         if (!hasSteps) missingItems.push("instructions");

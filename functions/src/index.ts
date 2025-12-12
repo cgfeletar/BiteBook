@@ -50,6 +50,7 @@ interface Recipe {
   originalAuthor: string;
   tags: string[];
   categoryIds: string[];
+  prepTime?: number; // Prep time in minutes (active prep time)
   createdAt: admin.firestore.Timestamp | Date;
 }
 
@@ -91,7 +92,8 @@ IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript in
   "sourceUrl": string,
   "originalAuthor": string,
   "tags": string[],
-  "categoryIds": string[] (empty array if unknown)
+  "categoryIds": string[] (empty array if unknown),
+  "prepTime": number | null (in minutes, optional - active prep time only)
 }
 
 EXTRACTION RULES:
@@ -127,6 +129,12 @@ EXTRACTION RULES:
    - Look for: <ol>, <ul> with class containing "step", "instruction", "direction"
    - Each step should be a complete, actionable instruction
    - Generate unique IDs: "step-1", "step-2", etc.
+   - CRITICAL FORMATTING RULE: When an instruction mentions multiple ingredients (2 or more), format them as a bulleted list within the same instruction text:
+     * Example: "Combine butter, flour, and sugar" → "Combine:\n• butter\n• flour\n• sugar"
+     * Example: "Add eggs, vanilla, and salt" → "Add:\n• eggs\n• vanilla\n• salt"
+     * The instruction text should start with the action verb, followed by a colon, then list each ingredient on a new line with a bullet point (•)
+     * This makes the instructions clearer while keeping all content in the same instruction card
+     * Only apply this formatting when there are 2 or more ingredients mentioned together in a single instruction
    - Determine isBeginnerFriendly:
      * true: Simple actions like "mix", "stir", "bake at 350°F"
      * false: Complex techniques like "temper", "braise", "sous vide"
@@ -162,12 +170,48 @@ EXTRACTION RULES:
    - Leave as empty array [] if categories are not clearly defined
    - Only include if explicit category system exists
 
+10. PREP TIME (REQUIRED - always estimate if not explicitly stated):
+   - Extract prep time (active preparation time) in minutes
+   - FIRST: Look for explicit prep time fields: "Prep Time:", "Preparation Time:", "Prep:", "Active Time:", etc.
+   - If explicitly stated, use that value (convert to minutes if needed)
+   - If NOT explicitly stated, you MUST estimate based on instructions:
+     * Analyze all steps and count only active prep work (chopping, mixing, measuring, slicing, dicing, etc.)
+     * Exclude passive steps (waiting, resting, marinating, baking, cooking, simmering, roasting)
+     * Exclude steps that are just "bake for X minutes" or "cook until done" - these are passive
+     * Estimate time per active prep step:
+       - Simple tasks (mix, stir, combine, whisk): 2-3 min each
+       - Medium tasks (chop vegetables, measure ingredients, dice, slice): 3-5 min each
+       - Complex tasks (make dough, prepare sauce, knead, roll out): 5-10 min each
+     * Sum up all active prep step estimates
+   - CRITICAL: Always provide a prep time estimate - never return null unless the recipe has zero active prep steps
+   - Only count time where the cook is actively working, NOT passive cooking/baking time
+   - Return value in minutes (not hours or seconds)
+   - Minimum prep time should be at least 5 minutes for any recipe with ingredients to prepare
+
 HANDLING MESSY DATA:
 - Remove HTML tags, extra whitespace, and formatting
 - Ignore ads, navigation, comments, and unrelated content
 - If data is ambiguous, make reasonable inferences
 - If critical data is missing, use sensible defaults (empty arrays, null values)
 - Preserve original meaning even if formatting is inconsistent
+
+11. VIDEO RECIPES (TikTok, Instagram Reels, etc.):
+   - For video recipe platforms, extract recipe information from:
+     * Video description/caption text (PRIORITY: Look for content in elements with class "tiktok-description" or similar)
+     * Meta descriptions and og:description tags (these often contain the full recipe description)
+     * Comments that contain recipe details
+     * Text overlays in the video (if available in HTML)
+   - TikTok descriptions often contain:
+     * Recipe title at the beginning
+     * Ingredients list (may be in various formats: bullet points, numbered, comma-separated, or in text)
+     * Instructions/steps (may be brief or detailed)
+   - CRITICAL: Parse the description text carefully - ingredients might be written as "2 cups flour, 1 tsp salt" or "flour\nsalt\nsugar" or "• flour\n• salt"
+   - Extract ingredients even if they're embedded in the description text, not in a structured list
+   - Extract steps/instructions from the description if present
+   - If recipe information is incomplete or unavailable, that's okay - the recipe will be saved as a "video recipe" reference
+   - Always include the "video recipe" tag for TikTok URLs
+   - Extract the video title from og:title or page title (often the first line of the description)
+   - Extract the video thumbnail/image from og:image (this is the video screenshot/cover)
 
 OUTPUT FORMAT:
 Return ONLY the JSON object, no markdown, no code blocks, no explanations. The JSON must be valid and parseable.
@@ -281,6 +325,242 @@ async function callLLM(
 }
 
 /**
+ * Extract the original recipe URL from a Pinterest pin page
+ * Pinterest pins contain the original URL in various meta tags and data structures
+ */
+async function extractOriginalUrlFromPinterest(
+  pinterestUrl: string
+): Promise<string | null> {
+  try {
+    const response = await axios.get(pinterestUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      timeout: 10000,
+      maxRedirects: 5,
+    });
+
+    const $ = cheerio.load(response.data);
+    const htmlContent = response.data;
+
+    // Try multiple methods to find the original URL
+    // 1. Check og:url meta tag (most reliable)
+    const ogUrl = $('meta[property="og:url"]').attr("content");
+    if (ogUrl && !ogUrl.includes("pinterest.com") && ogUrl.startsWith("http")) {
+      return ogUrl;
+    }
+
+    // 2. Check canonical link
+    const canonical = $('link[rel="canonical"]').attr("href");
+    if (
+      canonical &&
+      !canonical.includes("pinterest.com") &&
+      canonical.startsWith("http")
+    ) {
+      return canonical;
+    }
+
+    // 3. Check for Pinterest's specific meta tags
+    const pinterestUrlMeta = $('meta[property="pinterestapp:url"]').attr(
+      "content"
+    );
+    if (
+      pinterestUrlMeta &&
+      !pinterestUrlMeta.includes("pinterest.com") &&
+      pinterestUrlMeta.startsWith("http")
+    ) {
+      return pinterestUrlMeta;
+    }
+
+    // 4. Look for JSON-LD structured data
+    const jsonLdScripts = $('script[type="application/ld+json"]');
+    for (let i = 0; i < jsonLdScripts.length; i++) {
+      try {
+        const jsonData = JSON.parse(jsonLdScripts.eq(i).html() || "{}");
+        if (
+          jsonData.url &&
+          !jsonData.url.includes("pinterest.com") &&
+          jsonData.url.startsWith("http")
+        ) {
+          return jsonData.url;
+        }
+        if (
+          jsonData.mainEntityOfPage?.url &&
+          !jsonData.mainEntityOfPage.url.includes("pinterest.com") &&
+          jsonData.mainEntityOfPage.url.startsWith("http")
+        ) {
+          return jsonData.mainEntityOfPage.url;
+        }
+        // Check for @id fields in JSON-LD
+        if (
+          jsonData["@id"] &&
+          !jsonData["@id"].includes("pinterest.com") &&
+          jsonData["@id"].startsWith("http")
+        ) {
+          return jsonData["@id"];
+        }
+      } catch (e) {
+        // Skip invalid JSON
+        continue;
+      }
+    }
+
+    // 5. Look for Pinterest's internal data structure in script tags
+    // Pinterest often stores data in window.__initialData__ or similar
+    const scripts = $("script");
+    for (let i = 0; i < scripts.length; i++) {
+      const scriptContent = scripts.eq(i).html() || "";
+
+      // Look for URL patterns in Pinterest's data structures
+      // Pattern: "url":"https://example.com/recipe"
+      const urlPattern1 = /"url"\s*:\s*"https?:\/\/(?!.*pinterest\.com)[^"]+"/g;
+      const matches1 = scriptContent.match(urlPattern1);
+      if (matches1) {
+        for (const match of matches1) {
+          const url = match.match(/"https?:\/\/[^"]+"/)?.[0]?.replace(/"/g, "");
+          if (url && url.startsWith("http") && !url.includes("pinterest.com")) {
+            return url;
+          }
+        }
+      }
+
+      // Pattern: "source_url":"https://example.com/recipe"
+      const urlPattern2 =
+        /"source_url"\s*:\s*"https?:\/\/(?!.*pinterest\.com)[^"]+"/g;
+      const matches2 = scriptContent.match(urlPattern2);
+      if (matches2) {
+        for (const match of matches2) {
+          const url = match.match(/"https?:\/\/[^"]+"/)?.[0]?.replace(/"/g, "");
+          if (url && url.startsWith("http") && !url.includes("pinterest.com")) {
+            return url;
+          }
+        }
+      }
+
+      // Pattern: "link":"https://example.com/recipe"
+      const urlPattern3 =
+        /"link"\s*:\s*"https?:\/\/(?!.*pinterest\.com)[^"]+"/g;
+      const matches3 = scriptContent.match(urlPattern3);
+      if (matches3) {
+        for (const match of matches3) {
+          const url = match.match(/"https?:\/\/[^"]+"/)?.[0]?.replace(/"/g, "");
+          if (url && url.startsWith("http") && !url.includes("pinterest.com")) {
+            return url;
+          }
+        }
+      }
+    }
+
+    // 6. Search the raw HTML for common URL patterns (fallback)
+    const urlPattern =
+      /https?:\/\/(?!.*pinterest\.com)(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s"'>]*)?/g;
+    const allUrls = htmlContent.match(urlPattern);
+    if (allUrls) {
+      // Filter out Pinterest URLs and common non-recipe URLs
+      const recipeUrls = allUrls.filter((url: string) => {
+        const lowerUrl = url.toLowerCase();
+        return (
+          !lowerUrl.includes("pinterest.com") &&
+          !lowerUrl.includes("facebook.com") &&
+          !lowerUrl.includes("twitter.com") &&
+          !lowerUrl.includes("instagram.com") &&
+          !lowerUrl.includes("youtube.com") &&
+          !lowerUrl.includes("google.com") &&
+          !lowerUrl.includes("amazon.com") &&
+          !lowerUrl.includes("cdn") &&
+          !lowerUrl.includes("static") &&
+          url.startsWith("http")
+        );
+      });
+
+      if (recipeUrls.length > 0) {
+        // Return the first URL that looks like a recipe/blog URL
+        return recipeUrls[0];
+      }
+    }
+
+    return null;
+  } catch (error: any) {
+    console.warn(
+      "Failed to extract original URL from Pinterest:",
+      error.message
+    );
+    return null;
+  }
+}
+
+/**
+ * Check if a URL is a Pinterest URL
+ */
+function isPinterestUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return (
+      urlObj.hostname.includes("pinterest.com") ||
+      urlObj.hostname.includes("pinterest.ca") ||
+      urlObj.hostname.includes("pinterest.co.uk") ||
+      urlObj.hostname.includes("pinterest.")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if a URL is a TikTok URL
+ */
+function isTikTokUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return (
+      urlObj.hostname.includes("tiktok.com") ||
+      urlObj.hostname.includes("vm.tiktok.com") ||
+      urlObj.hostname.includes("vt.tiktok.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get TikTok video metadata using oEmbed API
+ * Returns: { title, author_name, thumbnail_url }
+ */
+async function getTikTokOEmbed(tiktokUrl: string): Promise<{
+  title: string;
+  author_name: string;
+  thumbnail_url: string;
+} | null> {
+  try {
+    const oembedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(
+      tiktokUrl
+    )}`;
+    const response = await axios.get(oembedUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      timeout: 10000,
+    });
+
+    if (response.data) {
+      return {
+        title: response.data.title || "",
+        author_name: response.data.author_name || "Unknown",
+        thumbnail_url: response.data.thumbnail_url || "",
+      };
+    }
+    return null;
+  } catch (error: any) {
+    console.warn("Failed to fetch TikTok oEmbed:", error.message);
+    return null;
+  }
+}
+
+/**
  * Extract recipe from URL using web scraping and LLM
  */
 export const extractRecipeFromUrl = functions
@@ -297,7 +577,26 @@ export const extractRecipeFromUrl = functions
       );
     }
 
+    // Check if this is a Pinterest URL and extract the original URL
+    let actualRecipeUrl = data.url;
+    const isTikTok = isTikTokUrl(data.url);
+
+    if (isPinterestUrl(data.url)) {
+      console.log("Detected Pinterest URL, extracting original recipe URL...");
+      const originalUrl = await extractOriginalUrlFromPinterest(data.url);
+      if (originalUrl) {
+        console.log(`Extracted original URL from Pinterest: ${originalUrl}`);
+        actualRecipeUrl = originalUrl;
+      } else {
+        console.warn(
+          "Could not extract original URL from Pinterest, using Pinterest URL"
+        );
+        // Continue with Pinterest URL if we can't extract the original
+      }
+    }
+
     // Normalize URL for caching (remove trailing slashes, fragments, etc.)
+    // Use the original Pinterest URL for cache key to avoid duplicate caching
     const normalizedUrl = data.url
       .trim()
       .replace(/\/$/, "")
@@ -308,27 +607,52 @@ export const extractRecipeFromUrl = functions
       .replace(/[+/=]/g, "")}`;
 
     // Check cache first (cache expires after 7 days)
-    const db = admin.firestore();
-    const cacheRef = db.collection("recipeCache").doc(cacheKey);
-    const cachedDoc = await cacheRef.get();
+    // Gracefully handle if Firestore is not enabled
+    try {
+      const db = admin.firestore();
+      const cacheRef = db.collection("recipeCache").doc(cacheKey);
+      const cachedDoc = await cacheRef.get();
 
-    if (cachedDoc.exists) {
-      const cachedData = cachedDoc.data();
-      const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
-      const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+      if (cachedDoc.exists) {
+        const cachedData = cachedDoc.data();
+        const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
+        const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
-      if (cacheAge < cacheExpiry) {
-        console.log(`Cache hit for URL: ${normalizedUrl}`);
-        return cachedData!.recipe;
+        if (cacheAge < cacheExpiry) {
+          console.log(`Cache hit for URL: ${normalizedUrl}`);
+          // Update sourceUrl to the actual recipe URL if it was from Pinterest
+          const cachedRecipe = cachedData!.recipe;
+          if (isPinterestUrl(data.url) && actualRecipeUrl !== data.url) {
+            cachedRecipe.sourceUrl = actualRecipeUrl;
+          }
+          return cachedRecipe;
+        } else {
+          // Cache expired, delete it
+          await cacheRef.delete();
+        }
+      }
+    } catch (cacheError: any) {
+      // If Firestore is not enabled or unavailable, continue without caching
+      if (
+        cacheError.code === "failed-precondition" ||
+        cacheError.message?.includes("SERVICE_DISABLED")
+      ) {
+        console.warn(
+          "Firestore not available, continuing without cache:",
+          cacheError.message
+        );
       } else {
-        // Cache expired, delete it
-        await cacheRef.delete();
+        // Log other cache errors but don't fail the request
+        console.warn(
+          "Cache check failed, continuing without cache:",
+          cacheError.message
+        );
       }
     }
 
     try {
-      // Fetch HTML content
-      const response = await axios.get(data.url, {
+      // Fetch HTML content from the actual recipe URL (not Pinterest)
+      const response = await axios.get(actualRecipeUrl, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -341,6 +665,68 @@ export const extractRecipeFromUrl = functions
 
       // Parse HTML with Cheerio
       const $ = cheerio.load(response.data);
+
+      // For TikTok, get metadata from oEmbed API and extract description from page
+      let tiktokDescription = "";
+      let tiktokOEmbed: {
+        title: string;
+        author_name: string;
+        thumbnail_url: string;
+      } | null = null;
+
+      if (isTikTok) {
+        // Get metadata from TikTok oEmbed API
+        tiktokOEmbed = await getTikTokOEmbed(actualRecipeUrl);
+        console.log("TikTok oEmbed data:", tiktokOEmbed);
+
+        // Extract description from meta tags for recipe parsing
+        tiktokDescription =
+          $('meta[property="og:description"]').attr("content") ||
+          $('meta[name="description"]').attr("content") ||
+          "";
+
+        // Try to extract description from TikTok's JSON data in script tags
+        if (!tiktokDescription) {
+          const scripts = $("script");
+          for (let i = 0; i < scripts.length; i++) {
+            const scriptContent = scripts.eq(i).html() || "";
+            try {
+              const jsonMatch = scriptContent.match(
+                /window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({.+?});/s
+              );
+              if (jsonMatch) {
+                const jsonData = JSON.parse(jsonMatch[1]);
+                if (
+                  jsonData?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo
+                    ?.itemStruct?.desc
+                ) {
+                  tiktokDescription =
+                    jsonData.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo
+                      .itemStruct.desc;
+                  break;
+                }
+              }
+
+              // Look for description in any JSON structure
+              const descPattern = /"desc"\s*:\s*"([^"]+)"/;
+              const descMatch = scriptContent.match(descPattern);
+              if (descMatch && !tiktokDescription) {
+                tiktokDescription = descMatch[1]
+                  .replace(/\\n/g, "\n")
+                  .replace(/\\"/g, '"');
+                break;
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+
+        console.log(
+          "TikTok extracted description:",
+          tiktokDescription.substring(0, 200)
+        );
+      }
 
       // Remove script, style, and non-essential elements first
       $(
@@ -365,6 +751,11 @@ export const extractRecipeFromUrl = functions
         htmlContent = body.html() || "";
       }
 
+      // For TikTok, prepend the description to help LLM extract recipe info
+      if (isTikTok && tiktokDescription) {
+        htmlContent = `<div class="tiktok-description">${tiktokDescription}</div>\n${htmlContent}`;
+      }
+
       // Clean up HTML: remove excessive whitespace but preserve structure
       htmlContent = htmlContent
         .replace(/\s+/g, " ")
@@ -372,37 +763,240 @@ export const extractRecipeFromUrl = functions
         .trim();
 
       // Call LLM to extract structured data
-      const extractedData = await callLLM(htmlContent, data.url);
+      // Pass the actual recipe URL (not Pinterest URL) to the LLM
+      const extractedData = await callLLM(htmlContent, actualRecipeUrl);
+
+      // For TikTok, override title, image, and author from oEmbed API
+      if (isTikTok && tiktokOEmbed) {
+        extractedData.title =
+          tiktokOEmbed.title || extractedData.title || "TikTok Recipe Video";
+        extractedData.coverImage =
+          tiktokOEmbed.thumbnail_url || extractedData.coverImage || "";
+        extractedData.originalAuthor =
+          tiktokOEmbed.author_name || extractedData.originalAuthor || "Unknown";
+      }
 
       // Validate and structure the response
+      // Handle prepTime - convert null to undefined, ensure it's a number if present
+      let prepTime: number | undefined = undefined;
+      if (
+        extractedData.prepTime !== null &&
+        extractedData.prepTime !== undefined
+      ) {
+        const prepTimeValue = Number(extractedData.prepTime);
+        if (!isNaN(prepTimeValue) && prepTimeValue > 0) {
+          prepTime = Math.round(prepTimeValue);
+        }
+      }
+
+      // For TikTok, ensure "video recipe" tag is included
+      let tags = extractedData.tags || [];
+      if (isTikTok && !tags.includes("video recipe")) {
+        tags = [...tags, "video recipe"];
+      }
+
       const recipe: Omit<Recipe, "id" | "createdAt"> = {
         title: extractedData.title || "Untitled Recipe",
         coverImage: extractedData.coverImage || "",
         ingredients: extractedData.ingredients || [],
         steps: extractedData.steps || [],
         nutritionalInfo: extractedData.nutritionalInfo || {},
-        sourceUrl: data.url,
+        sourceUrl: actualRecipeUrl, // Use the actual recipe URL, not the Pinterest URL
         originalAuthor: extractedData.originalAuthor || "Unknown",
-        tags: extractedData.tags || [],
+        tags: tags,
         categoryIds: extractedData.categoryIds || [],
+        ...(prepTime !== undefined && { prepTime }),
       };
 
-      // Cache the result for future requests
+      // Cache the result for future requests (if Firestore is available)
       try {
+        const db = admin.firestore();
+        const cacheRef = db.collection("recipeCache").doc(cacheKey);
         await cacheRef.set({
           recipe,
           cachedAt: admin.firestore.FieldValue.serverTimestamp(),
           url: normalizedUrl,
         });
         console.log(`Cached recipe for URL: ${normalizedUrl}`);
-      } catch (cacheError) {
+      } catch (cacheError: any) {
         // Don't fail the request if caching fails
-        console.warn("Failed to cache recipe:", cacheError);
+        if (
+          cacheError.code === "failed-precondition" ||
+          cacheError.message?.includes("SERVICE_DISABLED")
+        ) {
+          console.warn(
+            "Firestore not available, skipping cache:",
+            cacheError.message
+          );
+        } else {
+          console.warn("Failed to cache recipe:", cacheError.message);
+        }
       }
 
       return recipe;
     } catch (error: any) {
       console.error("Error extracting recipe:", error);
+      console.error("Error stack:", error.stack);
+
+      // For TikTok URLs, allow saving even if extraction fails
+      // Try to extract recipe info from description and create a recipe entry
+      if (isTikTok) {
+        console.log(
+          "TikTok URL detected - attempting to extract from description"
+        );
+        try {
+          // Get metadata from TikTok oEmbed API first
+          const oEmbedData = await getTikTokOEmbed(data.url);
+          console.log("TikTok oEmbed data (fallback):", oEmbedData);
+
+          // Try to fetch the TikTok page to get description
+          const response = await axios.get(data.url, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+              Accept:
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            timeout: 10000,
+            maxRedirects: 5,
+          });
+
+          const $ = cheerio.load(response.data);
+
+          // Extract description from meta tags
+          let description =
+            $('meta[property="og:description"]').attr("content") ||
+            $('meta[name="description"]').attr("content") ||
+            "";
+
+          // Try to extract from TikTok's JSON data in script tags
+          const scripts = $("script");
+          for (let i = 0; i < scripts.length; i++) {
+            const scriptContent = scripts.eq(i).html() || "";
+            try {
+              const jsonMatch = scriptContent.match(
+                /window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({.+?});/s
+              );
+              if (jsonMatch) {
+                const jsonData = JSON.parse(jsonMatch[1]);
+                if (
+                  jsonData?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo
+                    ?.itemStruct?.desc
+                ) {
+                  description =
+                    jsonData.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo
+                      .itemStruct.desc;
+                  break;
+                }
+              }
+            } catch (e) {
+              continue;
+            }
+          }
+
+          // Use oEmbed data for title, image, and author (fallback to extracted values)
+          const title =
+            oEmbedData?.title ||
+            $('meta[property="og:title"]').attr("content") ||
+            (description
+              ? description.split("\n")[0] || description.substring(0, 100)
+              : "") ||
+            "TikTok Recipe Video";
+
+          const coverImage = oEmbedData?.thumbnail_url || "";
+
+          const author =
+            oEmbedData?.author_name ||
+            description?.match(/@(\w+)/)?.[1] ||
+            "Unknown";
+
+          // If we have a description, try to extract recipe info using LLM
+          if (description) {
+            console.log("Attempting to extract recipe from TikTok description");
+            try {
+              const descriptionHtml = `<div class="tiktok-description">${description}</div>`;
+              const extractedData = await callLLM(descriptionHtml, data.url);
+
+              // Ensure video recipe tag and use extracted or fallback values
+              let tags = extractedData.tags || [];
+              if (!tags.includes("video recipe")) {
+                tags = [...tags, "video recipe"];
+              }
+
+              const recipe: Omit<Recipe, "id" | "createdAt"> = {
+                title: extractedData.title || title,
+                coverImage: extractedData.coverImage || coverImage,
+                ingredients: extractedData.ingredients || [],
+                steps: extractedData.steps || [],
+                nutritionalInfo: extractedData.nutritionalInfo || {},
+                sourceUrl: data.url,
+                originalAuthor: extractedData.originalAuthor || author,
+                tags: tags,
+                categoryIds: extractedData.categoryIds || [],
+                ...(extractedData.prepTime && {
+                  prepTime: Number(extractedData.prepTime),
+                }),
+              };
+
+              return recipe;
+            } catch (llmError: any) {
+              console.warn(
+                "LLM extraction from description failed:",
+                llmError.message
+              );
+              // Fall through to create minimal recipe
+            }
+          }
+
+          // Create minimal recipe if LLM extraction failed or no description
+          const minimalRecipe: Omit<Recipe, "id" | "createdAt"> = {
+            title: title,
+            coverImage: coverImage,
+            ingredients: [], // Empty - user can add manually
+            steps: [
+              {
+                id: "step-1",
+                instruction:
+                  description || `Watch the video recipe at: ${data.url}`,
+                isCompleted: false,
+                isBeginnerFriendly: true,
+              },
+            ],
+            nutritionalInfo: {},
+            sourceUrl: data.url,
+            originalAuthor: author,
+            tags: ["video recipe"],
+            categoryIds: [],
+          };
+
+          return minimalRecipe;
+        } catch (fallbackError: any) {
+          console.error(
+            "Failed to create minimal TikTok recipe:",
+            fallbackError
+          );
+          // Still create a basic recipe entry
+          const basicRecipe: Omit<Recipe, "id" | "createdAt"> = {
+            title: "TikTok Recipe Video",
+            coverImage: "",
+            ingredients: [],
+            steps: [
+              {
+                id: "step-1",
+                instruction: `Watch the video recipe at: ${data.url}`,
+                isCompleted: false,
+                isBeginnerFriendly: true,
+              },
+            ],
+            nutritionalInfo: {},
+            sourceUrl: data.url,
+            originalAuthor: "Unknown",
+            tags: ["video recipe"],
+            categoryIds: [],
+          };
+          return basicRecipe;
+        }
+      }
 
       if (error.response) {
         throw new functions.https.HttpsError(
@@ -415,9 +1009,12 @@ export const extractRecipeFromUrl = functions
           "Request timeout. The URL took too long to respond."
         );
       } else {
+        // Provide more detailed error message
+        const errorMessage = error.message || "Unknown error occurred";
+        console.error("Detailed error:", errorMessage);
         throw new functions.https.HttpsError(
           "internal",
-          `Failed to extract recipe: ${error.message}`
+          `Failed to extract recipe: ${errorMessage}`
         );
       }
     }
