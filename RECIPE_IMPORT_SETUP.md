@@ -1,166 +1,91 @@
 # Recipe Import Setup Guide
 
-This guide will walk you through setting up the recipe import functionality using Google Gemini AI.
+This guide will walk you through setting up the recipe import functionality using OpenAI GPT.
 
 ## Prerequisites
 
 You should already have:
+
 - ✅ Google Cloud project "savorboard-5d4cc"
-- ✅ An API key (auto-created by Firebase)
-- ✅ Generative Language API enabled
-- ✅ Vertex AI API enabled
 - ✅ Firebase project configured
+- ✅ OpenAI API account with API key
 
-## Step 1: Verify Your API Key
+## Step 1: Get Your OpenAI API Key
 
-1. Go to [Google AI Studio API Keys](https://aistudio.google.com/api-keys)
-2. You should see your API key listed. If you don't have one:
-   - Click "Create API Key"
-   - Select your project "savorboard-5d4cc"
-   - Copy the API key (you'll need it in Step 3)
+1. Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
+2. Sign in or create an account
+3. Click "Create new secret key"
+4. Give it a name (e.g., "Recipe Import")
+5. Copy the API key (you'll need it in Step 2)
+   - **Important:** Save this key securely - you won't be able to see it again!
 
-## Step 2: Verify Available Gemini Models
+## Step 2: Set Up API Key in Firebase Functions
 
-1. Go to [Google Cloud Console - APIs & Services](https://console.cloud.google.com/apis/dashboard?project=savorboard-5d4cc)
-2. Make sure these APIs are enabled:
-   - **Generative Language API** (generativelanguage.googleapis.com)
-   - **Vertex AI API** (aiplatform.googleapis.com)
+You need to set the `OPENAI_API_KEY` secret in your Firebase Functions.
 
-3. To check which models you have access to:
-   - Go to [Google AI Studio](https://aistudio.google.com/app/models)
-   - You should see available models like:
-     - `gemini-1.5-pro` (recommended for best quality)
-     - `gemini-1.5-flash` (faster, good quality)
-     - `gemini-1.0-pro` (older version)
-
-   **Note:** The code will automatically try `gemini-1.5-pro` first, then fall back to `gemini-1.5-flash` if the first fails.
-
-## Step 3: Set Up API Key in Firebase Functions
-
-You need to set the `GEMINI_API_KEY` environment variable in your Firebase Functions.
-
-### Option A: Using Firebase CLI (Recommended)
-
-1. Open your terminal in the project root
-2. Run:
-   ```bash
-   firebase functions:config:set gemini.api_key="YOUR_API_KEY_HERE"
-   ```
-   Replace `YOUR_API_KEY_HERE` with your actual API key from Step 1.
-
-3. Then update your `functions/src/index.ts` to read from config (if not already):
-   ```typescript
-   const apiKey = functions.config().gemini?.api_key || process.env.GEMINI_API_KEY;
-   ```
-
-### Option B: Using Environment Variables (Modern Approach)
-
-Since `functions.config()` is deprecated, use environment variables instead:
-
-1. Create a `.env` file in the `functions/` directory:
-   ```bash
-   cd functions
-   touch .env
-   ```
-
-2. Add your API key to `.env`:
-   ```
-   GEMINI_API_KEY=your_api_key_here
-   ```
-
-3. Install `dotenv` package:
-   ```bash
-   cd functions
-   npm install dotenv
-   ```
-
-4. Update `functions/src/index.ts` to load environment variables:
-   ```typescript
-   import * as dotenv from 'dotenv';
-   dotenv.config();
-   ```
-
-5. **Important:** Add `.env` to `.gitignore` to keep your API key secure:
-   ```bash
-   echo ".env" >> functions/.gitignore
-   ```
-
-6. When deploying, set the environment variable:
-   ```bash
-   firebase functions:config:set gemini.api_key="YOUR_API_KEY"
-   ```
-   Or use Firebase's environment configuration:
-   ```bash
-   firebase functions:secrets:set GEMINI_API_KEY
-   ```
-   (This will prompt you to enter the secret)
-
-### Option C: Using Firebase Secrets (Most Secure - Recommended for Production)
+### Using Firebase Secrets (Recommended)
 
 1. Set the secret:
-   ```bash
-   firebase functions:secrets:set GEMINI_API_KEY
-   ```
-   Enter your API key when prompted.
 
-2. Update `functions/src/index.ts` to use the secret:
+   ```bash
+   firebase functions:secrets:set OPENAI_API_KEY
+   ```
+
+   Enter your OpenAI API key when prompted.
+
+2. The function is already configured to use this secret in `functions/src/index.ts`:
    ```typescript
-   // At the top of the file
-   import { defineSecret } from 'firebase-functions/params';
-   
-   const geminiApiKey = defineSecret('GEMINI_API_KEY');
-   
-   // In your function
    export const extractRecipeFromUrl = functions
-     .runWith({ secrets: [geminiApiKey] })
+     .runWith({ secrets: [OPENAI_API_KEY] })
      .https.onCall(async (data, context) => {
-       // ... existing code ...
-       const apiKey = geminiApiKey.value();
-       // ... rest of function ...
+       // Uses OPENAI_API_KEY secret
      });
    ```
 
-## Step 4: Verify Quotas and Billing
+## Step 3: Verify Quotas and Billing
 
-1. Go to [Google Cloud Console - Quotas](https://console.cloud.google.com/iam-admin/quotas?project=savorboard-5d4cc)
-2. Search for "Generative Language API" or "Gemini"
-3. Check that you have:
-   - Requests per minute quota
-   - Tokens per minute quota
-   - Daily quota limits
+1. Go to [OpenAI Usage Dashboard](https://platform.openai.com/usage)
+2. Check your:
+   - API usage and limits
+   - Billing settings
+   - Rate limits
 
-4. Make sure billing is enabled:
-   - Go to [Billing](https://console.cloud.google.com/billing?project=savorboard-5d4cc)
-   - Ensure a billing account is linked
+3. Make sure billing is enabled:
+   - Go to [OpenAI Billing](https://platform.openai.com/account/billing)
+   - Ensure a payment method is added
 
-## Step 5: Deploy Firebase Functions
+## Step 4: Deploy Firebase Functions
 
-**Note:** Your functions are configured to use the `europe-central2` region.
+**Note:** Your functions are configured to use the `us-central1` region.
 
 1. Build the functions:
+
    ```bash
    cd functions
    npm run build
    ```
 
 2. Deploy the function:
+
    ```bash
    firebase deploy --only functions:extractRecipeFromUrl
    ```
 
    Or deploy all functions:
+
    ```bash
    firebase deploy --only functions
    ```
 
 3. Verify deployment:
+
    ```bash
    firebase functions:list
    ```
 
-   You should see your functions listed with region `europe-central2`.
+   You should see your functions listed with region `us-central1`.
 
-## Step 6: Test the Function
+## Step 5: Test the Function
 
 You can test the function using the Firebase Console:
 
@@ -169,58 +94,70 @@ You can test the function using the Firebase Console:
 3. Use the "Test" tab to test with a sample URL
 
 Or test from your app:
+
 1. Open the app
-2. Tap the "+" button in the top right
-3. Paste a recipe URL (e.g., from AllRecipes, Food Network, etc.)
+2. Tap the "+" button in the bottom navigation
+3. Paste a recipe URL (e.g., from AllRecipes, Food Network, TikTok, etc.)
 4. Tap "Import Recipe"
 
 ## Troubleshooting
 
-### Error: "GEMINI_API_KEY environment variable is not set"
-- Make sure you've set the API key using one of the methods in Step 3
-- If using `.env`, make sure `dotenv` is installed and configured
-- Restart the Firebase emulator or redeploy functions
+### Error: "OPENAI_API_KEY secret is not set"
 
-### Error: "All Gemini models failed"
-- Check that Generative Language API is enabled
-- Verify your API key is correct
-- Check quotas haven't been exceeded
-- Try a different model name in the code
+- Make sure you've set the secret using `firebase functions:secrets:set OPENAI_API_KEY`
+- Verify the secret name matches exactly: `OPENAI_API_KEY`
+- Redeploy functions after setting the secret
+
+### Error: "OpenAI API request failed"
+
+- Check that your API key is valid
+- Verify you have credits/billing enabled on your OpenAI account
+- Check rate limits haven't been exceeded
+- Review OpenAI API status: https://status.openai.com/
 
 ### Error: "Failed to fetch URL"
+
 - The URL might be blocking requests
 - Check that the URL is publicly accessible
 - Some sites require specific headers or authentication
 
 ### Function timeout
-- Increase the timeout in `functions/src/index.ts`:
-  ```typescript
-  export const extractRecipeFromUrl = functions
-    .runWith({ timeoutSeconds: 60 })
-    .https.onCall(...)
-  ```
+
+- The function has a default timeout
+- Complex recipes may take longer to process
+- Check Firebase Functions logs for timeout errors
 
 ## API Usage and Costs
 
-- **Gemini 1.5 Pro**: ~$0.00125 per 1K input tokens, ~$0.005 per 1K output tokens
-- **Gemini 1.5 Flash**: ~$0.000075 per 1K input tokens, ~$0.0003 per 1K output tokens
-- Typical recipe extraction: ~10K-50K input tokens, ~2K-5K output tokens
-- Estimated cost per recipe: $0.01-$0.10 (depending on model and recipe complexity)
+- **GPT-4o-mini**: ~$0.15 per 1M input tokens, ~$0.60 per 1M output tokens
+- Typical recipe extraction: ~10K-30K input tokens, ~2K-5K output tokens
+- Estimated cost per recipe: $0.002-$0.02 (very cost-effective)
 
-Monitor usage at: [Google Cloud Console - Billing](https://console.cloud.google.com/billing?project=savorboard-5d4cc)
+Monitor usage at: [OpenAI Usage Dashboard](https://platform.openai.com/usage)
+
+## Model Information
+
+The function uses **GPT-4o-mini** which provides:
+- Fast response times
+- High-quality recipe extraction
+- Cost-effective pricing
+- Good understanding of cooking instructions and ingredients
 
 ## Next Steps
 
 Once setup is complete:
-1. ✅ Recipe import button is on the homepage (green "+" button)
-2. ✅ Users can paste URLs to import recipes
+
+1. ✅ Recipe import button is in the bottom navigation (green "+" button)
+2. ✅ Users can paste URLs to import recipes from any website, TikTok, Instagram, etc.
 3. ✅ Recipes are automatically added to the homepage feed
 4. ✅ Recipes persist until manually deleted
+5. ✅ Timer functionality available for steps with time durations
 
 ## Support
 
 If you encounter issues:
+
 1. Check Firebase Functions logs: `firebase functions:log`
 2. Check Google Cloud Console logs
-3. Verify API key permissions and quotas
-
+3. Verify OpenAI API key permissions and billing
+4. Review OpenAI API documentation: https://platform.openai.com/docs

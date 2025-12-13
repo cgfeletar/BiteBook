@@ -299,6 +299,128 @@ export default function RecipeDetailScreen() {
     checkAndGenerateNutrition();
   }, [recipeData]);
 
+  // Initialize and auto-start timers when recipe data loads
+  useEffect(() => {
+    if (!recipeData?.steps) return;
+
+    // Initialize timer states and auto-start timers with timerDuration
+    const initializeTimers = async () => {
+      // Request notification permissions first
+      const { status } = await Notifications.requestPermissionsAsync();
+
+      const initialStates: Record<
+        string,
+        { remaining: number; isRunning: boolean; isCompleted: boolean }
+      > = {};
+      const timersToStart: Array<{
+        stepId: string;
+        duration: number;
+        instruction: string;
+      }> = [];
+
+      recipeData.steps.forEach((step) => {
+        if (step.timerDuration) {
+          initialStates[step.id] = {
+            remaining: step.timerDuration,
+            isRunning: false,
+            isCompleted: false,
+          };
+
+          // Queue timer to auto-start
+          timersToStart.push({
+            stepId: step.id,
+            duration: step.timerDuration,
+            instruction: step.instruction,
+          });
+        }
+      });
+
+      setTimerStates(initialStates);
+
+      // Auto-start all timers
+      if (status === "granted" && timersToStart.length > 0) {
+        timersToStart.forEach(({ stepId, duration, instruction }) => {
+          // Schedule notification
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: "Timer Complete!",
+              body: instruction.substring(0, 100),
+              sound: true,
+            },
+            trigger: {
+              seconds: duration,
+            } as any,
+          });
+
+          // Start timer interval
+          timerIntervals.current[stepId] = setInterval(() => {
+            setTimerStates((prev) => {
+              const current = prev[stepId];
+              if (!current) return prev;
+
+              if (current.remaining <= 1) {
+                // Timer completed
+                clearInterval(timerIntervals.current[stepId]);
+                delete timerIntervals.current[stepId];
+                return {
+                  ...prev,
+                  [stepId]: {
+                    remaining: 0,
+                    isRunning: false,
+                    isCompleted: true,
+                  },
+                };
+              }
+
+              return {
+                ...prev,
+                [stepId]: {
+                  ...current,
+                  remaining: current.remaining - 1,
+                  isRunning: true,
+                },
+              };
+            });
+          }, 1000);
+
+          // Mark as running
+          setTimerStates((prev) => ({
+            ...prev,
+            [stepId]: {
+              ...prev[stepId],
+              isRunning: true,
+            },
+          }));
+        });
+      }
+    };
+
+    initializeTimers();
+
+    // Cleanup timers on unmount or when recipe changes
+    return () => {
+      Object.values(timerIntervals.current).forEach((interval) => {
+        clearInterval(interval);
+      });
+      Object.keys(timerIntervals.current).forEach((key) => {
+        delete timerIntervals.current[key];
+      });
+    };
+  }, [recipeData?.steps]);
+
+  // Configure notifications
+  useEffect(() => {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  }, []);
+
   // Convert units (simple conversion - can be enhanced)
   const convertUnit = (
     quantity: number,
@@ -560,7 +682,7 @@ export default function RecipeDetailScreen() {
   const renderSwipeRightAction = (step: Step, isCompleted: boolean) => {
     return (
       <View
-        className="bg-dark-sage rounded-xl items-center justify-center px-6"
+        className="bg-dark-sage rounded-xl items-center justify-center px-6 mb-4"
         style={{
           height: "100%",
           justifyContent: "center",

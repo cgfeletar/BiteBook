@@ -141,16 +141,15 @@ EXTRACTION RULES:
    - TIME INFORMATION IN INSTRUCTIONS:
      * Keep time information in the instruction text when it's part of the actual cooking instruction
      * Examples: "Bake for 20 minutes", "Simmer for 10 minutes", "Cook in slow cooker for 2 hours", "Saute for 5 minutes"
-     * DO NOT add time estimates to instructions (e.g., don't add "this takes 5 minutes" to "chop vegetables")
      * Only include time when it's explicitly part of the cooking instruction itself
    - Determine isBeginnerFriendly:
      * true: Simple actions like "mix", "stir", "bake at 350°F"
      * false: Complex techniques like "temper", "braise", "sous vide"
-   - Extract timerDuration from text (for timer feature):
+   - Also return timerDuration from text (for timer feature):
      * "bake for 20 minutes" → 1200 seconds (AND keep "bake for 20 minutes" in instruction text)
      * "simmer 5 min" → 300 seconds (AND keep "simmer 5 min" in instruction text)
      * "cook until golden" → null (no specific time mentioned)
-     * Extract timerDuration when there's a specific time duration mentioned in the instruction
+     * Also return timerDuration when there's a specific time duration mentioned in the instruction
    - Always set isCompleted to false
 
 5. NUTRITIONAL INFO:
@@ -573,7 +572,7 @@ async function getTikTokOEmbed(tiktokUrl: string): Promise<{
  * Extract recipe from URL using web scraping and LLM
  */
 export const extractRecipeFromUrl = functions
-  .region("europe-central2")
+  .region("us-central1")
   .runWith({ secrets: [OPENAI_API_KEY] })
   .https.onCall(async (data: { url: string }, context) => {
     // Note: Authentication is optional - users can import recipes without logging in
@@ -1154,7 +1153,7 @@ async function generateNutritionFromIngredients(
  * Generate nutritional info from ingredients
  */
 export const generateNutritionalInfo = functions
-  .region("europe-central2")
+  .region("us-central1")
   .runWith({ secrets: [OPENAI_API_KEY] })
   .https.onCall(async (data: { ingredients: Ingredient[] }, context) => {
     // Note: Authentication is optional - users can generate nutritional info without logging in

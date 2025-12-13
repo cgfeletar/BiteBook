@@ -2,8 +2,8 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../config/firebase";
 import { Ingredient, NutritionalInfo, RecipeCreateInput } from "../types";
 
-// Initialize Cloud Functions with europe-central2 region
-const functions = getFunctions(app, "europe-central2");
+// Initialize Cloud Functions with us-central1 region
+const functions = getFunctions(app, "us-central1");
 
 /**
  * Import recipe from URL using AI extraction

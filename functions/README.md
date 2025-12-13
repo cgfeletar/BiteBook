@@ -15,13 +15,12 @@ npm install
 npm run build
 ```
 
-3. Set up environment variables:
-- Add your LLM API key to Firebase Functions config:
+3. Set up API key:
+- Add your OpenAI API key as a Firebase secret:
 ```bash
-firebase functions:config:set openai.api_key="your-api-key"
-# OR
-firebase functions:config:set gemini.api_key="your-api-key"
+firebase functions:secrets:set OPENAI_API_KEY
 ```
+Enter your OpenAI API key when prompted.
 
 ## Functions
 
@@ -43,12 +42,12 @@ const result = await extractRecipe({ url: 'https://example.com/recipe' });
 
 ## LLM Integration
 
-The function uses an LLM (OpenAI GPT-4/3.5 or Google Gemini) to extract structured recipe data from messy HTML. 
+The function uses OpenAI GPT-4o-mini to extract structured recipe data from messy HTML. 
 
-**To implement the LLM call:**
-1. Uncomment and configure either the OpenAI or Gemini example in `src/index.ts`
-2. Add your API key to Firebase Functions config
-3. Update the `callLLM` function with your preferred provider
+**Configuration:**
+- The function is already configured to use OpenAI
+- Uses the `OPENAI_API_KEY` secret set in Firebase Functions
+- Model: GPT-4o-mini (fast and cost-effective)
 
 ## Deployment
 
