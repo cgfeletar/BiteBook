@@ -3,7 +3,7 @@ import { importRecipe } from "@/src/services/recipeService";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { router } from "expo-router";
 import { Link } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,15 @@ export default function AddScreen() {
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const addRecipe = useRecipeStore((state) => state.addRecipe);
+  const isMountedRef = useRef(true);
+
+  // Track if component is mounted to prevent state updates after unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const handleImport = async () => {
     if (!url.trim()) {
@@ -36,11 +45,19 @@ export default function AddScreen() {
       return;
     }
 
+    if (!isMountedRef.current) return;
     setIsLoading(true);
 
     try {
       // Import recipe from URL
       const recipeData = await importRecipe(url.trim());
+
+      // Check if component is still mounted before updating state
+      if (!isMountedRef.current) {
+        // Component unmounted, but recipe was imported - add it silently
+        addRecipe(recipeData);
+        return;
+      }
 
       // Check if this is a TikTok/video recipe (has "video recipe" tag)
       const isVideoRecipe = recipeData.tags?.includes("video recipe") || false;
@@ -100,6 +117,12 @@ export default function AddScreen() {
       // Add recipe to store
       const newRecipe = addRecipe(recipeData);
 
+      // Check if component is still mounted before navigation
+      if (!isMountedRef.current) {
+        // Component unmounted, recipe was added but don't navigate
+        return;
+      }
+
       // Reset form
       setUrl("");
 
@@ -112,6 +135,12 @@ export default function AddScreen() {
       });
     } catch (error: any) {
       console.error("Error importing recipe:", error);
+
+      // Only show error if component is still mounted
+      if (!isMountedRef.current) {
+        return;
+      }
+
       const errorMessage =
         error.message || "Failed to import recipe. Please try again.";
 
@@ -123,7 +152,10 @@ export default function AddScreen() {
         [{ text: "OK" }]
       );
     } finally {
-      setIsLoading(false);
+      // Only update loading state if component is still mounted
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -203,6 +235,20 @@ export default function AddScreen() {
                   </Text>
                 )}
               </TouchableOpacity>
+
+              {/* Loading Info Message */}
+              {isLoading && (
+                <View className="mt-4 bg-warm-sand/50 rounded-xl p-4 border border-warm-sand">
+                  <Text className="text-sm text-charcoal-gray text-center leading-5">
+                    <Text className="font-semibold">
+                      You're free to navigate away.
+                    </Text>
+                    {"\n"}
+                    Recipe upload may take up to 1 minute per recipe. Your
+                    recipe will be saved automatically.
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* Info Section */}

@@ -19,6 +19,7 @@ export interface Step {
   isCompleted: boolean;
   isBeginnerFriendly: boolean;
   timerDuration?: number; // Duration in seconds
+  title?: string; // Optional title for instruction sections (e.g., "Make the dough")
 }
 
 /**

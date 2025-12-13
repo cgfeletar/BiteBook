@@ -26,6 +26,7 @@ interface Step {
   isCompleted: boolean;
   isBeginnerFriendly: boolean;
   timerDuration?: number;
+  title?: string; // Optional title for instruction sections (e.g., "Make the dough")
 }
 
 interface NutritionalInfo {
@@ -78,7 +79,8 @@ IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript in
     "instruction": string,
     "isCompleted": boolean (always false),
     "isBeginnerFriendly": boolean,
-    "timerDuration": number | null (in seconds, optional)
+    "timerDuration": number | null (in seconds, optional),
+    "title": string | null (optional title for instruction sections, e.g., "Make the dough")
   }>,
   "nutritionalInfo": {
     "calories": number | null,
@@ -110,26 +112,36 @@ EXTRACTION RULES:
    - If no image found, use empty string ""
 
 3. INGREDIENTS:
-   - Parse ingredient lists from various formats:
+   - CRITICAL: Locate the ingredient list section in the HTML. Look for headings like "Ingredients", "Ingredients You'll Need", "For the [X]", or similar. The ingredient list is usually in a <ul>, <ol>, or <div> with classes like "ingredients", "recipe-ingredients", "ingredient-list", etc.
+   - CRITICAL: Extract the ACTUAL quantity and unit from each ingredient line. Do NOT default to "1 to taste" unless the recipe explicitly says "to taste" or "as needed".
+   - Parse ingredient lists from various formats (do not round):
      * "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }
      * "1/2 tsp salt" → { name: "salt", quantity: 0.5, unit: "tsp" }
+     * "1/4 cup butter" → { name: "butter", quantity: 0.25, unit: "cup" }
      * "1 egg" → { name: "egg", quantity: 1, unit: "egg" } (NOT cups!)
      * "3 large eggs" → { name: "eggs", quantity: 3, unit: "large" }
+     * "salt, to taste" → { name: "salt", quantity: 1, unit: "to taste" } (ONLY when explicitly stated)
+     * "pepper (optional)" → { name: "pepper", quantity: 1, unit: "to taste" } (if no quantity given and optional)
    - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
    - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
    - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
    - Handle ranges: "2-3 cups" → use average (2.5) or first number (2)
-   - Handle "to taste", "as needed" → quantity: 1, unit: "to taste"
-   - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists
-   - Clean ingredient names: remove quantities, units, and extra text
+   - Handle "to taste", "as needed", "optional" → quantity: 1, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
+   - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
+   - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
+   - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists, or any list items under an "Ingredients" heading
+   - Each ingredient should be on its own line or list item
+   - Clean ingredient names: remove quantities, units, and extra text (parenthetical notes can stay if they're part of the ingredient name)
    - Always set isChecked to false
+   - IMPORTANT: If you see an ingredient list with clear quantities (like "2 cups flour", "1/2 tsp salt"), extract those exact quantities. Do not assume "to taste" unless the recipe explicitly says so.
 
 4. STEPS:
-   - CRITICAL: Extract ALL cooking instructions - do not skip or omit any steps
+   - CRITICAL: Find the section that contains intructions (this is usually just below the ingredient list), then extract ALL cooking instructions - do not skip or omit any steps
    - Extract from ordered/unordered lists, paragraphs, or structured data
    - Look for: <ol>, <ul> with class containing "step", "instruction", "direction"
    - Also check: numbered lists, bullet points, recipe instruction sections, and any text that describes cooking actions
    - If instructions are in paragraph form, split them into individual steps
+   - If there is a title above one section of instructions (for example "Make the dough"), then extract that title as the step title.
    - Each step should be a complete, actionable instruction
    - Generate unique IDs: "step-1", "step-2", etc. for ALL steps found
    - CRITICAL FORMATTING RULE: When an instruction mentions multiple ingredients (2 or more), format them as a bulleted list within the same instruction text:
@@ -228,6 +240,126 @@ Raw HTML content:
 `;
 
 /**
+ * Parse JSON-LD structured data from HTML
+ * Returns recipe data if found, null otherwise
+ */
+
+function parseJSONLD(
+  html: string
+): Partial<Omit<Recipe, "id" | "createdAt">> | null {
+  const $ = cheerio.load(html);
+  const scripts = $('script[type="application/ld+json"]');
+
+  for (let i = 0; i < scripts.length; i++) {
+    const raw = scripts.eq(i).html();
+    if (!raw) continue;
+
+    let data: any;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+
+    const nodes = data["@graph"]
+      ? data["@graph"]
+      : Array.isArray(data)
+      ? data
+      : [data];
+
+    for (const node of nodes) {
+      if (
+        node["@type"] !== "Recipe" &&
+        node["@type"] !== "https://schema.org/Recipe"
+      ) {
+        continue;
+      }
+
+      const author = Array.isArray(node.author)
+        ? node.author[0]?.name
+        : typeof node.author === "string"
+        ? node.author
+        : node.author?.name;
+
+      return {
+        title: typeof node.name === "string" ? node.name : node.headline || "",
+
+        coverImage: Array.isArray(node.image)
+          ? node.image[0]
+          : typeof node.image === "string"
+          ? node.image
+          : "",
+
+        // ✅ LOSSLESS: keep raw strings
+        ingredients: Array.isArray(node.recipeIngredient)
+          ? node.recipeIngredient.map((ing: string) => ({
+              name: ing,
+              quantity: 1,
+              unit: "",
+              isChecked: false,
+            }))
+          : [],
+
+        steps: Array.isArray(node.recipeInstructions)
+          ? node.recipeInstructions.map((step: any, idx: number) => ({
+              id: `step-${idx + 1}`,
+              instruction: typeof step === "string" ? step : step.text || "",
+              isCompleted: false,
+              isBeginnerFriendly: true,
+            }))
+          : [],
+
+        nutritionalInfo: node.nutrition
+          ? {
+              calories: parseNumber(node.nutrition.calories),
+              protein: parseNumber(node.nutrition.proteinContent),
+              carbohydrates: parseNumber(node.nutrition.carbohydrateContent),
+              fat: parseNumber(node.nutrition.fatContent),
+              fiber: parseNumber(node.nutrition.fiberContent),
+              sugar: parseNumber(node.nutrition.sugarContent),
+              sodium: parseNumber(node.nutrition.sodiumContent),
+            }
+          : {},
+
+        originalAuthor: author || "Unknown",
+        tags: [],
+        categoryIds: [],
+        sourceUrl: "",
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractRecipeSection(html: string): string | null {
+  const $ = cheerio.load(html);
+
+  const selectors = [
+    "#recipe",
+    ".recipe",
+    ".recipe-card",
+    ".recipe-content",
+    "[itemtype*='Recipe']",
+  ];
+
+  for (const selector of selectors) {
+    const el = $(selector).first();
+    if (el.length) {
+      return el.html() || null;
+    }
+  }
+
+  return null;
+}
+
+function parseNumber(value: any): number | undefined {
+  if (!value) return undefined;
+  const num = parseFloat(String(value).replace(/[^\d.]/g, ""));
+  return Number.isNaN(num) ? undefined : num;
+}
+
+/**
  * Call OpenAI API to extract recipe data from HTML content
  */
 async function callLLM(
@@ -249,7 +381,7 @@ async function callLLM(
 
   // Truncate HTML content if too long (OpenAI has token limits)
   // Reduced to 30k characters for faster processing - most recipe content fits in this
-  const maxLength = 30000;
+  const maxLength = 50000;
   const truncatedContent =
     htmlContent.length > maxLength
       ? htmlContent.substring(0, maxLength) + "\n\n[Content truncated...]"
@@ -259,7 +391,7 @@ async function callLLM(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4.1-mini", // Using GPT-4.1-mini for faster, cost-effective results
+        model: "gpt-4.1", // Using GPT-4.1 for faster, cost-effective results
         messages: [
           {
             role: "system",
@@ -610,7 +742,9 @@ export const extractRecipeFromUrl = functions
       .replace(/\/$/, "")
       .split("#")[0]
       .split("?")[0];
-    const cacheKey = `recipe-cache-${Buffer.from(normalizedUrl)
+    // Include version in cache key to invalidate cache when extraction logic changes
+    const CACHE_VERSION = "v2"; // Increment this when extraction logic changes significantly
+    const cacheKey = `recipe-cache-${CACHE_VERSION}-${Buffer.from(normalizedUrl)
       .toString("base64")
       .replace(/[+/=]/g, "")}`;
 
@@ -770,9 +904,62 @@ export const extractRecipeFromUrl = functions
         .replace(/>\s+</g, "><")
         .trim();
 
-      // Call LLM to extract structured data
-      // Pass the actual recipe URL (not Pinterest URL) to the LLM
-      const extractedData = await callLLM(htmlContent, actualRecipeUrl);
+      const jsonLdData = parseJSONLD(response.data);
+      const recipeSectionHtml = extractRecipeSection(response.data);
+      let extractedData: Omit<Recipe, "id" | "createdAt">;
+
+      if (jsonLdData) {
+        console.log("Using JSON-LD data for recipe extraction");
+
+        extractedData = {
+          title: jsonLdData.title || "",
+          coverImage: jsonLdData.coverImage || "",
+          ingredients: jsonLdData.ingredients || [],
+          steps: jsonLdData.steps || [],
+          nutritionalInfo: jsonLdData.nutritionalInfo || {},
+          sourceUrl: actualRecipeUrl,
+          originalAuthor: jsonLdData.originalAuthor || "Unknown",
+          tags: jsonLdData.tags || [],
+          categoryIds: jsonLdData.categoryIds || [],
+          ...(jsonLdData.prepTime !== undefined && {
+            prepTime: jsonLdData.prepTime,
+          }),
+        };
+
+        // 🔧 JSON-LD incomplete → supplement with AI
+        if (!extractedData.ingredients.length || !extractedData.steps.length) {
+          console.log("JSON-LD incomplete, supplementing with AI extraction");
+
+          const aiHtml = recipeSectionHtml || htmlContent; // 👈 KEY FIX
+          const aiData = await callLLM(aiHtml, actualRecipeUrl);
+
+          extractedData = {
+            ...extractedData,
+            ingredients: extractedData.ingredients.length
+              ? extractedData.ingredients
+              : aiData.ingredients,
+            steps: extractedData.steps.length
+              ? extractedData.steps
+              : aiData.steps,
+            nutritionalInfo: Object.keys(extractedData.nutritionalInfo).length
+              ? extractedData.nutritionalInfo
+              : aiData.nutritionalInfo,
+            coverImage: extractedData.coverImage || aiData.coverImage,
+          };
+        }
+      } else {
+        // ❌ No JSON-LD → try DOM recipe section first
+        console.log("No JSON-LD found");
+
+        const aiHtml = recipeSectionHtml || htmlContent; // 👈 KEY FIX
+        console.log(
+          recipeSectionHtml
+            ? "Using extracted recipe section for AI"
+            : "Using full HTML for AI"
+        );
+
+        extractedData = await callLLM(aiHtml, actualRecipeUrl);
+      }
 
       // For TikTok, override title, image, and author from oEmbed API
       if (isTikTok && tiktokOEmbed) {
@@ -784,23 +971,16 @@ export const extractRecipeFromUrl = functions
           tiktokOEmbed.author_name || extractedData.originalAuthor || "Unknown";
       }
 
-      // Validate and structure the response
-      // Handle prepTime - convert null to undefined, ensure it's a number if present
-      let prepTime: number | undefined = undefined;
-      if (
-        extractedData.prepTime !== null &&
-        extractedData.prepTime !== undefined
-      ) {
-        const prepTimeValue = Number(extractedData.prepTime);
-        if (!isNaN(prepTimeValue) && prepTimeValue > 0) {
-          prepTime = Math.round(prepTimeValue);
-        }
+      // Ensure video recipe tag for TikTok
+      if (isTikTok && !extractedData.tags?.includes("video recipe")) {
+        extractedData.tags = [...(extractedData.tags || []), "video recipe"];
       }
 
-      // For TikTok, ensure "video recipe" tag is included
-      let tags = extractedData.tags || [];
-      if (isTikTok && !tags.includes("video recipe")) {
-        tags = [...tags, "video recipe"];
+      // Calculate prep time if not provided
+      let prepTime = extractedData.prepTime;
+      if (!prepTime && extractedData.steps && extractedData.steps.length > 0) {
+        // Estimate prep time based on steps (simple heuristic)
+        prepTime = Math.max(5, extractedData.steps.length * 3);
       }
 
       const recipe: Omit<Recipe, "id" | "createdAt"> = {
@@ -809,9 +989,9 @@ export const extractRecipeFromUrl = functions
         ingredients: extractedData.ingredients || [],
         steps: extractedData.steps || [],
         nutritionalInfo: extractedData.nutritionalInfo || {},
-        sourceUrl: actualRecipeUrl, // Use the actual recipe URL, not the Pinterest URL
+        sourceUrl: actualRecipeUrl,
         originalAuthor: extractedData.originalAuthor || "Unknown",
-        tags: tags,
+        tags: extractedData.tags || [],
         categoryIds: extractedData.categoryIds || [],
         ...(prepTime !== undefined && { prepTime }),
       };
@@ -843,147 +1023,10 @@ export const extractRecipeFromUrl = functions
 
       return recipe;
     } catch (error: any) {
-      console.error("Error extracting recipe:", error);
-      console.error("Error stack:", error.stack);
-
-      // For TikTok URLs, allow saving even if extraction fails
-      // Try to extract recipe info from description and create a recipe entry
+      // Handle TikTok fallback
       if (isTikTok) {
-        console.log(
-          "TikTok URL detected - attempting to extract from description"
-        );
         try {
-          // Get metadata from TikTok oEmbed API first
-          const oEmbedData = await getTikTokOEmbed(data.url);
-          console.log("TikTok oEmbed data (fallback):", oEmbedData);
-
-          // Try to fetch the TikTok page to get description
-          const response = await axios.get(data.url, {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              Accept:
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            },
-            timeout: 10000,
-            maxRedirects: 5,
-          });
-
-          const $ = cheerio.load(response.data);
-
-          // Extract description from meta tags
-          let description =
-            $('meta[property="og:description"]').attr("content") ||
-            $('meta[name="description"]').attr("content") ||
-            "";
-
-          // Try to extract from TikTok's JSON data in script tags
-          const scripts = $("script");
-          for (let i = 0; i < scripts.length; i++) {
-            const scriptContent = scripts.eq(i).html() || "";
-            try {
-              const jsonMatch = scriptContent.match(
-                /window\.__UNIVERSAL_DATA_FOR_REHYDRATION__\s*=\s*({.+?});/s
-              );
-              if (jsonMatch) {
-                const jsonData = JSON.parse(jsonMatch[1]);
-                if (
-                  jsonData?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo
-                    ?.itemStruct?.desc
-                ) {
-                  description =
-                    jsonData.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo
-                      .itemStruct.desc;
-                  break;
-                }
-              }
-            } catch (e) {
-              continue;
-            }
-          }
-
-          // Use oEmbed data for title, image, and author (fallback to extracted values)
-          const title =
-            oEmbedData?.title ||
-            $('meta[property="og:title"]').attr("content") ||
-            (description
-              ? description.split("\n")[0] || description.substring(0, 100)
-              : "") ||
-            "TikTok Recipe Video";
-
-          const coverImage = oEmbedData?.thumbnail_url || "";
-
-          const author =
-            oEmbedData?.author_name ||
-            description?.match(/@(\w+)/)?.[1] ||
-            "Unknown";
-
-          // If we have a description, try to extract recipe info using LLM
-          if (description) {
-            console.log("Attempting to extract recipe from TikTok description");
-            try {
-              const descriptionHtml = `<div class="tiktok-description">${description}</div>`;
-              const extractedData = await callLLM(descriptionHtml, data.url);
-
-              // Ensure video recipe tag and use extracted or fallback values
-              let tags = extractedData.tags || [];
-              if (!tags.includes("video recipe")) {
-                tags = [...tags, "video recipe"];
-              }
-
-              const recipe: Omit<Recipe, "id" | "createdAt"> = {
-                title: extractedData.title || title,
-                coverImage: extractedData.coverImage || coverImage,
-                ingredients: extractedData.ingredients || [],
-                steps: extractedData.steps || [],
-                nutritionalInfo: extractedData.nutritionalInfo || {},
-                sourceUrl: data.url,
-                originalAuthor: extractedData.originalAuthor || author,
-                tags: tags,
-                categoryIds: extractedData.categoryIds || [],
-                ...(extractedData.prepTime && {
-                  prepTime: Number(extractedData.prepTime),
-                }),
-              };
-
-              return recipe;
-            } catch (llmError: any) {
-              console.warn(
-                "LLM extraction from description failed:",
-                llmError.message
-              );
-              // Fall through to create minimal recipe
-            }
-          }
-
-          // Create minimal recipe if LLM extraction failed or no description
-          const minimalRecipe: Omit<Recipe, "id" | "createdAt"> = {
-            title: title,
-            coverImage: coverImage,
-            ingredients: [], // Empty - user can add manually
-            steps: [
-              {
-                id: "step-1",
-                instruction:
-                  description || `Watch the video recipe at: ${data.url}`,
-                isCompleted: false,
-                isBeginnerFriendly: true,
-              },
-            ],
-            nutritionalInfo: {},
-            sourceUrl: data.url,
-            originalAuthor: author,
-            tags: ["video recipe"],
-            categoryIds: [],
-          };
-
-          return minimalRecipe;
-        } catch (fallbackError: any) {
-          console.error(
-            "Failed to create minimal TikTok recipe:",
-            fallbackError
-          );
-          // Still create a basic recipe entry
+          // Still create a basic recipe entry for TikTok
           const basicRecipe: Omit<Recipe, "id" | "createdAt"> = {
             title: "TikTok Recipe Video",
             coverImage: "",
@@ -1003,6 +1046,11 @@ export const extractRecipeFromUrl = functions
             categoryIds: [],
           };
           return basicRecipe;
+        } catch (fallbackError: any) {
+          console.error(
+            "Failed to create minimal TikTok recipe:",
+            fallbackError
+          );
         }
       }
 

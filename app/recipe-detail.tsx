@@ -113,6 +113,9 @@ export default function RecipeDetailScreen() {
     {}
   );
 
+  // Refs for Swipeable components to programmatically close them
+  const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+
   // Combine duplicate ingredients (same name and unit)
   const combinedIngredients = useMemo(() => {
     if (!recipeData || !recipeData.ingredients) {
@@ -299,103 +302,27 @@ export default function RecipeDetailScreen() {
     checkAndGenerateNutrition();
   }, [recipeData]);
 
-  // Initialize and auto-start timers when recipe data loads
+  // Initialize timer states when recipe data loads (but don't auto-start)
   useEffect(() => {
     if (!recipeData?.steps) return;
 
-    // Initialize timer states and auto-start timers with timerDuration
-    const initializeTimers = async () => {
-      // Request notification permissions first
-      const { status } = await Notifications.requestPermissionsAsync();
+    // Initialize timer states for steps with timerDuration
+    const initialStates: Record<
+      string,
+      { remaining: number; isRunning: boolean; isCompleted: boolean }
+    > = {};
 
-      const initialStates: Record<
-        string,
-        { remaining: number; isRunning: boolean; isCompleted: boolean }
-      > = {};
-      const timersToStart: Array<{
-        stepId: string;
-        duration: number;
-        instruction: string;
-      }> = [];
-
-      recipeData.steps.forEach((step) => {
-        if (step.timerDuration) {
-          initialStates[step.id] = {
-            remaining: step.timerDuration,
-            isRunning: false,
-            isCompleted: false,
-          };
-
-          // Queue timer to auto-start
-          timersToStart.push({
-            stepId: step.id,
-            duration: step.timerDuration,
-            instruction: step.instruction,
-          });
-        }
-      });
-
-      setTimerStates(initialStates);
-
-      // Auto-start all timers
-      if (status === "granted" && timersToStart.length > 0) {
-        timersToStart.forEach(({ stepId, duration, instruction }) => {
-          // Schedule notification
-          Notifications.scheduleNotificationAsync({
-            content: {
-              title: "Timer Complete!",
-              body: instruction.substring(0, 100),
-              sound: true,
-            },
-            trigger: {
-              seconds: duration,
-            } as any,
-          });
-
-          // Start timer interval
-          timerIntervals.current[stepId] = setInterval(() => {
-            setTimerStates((prev) => {
-              const current = prev[stepId];
-              if (!current) return prev;
-
-              if (current.remaining <= 1) {
-                // Timer completed
-                clearInterval(timerIntervals.current[stepId]);
-                delete timerIntervals.current[stepId];
-                return {
-                  ...prev,
-                  [stepId]: {
-                    remaining: 0,
-                    isRunning: false,
-                    isCompleted: true,
-                  },
-                };
-              }
-
-              return {
-                ...prev,
-                [stepId]: {
-                  ...current,
-                  remaining: current.remaining - 1,
-                  isRunning: true,
-                },
-              };
-            });
-          }, 1000);
-
-          // Mark as running
-          setTimerStates((prev) => ({
-            ...prev,
-            [stepId]: {
-              ...prev[stepId],
-              isRunning: true,
-            },
-          }));
-        });
+    recipeData.steps.forEach((step) => {
+      if (step.timerDuration) {
+        initialStates[step.id] = {
+          remaining: step.timerDuration,
+          isRunning: false,
+          isCompleted: false,
+        };
       }
-    };
+    });
 
-    initializeTimers();
+    setTimerStates(initialStates);
 
     // Cleanup timers on unmount or when recipe changes
     return () => {
@@ -538,6 +465,14 @@ export default function RecipeDetailScreen() {
       }
       return newSet;
     });
+
+    // Auto-close the swipeable after 1 second
+    const swipeable = swipeableRefs.current[stepId];
+    if (swipeable) {
+      setTimeout(() => {
+        swipeable.close();
+      }, 1000);
+    }
   };
 
   const handleShare = async () => {
@@ -684,7 +619,6 @@ export default function RecipeDetailScreen() {
       <View
         className="bg-dark-sage rounded-xl items-center justify-center px-6 mb-4"
         style={{
-          height: "100%",
           justifyContent: "center",
           alignItems: "center",
           width: 80,
@@ -692,7 +626,7 @@ export default function RecipeDetailScreen() {
       >
         <View className="items-center">
           <Check size={24} color="#FAF9F7" />
-          <Text className="text-off-white text-xs mt-1">Done</Text>
+          <Text className="text-off-white text-xs">Done</Text>
         </View>
       </View>
     );
@@ -1866,6 +1800,11 @@ export default function RecipeDetailScreen() {
                   return (
                     <Swipeable
                       key={step.id}
+                      ref={(ref) => {
+                        if (ref) {
+                          swipeableRefs.current[step.id] = ref;
+                        }
+                      }}
                       renderRightActions={() =>
                         renderSwipeRightAction(step, isCompleted)
                       }
@@ -1881,6 +1820,15 @@ export default function RecipeDetailScreen() {
                         }`}
                         style={{ minHeight: 44 }}
                       >
+                        {/* Step Title */}
+                        {step.title && (
+                          <View className="mb-3">
+                            <Text className="text-lg font-bold text-dark-sage">
+                              {step.title}
+                            </Text>
+                          </View>
+                        )}
+
                         <View className="flex-row items-start">
                           <View
                             className={`rounded-full w-10 h-10 items-center justify-center mr-4 mt-1 ${
@@ -1907,190 +1855,227 @@ export default function RecipeDetailScreen() {
                             </Text>
 
                             {/* Timer Component */}
-                            {step.timerDuration && timerStates[step.id] && (
-                              <View className="mt-3 bg-white rounded-lg px-3 py-2 border border-warm-sand/50">
-                                <View className="flex-row items-center justify-between">
-                                  <View className="flex-row items-center flex-1">
-                                    <Clock
-                                      size={16}
-                                      color="#5A6E6C"
-                                      style={{ marginRight: 8 }}
-                                    />
-                                    <Text className="text-charcoal-gray font-semibold text-base">
-                                      {(() => {
-                                        const { remaining } =
-                                          timerStates[step.id];
-                                        const minutes = Math.floor(
-                                          remaining / 60
-                                        );
-                                        const seconds = remaining % 60;
-                                        return `${minutes
-                                          .toString()
-                                          .padStart(2, "0")}:${seconds
-                                          .toString()
-                                          .padStart(2, "0")}`;
-                                      })()}
-                                    </Text>
-                                  </View>
+                            {step.timerDuration &&
+                              (() => {
+                                // Get timer state or use default from step.timerDuration
+                                const timerState = timerStates[step.id] || {
+                                  remaining: step.timerDuration,
+                                  isRunning: false,
+                                  isCompleted: false,
+                                };
 
-                                  {!timerStates[step.id].isCompleted && (
-                                    <View className="flex-row items-center gap-2">
-                                      {timerStates[step.id].isRunning ? (
-                                        <RNTouchableOpacity
-                                          onPress={() => {
-                                            // Pause timer
-                                            if (
-                                              timerIntervals.current[step.id]
-                                            ) {
-                                              clearInterval(
-                                                timerIntervals.current[step.id]
-                                              );
-                                              delete timerIntervals.current[
-                                                step.id
-                                              ];
-                                            }
-                                            setTimerStates((prev) => ({
-                                              ...prev,
-                                              [step.id]: {
-                                                ...prev[step.id],
-                                                isRunning: false,
-                                              },
-                                            }));
-                                          }}
-                                          className="bg-warm-sand rounded-lg px-3 py-1.5"
-                                          activeOpacity={0.7}
-                                        >
-                                          <Pause size={14} color="#3E3E3E" />
-                                        </RNTouchableOpacity>
-                                      ) : (
-                                        <RNTouchableOpacity
-                                          onPress={async () => {
-                                            // Request notification permissions
-                                            const { status } =
-                                              await Notifications.requestPermissionsAsync();
-                                            if (status !== "granted") {
-                                              Alert.alert(
-                                                "Permission Required",
-                                                "Please enable notifications to receive timer alerts."
-                                              );
-                                              return;
-                                            }
-
-                                            // Start timer
-                                            setTimerStates((prev) => ({
-                                              ...prev,
-                                              [step.id]: {
-                                                ...prev[step.id],
-                                                isRunning: true,
-                                              },
-                                            }));
-
-                                            // Schedule notification
-                                            await Notifications.scheduleNotificationAsync(
-                                              {
-                                                content: {
-                                                  title: "Timer Complete!",
-                                                  body: step.instruction.substring(
-                                                    0,
-                                                    100
-                                                  ),
-                                                  sound: true,
-                                                },
-                                                trigger: {
-                                                  seconds:
-                                                    timerStates[step.id]
-                                                      .remaining,
-                                                } as any,
-                                              }
+                                return (
+                                  <View className="mt-3 bg-white rounded-lg px-3 py-2 border border-warm-sand/50">
+                                    <View className="flex-row items-center justify-between">
+                                      <View className="flex-row items-center flex-1">
+                                        <Clock
+                                          size={16}
+                                          color="#5A6E6C"
+                                          style={{ marginRight: 8 }}
+                                        />
+                                        <Text className="text-charcoal-gray font-semibold text-base">
+                                          {(() => {
+                                            const minutes = Math.floor(
+                                              timerState.remaining / 60
                                             );
+                                            const seconds =
+                                              timerState.remaining % 60;
+                                            return `${minutes
+                                              .toString()
+                                              .padStart(2, "0")}:${seconds
+                                              .toString()
+                                              .padStart(2, "0")}`;
+                                          })()}
+                                        </Text>
+                                      </View>
 
-                                            // Start interval
-                                            timerIntervals.current[step.id] =
-                                              setInterval(() => {
-                                                setTimerStates((prev) => {
-                                                  const current = prev[step.id];
-                                                  if (!current) return prev;
+                                      {!timerState.isCompleted && (
+                                        <View className="flex-row items-center gap-2">
+                                          {timerState.isRunning ? (
+                                            <RNTouchableOpacity
+                                              onPress={() => {
+                                                // Pause timer
+                                                if (
+                                                  timerIntervals.current[
+                                                    step.id
+                                                  ]
+                                                ) {
+                                                  clearInterval(
+                                                    timerIntervals.current[
+                                                      step.id
+                                                    ]
+                                                  );
+                                                  delete timerIntervals.current[
+                                                    step.id
+                                                  ];
+                                                }
+                                                setTimerStates((prev) => ({
+                                                  ...prev,
+                                                  [step.id]: {
+                                                    remaining:
+                                                      prev[step.id]
+                                                        ?.remaining ||
+                                                      step.timerDuration ||
+                                                      0,
+                                                    isRunning: false,
+                                                    isCompleted:
+                                                      prev[step.id]
+                                                        ?.isCompleted || false,
+                                                  },
+                                                }));
+                                              }}
+                                              className="bg-warm-sand rounded-lg px-3 py-1.5"
+                                              activeOpacity={0.7}
+                                            >
+                                              <Pause
+                                                size={14}
+                                                color="#3E3E3E"
+                                              />
+                                            </RNTouchableOpacity>
+                                          ) : (
+                                            <RNTouchableOpacity
+                                              onPress={async () => {
+                                                // Request notification permissions
+                                                const { status } =
+                                                  await Notifications.requestPermissionsAsync();
+                                                if (status !== "granted") {
+                                                  Alert.alert(
+                                                    "Permission Required",
+                                                    "Please enable notifications to receive timer alerts."
+                                                  );
+                                                  return;
+                                                }
 
-                                                  if (current.remaining <= 1) {
-                                                    // Timer completed
-                                                    clearInterval(
-                                                      timerIntervals.current[
-                                                        step.id
-                                                      ]
-                                                    );
-                                                    delete timerIntervals
-                                                      .current[step.id];
+                                                // Initialize timer state if it doesn't exist
+                                                const currentRemaining =
+                                                  timerStates[step.id]
+                                                    ?.remaining ||
+                                                  step.timerDuration ||
+                                                  0;
+
+                                                // Start timer
+                                                setTimerStates((prev) => ({
+                                                  ...prev,
+                                                  [step.id]: {
+                                                    remaining: currentRemaining,
+                                                    isRunning: true,
+                                                    isCompleted: false,
+                                                  },
+                                                }));
+
+                                                // Schedule notification
+                                                await Notifications.scheduleNotificationAsync(
+                                                  {
+                                                    content: {
+                                                      title: "Timer Complete!",
+                                                      body: step.instruction.substring(
+                                                        0,
+                                                        100
+                                                      ),
+                                                      sound: true,
+                                                    },
+                                                    trigger: {
+                                                      seconds: currentRemaining,
+                                                    } as any,
+                                                  }
+                                                );
+
+                                                // Start interval
+                                                timerIntervals.current[
+                                                  step.id
+                                                ] = setInterval(() => {
+                                                  setTimerStates((prev) => {
+                                                    const current =
+                                                      prev[step.id];
+                                                    if (!current) return prev;
+
+                                                    if (
+                                                      current.remaining <= 1
+                                                    ) {
+                                                      // Timer completed
+                                                      clearInterval(
+                                                        timerIntervals.current[
+                                                          step.id
+                                                        ]
+                                                      );
+                                                      delete timerIntervals
+                                                        .current[step.id];
+                                                      return {
+                                                        ...prev,
+                                                        [step.id]: {
+                                                          remaining: 0,
+                                                          isRunning: false,
+                                                          isCompleted: true,
+                                                        },
+                                                      };
+                                                    }
+
                                                     return {
                                                       ...prev,
                                                       [step.id]: {
-                                                        remaining: 0,
-                                                        isRunning: false,
-                                                        isCompleted: true,
+                                                        ...current,
+                                                        remaining:
+                                                          current.remaining - 1,
                                                       },
                                                     };
-                                                  }
+                                                  });
+                                                }, 1000);
+                                              }}
+                                              className="bg-dark-sage rounded-lg px-3 py-1.5"
+                                              activeOpacity={0.7}
+                                            >
+                                              <Play size={14} color="#FAF9F7" />
+                                            </RNTouchableOpacity>
+                                          )}
 
-                                                  return {
-                                                    ...prev,
-                                                    [step.id]: {
-                                                      ...current,
-                                                      remaining:
-                                                        current.remaining - 1,
-                                                    },
-                                                  };
-                                                });
-                                              }, 1000);
-                                          }}
-                                          className="bg-dark-sage rounded-lg px-3 py-1.5"
-                                          activeOpacity={0.7}
-                                        >
-                                          <Play size={14} color="#FAF9F7" />
-                                        </RNTouchableOpacity>
+                                          <RNTouchableOpacity
+                                            onPress={() => {
+                                              // Reset timer
+                                              if (
+                                                timerIntervals.current[step.id]
+                                              ) {
+                                                clearInterval(
+                                                  timerIntervals.current[
+                                                    step.id
+                                                  ]
+                                                );
+                                                delete timerIntervals.current[
+                                                  step.id
+                                                ];
+                                              }
+                                              setTimerStates((prev) => ({
+                                                ...prev,
+                                                [step.id]: {
+                                                  remaining:
+                                                    step.timerDuration || 0,
+                                                  isRunning: false,
+                                                  isCompleted: false,
+                                                },
+                                              }));
+                                              // Cancel notification
+                                              Notifications.cancelAllScheduledNotificationsAsync();
+                                            }}
+                                            className="bg-soft-beige rounded-lg px-3 py-1.5"
+                                            activeOpacity={0.7}
+                                          >
+                                            <Text className="text-charcoal-gray text-xs font-semibold">
+                                              Reset
+                                            </Text>
+                                          </RNTouchableOpacity>
+                                        </View>
                                       )}
 
-                                      <RNTouchableOpacity
-                                        onPress={() => {
-                                          // Reset timer
-                                          if (timerIntervals.current[step.id]) {
-                                            clearInterval(
-                                              timerIntervals.current[step.id]
-                                            );
-                                            delete timerIntervals.current[
-                                              step.id
-                                            ];
-                                          }
-                                          setTimerStates((prev) => ({
-                                            ...prev,
-                                            [step.id]: {
-                                              remaining:
-                                                step.timerDuration || 0,
-                                              isRunning: false,
-                                              isCompleted: false,
-                                            },
-                                          }));
-                                          // Cancel notification
-                                          Notifications.cancelAllScheduledNotificationsAsync();
-                                        }}
-                                        className="bg-soft-beige rounded-lg px-3 py-1.5"
-                                        activeOpacity={0.7}
-                                      >
-                                        <Text className="text-charcoal-gray text-xs font-semibold">
-                                          Reset
-                                        </Text>
-                                      </RNTouchableOpacity>
+                                      {timerState.isCompleted && (
+                                        <View className="bg-dark-sage/20 rounded-lg px-3 py-1.5">
+                                          <Text className="text-dark-sage text-xs font-semibold">
+                                            Done!
+                                          </Text>
+                                        </View>
+                                      )}
                                     </View>
-                                  )}
-
-                                  {timerStates[step.id].isCompleted && (
-                                    <View className="bg-dark-sage/20 rounded-lg px-3 py-1.5">
-                                      <Text className="text-dark-sage text-xs font-semibold">
-                                        Done!
-                                      </Text>
-                                    </View>
-                                  )}
-                                </View>
-                              </View>
-                            )}
+                                  </View>
+                                );
+                              })()}
                           </View>
                         </View>
                       </View>
