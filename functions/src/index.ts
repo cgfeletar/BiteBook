@@ -125,23 +125,32 @@ EXTRACTION RULES:
    - Always set isChecked to false
 
 4. STEPS:
-   - Extract cooking instructions from ordered/unordered lists, paragraphs, or structured data
+   - CRITICAL: Extract ALL cooking instructions - do not skip or omit any steps
+   - Extract from ordered/unordered lists, paragraphs, or structured data
    - Look for: <ol>, <ul> with class containing "step", "instruction", "direction"
+   - Also check: numbered lists, bullet points, recipe instruction sections, and any text that describes cooking actions
+   - If instructions are in paragraph form, split them into individual steps
    - Each step should be a complete, actionable instruction
-   - Generate unique IDs: "step-1", "step-2", etc.
+   - Generate unique IDs: "step-1", "step-2", etc. for ALL steps found
    - CRITICAL FORMATTING RULE: When an instruction mentions multiple ingredients (2 or more), format them as a bulleted list within the same instruction text:
      * Example: "Combine butter, flour, and sugar" → "Combine:\n• butter\n• flour\n• sugar"
      * Example: "Add eggs, vanilla, and salt" → "Add:\n• eggs\n• vanilla\n• salt"
      * The instruction text should start with the action verb, followed by a colon, then list each ingredient on a new line with a bullet point (•)
      * This makes the instructions clearer while keeping all content in the same instruction card
      * Only apply this formatting when there are 2 or more ingredients mentioned together in a single instruction
+   - TIME INFORMATION IN INSTRUCTIONS:
+     * Keep time information in the instruction text when it's part of the actual cooking instruction
+     * Examples: "Bake for 20 minutes", "Simmer for 10 minutes", "Cook in slow cooker for 2 hours", "Saute for 5 minutes"
+     * DO NOT add time estimates to instructions (e.g., don't add "this takes 5 minutes" to "chop vegetables")
+     * Only include time when it's explicitly part of the cooking instruction itself
    - Determine isBeginnerFriendly:
      * true: Simple actions like "mix", "stir", "bake at 350°F"
      * false: Complex techniques like "temper", "braise", "sous vide"
-   - Extract timerDuration from text:
-     * "bake for 20 minutes" → 1200 seconds
-     * "simmer 5 min" → 300 seconds
-     * "cook until golden" → null
+   - Extract timerDuration from text (for timer feature):
+     * "bake for 20 minutes" → 1200 seconds (AND keep "bake for 20 minutes" in instruction text)
+     * "simmer 5 min" → 300 seconds (AND keep "simmer 5 min" in instruction text)
+     * "cook until golden" → null (no specific time mentioned)
+     * Extract timerDuration when there's a specific time duration mentioned in the instruction
    - Always set isCompleted to false
 
 5. NUTRITIONAL INFO:
@@ -240,8 +249,8 @@ async function callLLM(
   const apiKey = apiKeyRaw.trim().replace(/\s+/g, "");
 
   // Truncate HTML content if too long (OpenAI has token limits)
-  // Reduced to 50k characters for faster processing - most recipe content fits in this
-  const maxLength = 50000;
+  // Reduced to 30k characters for faster processing - most recipe content fits in this
+  const maxLength = 30000;
   const truncatedContent =
     htmlContent.length > maxLength
       ? htmlContent.substring(0, maxLength) + "\n\n[Content truncated...]"
@@ -251,7 +260,7 @@ async function callLLM(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-mini", // Using GPT-4o-mini for faster, cost-effective results
+        model: "gpt-4.1-mini", // Using GPT-4.1-mini for faster, cost-effective results
         messages: [
           {
             role: "system",
@@ -1076,7 +1085,7 @@ async function generateNutritionFromIngredients(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4o-mini", // Using GPT-4o-mini for faster, cost-effective results
+        model: "gpt-4.1-mini", // Using GPT-4.1-mini for faster, cost-effective results
         messages: [
           {
             role: "system",

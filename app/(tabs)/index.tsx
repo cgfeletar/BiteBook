@@ -1,5 +1,8 @@
 import { RecipeCard } from "@/components/RecipeCard";
+import { FilterModal, FilterState } from "@/components/FilterModal";
 import "@/nativewind-setup";
+import { usePantryStore } from "@/src/store/usePantryStore";
+import { useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Recipe } from "@/src/types";
 import { router } from "expo-router";
@@ -19,7 +22,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type SortOption = "recent" | "prepTime" | "cookTime" | "rating";
+type SortOption = "recent" | "prepTime" | "cookTime" | "rating" | "pantryMatch";
 
 // Dummy recipe data matching the Recipe interface
 const dummyRecipes: Recipe[] = [
@@ -305,64 +308,133 @@ export default function RecipeFeed() {
   const { width } = useWindowDimensions();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
   const [sortOption, setSortOption] = useState<SortOption>("recent");
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    mealTypes: [],
+    cuisines: [],
+    cookedBefore: "all",
+    dietary: [],
+    minRating: null,
+    sourceTypes: [],
+  });
   const recipes = useRecipeStore((state) => state.recipes);
+  const pantryItems = usePantryStore((state) => state.items);
+  const cookingSessions = useProgressStore((state) => state.cookingSessions);
 
-  // Calculate top 5 most used categories from recipe tags
-  const categories = useMemo(() => {
-    const allRecipes = recipes.length > 0 ? recipes : dummyRecipes;
+  // Helper function to calculate pantry match percentage
+  const calculatePantryMatch = (recipe: Recipe): number => {
+    if (!recipe.ingredients || recipe.ingredients.length === 0) {
+      return 0;
+    }
 
-    // Count tag frequency
-    const tagCounts: Record<string, number> = {};
-    allRecipes.forEach((recipe) => {
-      recipe.tags?.forEach((tag) => {
-        // Capitalize first letter of each word for display
-        const formattedTag = tag
-          .split(/[-_\s]+/)
-          .map(
-            (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-          )
-          .join(" ");
-        tagCounts[formattedTag] = (tagCounts[formattedTag] || 0) + 1;
-      });
+    // Create a set of pantry item names (normalized to lowercase)
+    const pantryNames = new Set(
+      pantryItems.map((item) => item.name.toLowerCase().trim())
+    );
+
+    // Count how many recipe ingredients are in the pantry
+    const matchingIngredients = recipe.ingredients.filter((ingredient) => {
+      const ingredientName = ingredient.name.toLowerCase().trim();
+      return pantryNames.has(ingredientName);
     });
 
-    // Get top 5 most used tags
-    const topTags = Object.entries(tagCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([tag]) => tag);
+    // Return percentage (0-100)
+    return (matchingIngredients.length / recipe.ingredients.length) * 100;
+  };
 
-    // Always include "All" as the first category
-    return ["All", ...topTags];
-  }, [recipes]);
+  // Get cooked recipe IDs
+  const cookedRecipeIds = useMemo(
+    () => new Set(cookingSessions.map((s) => s.recipeId)),
+    [cookingSessions]
+  );
 
   // Filter and sort recipes
   const filteredAndSortedRecipes = useMemo(() => {
     const allRecipes = recipes.length > 0 ? recipes : dummyRecipes;
 
-    // First, filter by category
-    let filtered = allRecipes;
-    if (activeCategory !== "All") {
-      const categoryLower = activeCategory.toLowerCase().replace(/\s+/g, "-");
-      filtered = allRecipes.filter((recipe) =>
-        recipe.tags?.some((tag) => {
-          const tagFormatted = tag
-            .split(/[-_\s]+/)
-            .map(
-              (word) =>
-                word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-            )
-            .join(" ");
-          return (
-            tagFormatted.toLowerCase() === activeCategory.toLowerCase() ||
-            tag.toLowerCase() === categoryLower
-          );
-        })
-      );
-    }
+    // Apply advanced filters
+    let filtered = allRecipes.filter((recipe) => {
+      const recipeTags = recipe.tags?.map((t) => t.toLowerCase()) || [];
+
+      // Meal type filter
+      if (filters.mealTypes.length > 0) {
+        const hasMealType = filters.mealTypes.some((type) =>
+          recipeTags.some((tag) => tag.includes(type.toLowerCase()))
+        );
+        if (!hasMealType) return false;
+      }
+
+      // Cuisine filter
+      if (filters.cuisines.length > 0) {
+        const hasCuisine = filters.cuisines.some((cuisine) =>
+          recipeTags.some((tag) => tag.includes(cuisine.toLowerCase()))
+        );
+        if (!hasCuisine) return false;
+      }
+
+      // Cooked before filter
+      if (filters.cookedBefore !== "all") {
+        const isCooked = cookedRecipeIds.has(recipe.id);
+        if (filters.cookedBefore === "cooked" && !isCooked) return false;
+        if (filters.cookedBefore === "not-cooked" && isCooked) return false;
+      }
+
+      // Dietary filter
+      if (filters.dietary.length > 0) {
+        const hasDietary = filters.dietary.some((diet) =>
+          recipeTags.some((tag) => tag.includes(diet.toLowerCase()))
+        );
+        if (!hasDietary) return false;
+      }
+
+      // Rating filter
+      if (filters.minRating !== null) {
+        const rating = recipe.rating || 0;
+        if (rating < filters.minRating) return false;
+      }
+
+      // Source type filter
+      if (filters.sourceTypes.length > 0) {
+        const sourceUrl = recipe.sourceUrl?.toLowerCase() || "";
+        const matchesSourceType = filters.sourceTypes.some((sourceType) => {
+          switch (sourceType) {
+            case "tiktok":
+              return sourceUrl.includes("tiktok.com") || sourceUrl.includes("vm.tiktok");
+            case "instagram":
+              return sourceUrl.includes("instagram.com") || sourceUrl.includes("instagr.am");
+            case "pinterest":
+              return sourceUrl.includes("pinterest.com") || sourceUrl.includes("pin.it");
+            case "youtube":
+              return sourceUrl.includes("youtube.com") || sourceUrl.includes("youtu.be");
+            case "blog":
+              return (
+                sourceUrl.includes("blog") ||
+                sourceUrl.includes("wordpress") ||
+                sourceUrl.includes("blogspot") ||
+                sourceUrl.includes("medium.com")
+              );
+            case "website":
+              return (
+                !sourceUrl.includes("tiktok") &&
+                !sourceUrl.includes("instagram") &&
+                !sourceUrl.includes("pinterest") &&
+                !sourceUrl.includes("youtube") &&
+                !sourceUrl.includes("blog") &&
+                !sourceUrl.includes("wordpress") &&
+                !sourceUrl.includes("blogspot") &&
+                !sourceUrl.includes("medium.com")
+              );
+            default:
+              return false;
+          }
+        });
+        if (!matchesSourceType) return false;
+      }
+
+      return true;
+    });
 
     // Then, sort the filtered results
     const sorted = [...filtered].sort((a, b) => {
@@ -409,13 +481,19 @@ export default function RecipeFeed() {
           const bRating = b.rating ?? 0;
           return bRating - aRating;
 
+        case "pantryMatch":
+          // Highest pantry match percentage first
+          const aMatch = calculatePantryMatch(a);
+          const bMatch = calculatePantryMatch(b);
+          return bMatch - aMatch;
+
         default:
           return 0;
       }
     });
 
     return sorted;
-  }, [recipes, activeCategory, sortOption]);
+  }, [recipes, sortOption, pantryItems, filters, cookedRecipeIds]);
 
   // Determine number of columns based on screen width
   const isTablet = width >= 768;
@@ -445,7 +523,7 @@ export default function RecipeFeed() {
   };
 
   // Calculate item width for grid layout
-  const itemWidth = (width - 24 - (numColumns - 1) * 12) / numColumns; // 24 = horizontal padding (12*2), 12 = gap between items
+  const itemWidth = (width - 48 - (numColumns - 1) * 12) / numColumns; // 48 = horizontal padding (24*2), 12 = gap between items
 
   return (
     <SafeAreaView
@@ -521,7 +599,9 @@ export default function RecipeFeed() {
                       ? "Shortest Prep Time"
                       : sortOption === "cookTime"
                       ? "Shortest Cook Time"
-                      : "Highest Rated"}
+                      : sortOption === "rating"
+                      ? "Highest Rated"
+                      : "Best Pantry Match"}
                   </Text>
                   <ChevronDown
                     size={18}
@@ -615,6 +695,26 @@ export default function RecipeFeed() {
                         Highest Rated
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSortOption("pantryMatch");
+                        setShowSortDropdown(false);
+                      }}
+                      className={`px-4 py-3 ${
+                        sortOption === "pantryMatch" ? "bg-dark-sage" : ""
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`text-sm font-semibold ${
+                          sortOption === "pantryMatch"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Best Pantry Match
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -622,50 +722,35 @@ export default function RecipeFeed() {
 
             {/* Filter Icon */}
             <TouchableOpacity
-              onPress={() => {
-                // TODO: Implement filter functionality
-              }}
-              className="bg-soft-beige rounded-xl items-center justify-center"
+              onPress={() => setShowFilterModal(true)}
+              className={`rounded-xl items-center justify-center ${
+                (filters.mealTypes.length > 0 ||
+                  filters.cuisines.length > 0 ||
+                  filters.cookedBefore !== "all" ||
+                  filters.dietary.length > 0 ||
+                  filters.minRating !== null ||
+                  filters.sourceTypes.length > 0)
+                  ? "bg-dark-sage"
+                  : "bg-soft-beige"
+              }`}
               activeOpacity={0.7}
               style={{ width: 44, height: 44 }}
             >
-              <Filter size={20} color="#3E3E3E" />
+              <Filter
+                size={20}
+                color={
+                  filters.mealTypes.length > 0 ||
+                  filters.cuisines.length > 0 ||
+                  filters.cookedBefore !== "all" ||
+                  filters.dietary.length > 0 ||
+                  filters.minRating !== null ||
+                  filters.sourceTypes.length > 0
+                    ? "#FAF9F7"
+                    : "#3E3E3E"
+                }
+              />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Category Chips */}
-        <View className="mb-4">
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, gap: 12 }}
-          >
-            {categories.map((category) => {
-              const isActive = category === activeCategory;
-              return (
-                <TouchableOpacity
-                  key={category}
-                  onPress={() => setActiveCategory(category)}
-                  className={`rounded-full px-4 py-2 ${
-                    isActive
-                      ? "bg-dark-sage"
-                      : "bg-soft-beige border border-stone-100"
-                  }`}
-                  activeOpacity={0.7}
-                  style={{ minHeight: 44, justifyContent: "center" }}
-                >
-                  <Text
-                    className={`font-semibold text-sm ${
-                      isActive ? "text-white" : "text-charcoal"
-                    }`}
-                  >
-                    {category}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </View>
 
         {/* Main Content - Recipe Grid */}
@@ -691,7 +776,7 @@ export default function RecipeFeed() {
             );
           }}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: 120 }}
+          contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 120 }}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -701,6 +786,15 @@ export default function RecipeFeed() {
           }
         />
       </View>
+
+      {/* Filter Modal */}
+      <FilterModal
+        visible={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        onApply={setFilters}
+        currentFilters={filters}
+        recipes={recipes.length > 0 ? recipes : dummyRecipes}
+      />
     </SafeAreaView>
   );
 }

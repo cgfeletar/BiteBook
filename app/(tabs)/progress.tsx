@@ -1,0 +1,328 @@
+import "@/nativewind-setup";
+import { useProgressStore } from "@/src/store/useProgressStore";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
+import {
+  Award,
+  ChefHat,
+  Clock,
+  Globe,
+  Target,
+  X,
+  Plus,
+  Flame,
+} from "lucide-react-native";
+import { useMemo } from "react";
+import { CHEF_LEVELS } from "@/src/store/useProgressStore";
+import {
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+// Cuisine data with flag emojis
+const CUISINES = [
+  { name: "Italian", flag: "🇮🇹", tag: "italian" },
+  { name: "Mexican", flag: "🇲🇽", tag: "mexican" },
+  { name: "Japanese", flag: "🇯🇵", tag: "japanese" },
+  { name: "French", flag: "🇫🇷", tag: "french" },
+  { name: "Thai", flag: "🇹🇭", tag: "thai" },
+  { name: "Indian", flag: "🇮🇳", tag: "indian" },
+  { name: "Greek", flag: "🇬🇷", tag: "greek" },
+  { name: "Chinese", flag: "🇨🇳", tag: "chinese" },
+  { name: "American", flag: "🇺🇸", tag: "american" },
+  { name: "Mediterranean", flag: "🌊", tag: "mediterranean" },
+];
+
+export default function ProgressScreen() {
+  const recipes = useRecipeStore((state) => state.recipes);
+  const cookingSessions = useProgressStore((state) => state.cookingSessions);
+  const challenges = useProgressStore((state) => state.challenges);
+  const removeChallenge = useProgressStore((state) => state.removeChallenge);
+
+  // Compute values with useMemo to avoid infinite loops
+  const recipesCooked = useMemo(() => cookingSessions.length, [cookingSessions.length]);
+  
+  const timeCooking = useMemo(() => {
+    const totalMinutes = cookingSessions.reduce(
+      (sum, session) => sum + session.timeSpent,
+      0
+    );
+    return Math.round((totalMinutes / 60) * 10) / 10;
+  }, [cookingSessions]);
+
+  const chefLevel = useMemo(() => {
+    let currentLevel = CHEF_LEVELS[0];
+    let nextLevel = CHEF_LEVELS[1];
+
+    for (let i = CHEF_LEVELS.length - 1; i >= 0; i--) {
+      if (recipesCooked >= CHEF_LEVELS[i].threshold) {
+        currentLevel = CHEF_LEVELS[i];
+        if (i < CHEF_LEVELS.length - 1) {
+          nextLevel = CHEF_LEVELS[i + 1];
+        } else {
+          nextLevel = { ...CHEF_LEVELS[i], threshold: CHEF_LEVELS[i].threshold + 50 };
+        }
+        break;
+      }
+    }
+
+    const progress = recipesCooked - currentLevel.threshold;
+    const progressNeeded = nextLevel.threshold - currentLevel.threshold;
+    const progressPercentage = Math.min(
+      (progress / progressNeeded) * 100,
+      100
+    );
+
+    return {
+      level: currentLevel.level,
+      title: currentLevel.title,
+      progress: progressPercentage,
+      nextLevel: nextLevel.threshold,
+    };
+  }, [recipesCooked]);
+
+  // Calculate cuisine counts from recipe tags
+  const cuisineCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    
+    recipes.forEach((recipe) => {
+      recipe.tags?.forEach((tag) => {
+        const normalizedTag = tag.toLowerCase();
+        const cuisine = CUISINES.find(
+          (c) => c.tag.toLowerCase() === normalizedTag
+        );
+        if (cuisine) {
+          counts[cuisine.name] = (counts[cuisine.name] || 0) + 1;
+        }
+      });
+    });
+
+    // Sort by count, descending
+    return Object.entries(counts)
+      .map(([name, count]) => {
+        const cuisine = CUISINES.find((c) => c.name === name);
+        return {
+          name,
+          flag: cuisine?.flag || "🌍",
+          count,
+        };
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8); // Top 8 cuisines
+  }, [recipes]);
+
+  // Calculate recipes remaining to next level
+  const recipesToNextLevel = chefLevel.nextLevel - recipesCooked;
+
+  return (
+    <SafeAreaView
+      className="flex-1 bg-off-white"
+      edges={["top", "bottom"]}
+    >
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View className="px-6 pt-6">
+          {/* Header */}
+          <View className="mb-6">
+            <Text className="text-3xl font-bold text-charcoal-gray mb-2">
+              Progress
+            </Text>
+            <Text className="text-base text-charcoal-gray/60">
+              Track your culinary journey and achievements
+            </Text>
+          </View>
+
+          {/* Statistics Cards */}
+          <View className="flex-row gap-4 mb-6">
+            {/* Recipes Cooked Card */}
+            <View className="flex-1 bg-white rounded-2xl p-4 border border-warm-sand/50">
+              <View className="mb-3">
+                <ChefHat size={24} color="#9CA3AF" />
+              </View>
+              <Text className="text-3xl font-bold text-charcoal-gray mb-1">
+                {recipesCooked}
+              </Text>
+              <Text className="text-sm text-charcoal-gray/60">
+                Recipes Cooked
+              </Text>
+            </View>
+
+            {/* Time Cooking Card */}
+            <View className="flex-1 bg-white rounded-2xl p-4 border border-warm-sand/50">
+              <View className="mb-3">
+                <Clock size={24} color="#9CA3AF" />
+              </View>
+              <Text className="text-3xl font-bold text-charcoal-gray mb-1">
+                {timeCooking}h
+              </Text>
+              <Text className="text-sm text-charcoal-gray/60">
+                Time Cooking
+              </Text>
+            </View>
+          </View>
+
+          {/* Chef Level Section */}
+          <View 
+            className="rounded-2xl p-6 mb-6 overflow-hidden"
+            style={{ backgroundColor: "#E7D8C9" }}
+          >
+            <View className="flex-row items-center mb-4">
+              <View className="w-16 h-16 bg-dark-sage rounded-full items-center justify-center mr-4">
+                <Award size={28} color="#FAF9F7" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-sm text-charcoal-gray/70 mb-1">
+                  Level {chefLevel.level}
+                </Text>
+                <Text className="text-2xl font-bold text-charcoal-gray">
+                  {chefLevel.title}
+                </Text>
+              </View>
+              <Text className="text-sm text-charcoal-gray/70">
+                {recipesCooked}/{chefLevel.nextLevel}
+              </Text>
+            </View>
+
+            {/* Progress Bar */}
+            <View className="mb-3">
+              <View className="h-3 bg-white/30 rounded-full overflow-hidden">
+                <View
+                  className="h-full bg-dark-sage rounded-full"
+                  style={{ width: `${chefLevel.progress}%` }}
+                />
+              </View>
+            </View>
+
+            <Text className="text-sm text-charcoal-gray/70">
+              {recipesToNextLevel > 0
+                ? `${recipesToNextLevel} more recipe${recipesToNextLevel !== 1 ? "s" : ""} to reach ${CHEF_LEVELS.find((l) => l.threshold === chefLevel.nextLevel)?.title || "next level"}`
+                : "Max level reached!"}
+            </Text>
+          </View>
+
+          {/* Culinary Passport Section */}
+          <View className="bg-white rounded-2xl p-6 mb-6 border border-warm-sand/50">
+            <View className="flex-row items-center justify-between mb-4">
+              <View className="flex-row items-center">
+                <Globe size={20} color="#3E3E3E" style={{ marginRight: 8 }} />
+                <Text className="text-lg font-bold text-charcoal-gray">
+                  Culinary Passport
+                </Text>
+              </View>
+              <Text className="text-sm text-charcoal-gray/60">
+                {cuisineCounts.length} cuisine{cuisineCounts.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+
+            {cuisineCounts.length > 0 ? (
+              <View className="flex-row flex-wrap" style={{ gap: 12 }}>
+                {cuisineCounts.map((cuisine) => (
+                  <View
+                    key={cuisine.name}
+                    className="items-center"
+                    style={{ width: "22%" }}
+                  >
+                    <View className="w-16 h-16 bg-soft-beige rounded-xl items-center justify-center mb-2">
+                      <Text className="text-3xl">{cuisine.flag}</Text>
+                    </View>
+                    <Text className="text-xs font-semibold text-charcoal-gray text-center mb-1">
+                      {cuisine.name}
+                    </Text>
+                    <Text className="text-xs text-charcoal-gray/60">
+                      {cuisine.count}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-sm text-charcoal-gray/60 text-center py-4">
+                Start cooking recipes from different cuisines to unlock your passport!
+              </Text>
+            )}
+          </View>
+
+          {/* Active Challenges Section */}
+          <View className="bg-white rounded-2xl p-6 mb-6 border border-warm-sand/50">
+            <View className="flex-row items-center justify-between mb-4">
+              <View className="flex-row items-center">
+                <Target size={20} color="#3E3E3E" style={{ marginRight: 8 }} />
+                <Text className="text-lg font-bold text-charcoal-gray">
+                  Active Challenges
+                </Text>
+              </View>
+              <TouchableOpacity
+                className="w-8 h-8 bg-dark-sage rounded-full items-center justify-center"
+                activeOpacity={0.7}
+              >
+                <Plus size={18} color="#FAF9F7" />
+              </TouchableOpacity>
+            </View>
+
+            {challenges.length > 0 ? (
+              <View className="gap-3">
+                {challenges.map((challenge) => (
+                  <View
+                    key={challenge.id}
+                    className="bg-soft-beige rounded-xl p-4 border border-warm-sand/50 relative"
+                  >
+                    <TouchableOpacity
+                      className="absolute top-3 right-3 w-6 h-6 items-center justify-center"
+                      onPress={() => removeChallenge(challenge.id)}
+                      activeOpacity={0.7}
+                    >
+                      <X size={16} color="#9CA3AF" />
+                    </TouchableOpacity>
+
+                    <View className="flex-row items-start mb-3">
+                      <View className="w-10 h-10 bg-redwood/20 rounded-full items-center justify-center mr-3">
+                        <Flame size={20} color="#7A2E2A" />
+                      </View>
+                      <View className="flex-1 pr-8">
+                        <Text className="text-base font-bold text-charcoal-gray mb-1">
+                          {challenge.title}
+                        </Text>
+                        <Text className="text-sm text-charcoal-gray/60">
+                          {challenge.description}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View className="flex-row items-center justify-between">
+                      <Text className="text-sm text-charcoal-gray/60">
+                        Progress
+                      </Text>
+                      <Text className="text-sm font-semibold text-charcoal-gray">
+                        {challenge.current}/{challenge.target}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View className="py-4">
+                <Text className="text-sm text-charcoal-gray/60 text-center mb-3">
+                  No active challenges. Tap the + button to add one!
+                </Text>
+                <TouchableOpacity
+                  className="bg-soft-beige rounded-xl p-4 border border-warm-sand/50 items-center"
+                  activeOpacity={0.7}
+                >
+                  <Text className="text-sm font-semibold text-dark-sage">
+                    Add Challenge
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+

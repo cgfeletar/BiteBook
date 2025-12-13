@@ -1,11 +1,13 @@
 import { generateNutritionalInfo } from "@/src/services/recipeService";
 import { usePantryStore } from "@/src/store/usePantryStore";
+import { useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
 import { formatQuantity } from "@/src/utils/fractionFormatter";
 import { Image } from "expo-image";
+import * as Notifications from "expo-notifications";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
@@ -16,7 +18,9 @@ import {
   Clock,
   ExternalLink,
   MoreVertical,
+  Pause,
   Pencil,
+  Play,
   Share2,
   ShoppingBag,
   Star,
@@ -24,7 +28,7 @@ import {
   Users,
   X,
 } from "lucide-react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -72,6 +76,8 @@ export default function RecipeDetailScreen() {
   const addItemsToShoppingList = useShoppingListStore(
     (state) => state.addItems
   );
+  const deleteShoppingItem = useShoppingListStore((state) => state.deleteItem);
+  const shoppingItems = useShoppingListStore((state) => state.items);
   const updateRecipe = useRecipeStore((state) => state.updateRecipe);
   const deleteRecipe = useRecipeStore((state) => state.deleteRecipe);
   const getRecipe = useRecipeStore((state) => state.getRecipe);
@@ -79,6 +85,10 @@ export default function RecipeDetailScreen() {
   const addRecipeToBook = useRecipeBooksStore((state) => state.addRecipeToBook);
   const addRecipe = useRecipeBooksStore((state) => state.addRecipe);
   const pantryItems = usePantryStore((state) => state.items);
+  const addPantryItem = usePantryStore((state) => state.addItem);
+  const addCookingSession = useProgressStore(
+    (state) => state.addCookingSession
+  );
   const [showMenu, setShowMenu] = useState(false);
   const [showBookSelector, setShowBookSelector] = useState(false);
   const [showScaleDropdown, setShowScaleDropdown] = useState(false);
@@ -86,6 +96,22 @@ export default function RecipeDetailScreen() {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const isImported = params.isImported === "true";
+
+  // Timer states for each step
+  const [timerStates, setTimerStates] = useState<
+    Record<
+      string,
+      {
+        remaining: number; // in seconds
+        isRunning: boolean;
+        isCompleted: boolean;
+      }
+    >
+  >({});
+
+  const timerIntervals = useRef<Record<string, ReturnType<typeof setInterval>>>(
+    {}
+  );
 
   // Combine duplicate ingredients (same name and unit)
   const combinedIngredients = useMemo(() => {
@@ -864,7 +890,7 @@ export default function RecipeDetailScreen() {
                       activeOpacity={0.7}
                     >
                       <Text className="text-base text-charcoal-gray/90 mr-1">
-                        Source
+                        Original Recipe
                       </Text>
                       <ExternalLink size={16} color="#5A6E6C" />
                     </RNTouchableOpacity>
@@ -894,7 +920,7 @@ export default function RecipeDetailScreen() {
                 <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
                   <ChefHat size={20} color="#5A6E6C" />
                   <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                    {recipeData.prepTime}
+                    {recipeData.prepTime} mins
                   </Text>
                   <Text className="text-charcoal-gray/60 text-xs mt-0.5">
                     min prep
@@ -916,7 +942,7 @@ export default function RecipeDetailScreen() {
                   <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
                     <Clock size={20} color="#5A6E6C" />
                     <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                      {totalMinutes}
+                      {totalMinutes} mins
                     </Text>
                     <Text className="text-charcoal-gray/60 text-xs mt-0.5">
                       cook
@@ -1211,12 +1237,14 @@ export default function RecipeDetailScreen() {
 
                 {/* Render Ingredient Item */}
                 {(() => {
-                  const handleIngredientCheck = (ingredientName: string) => {
+                  const handleIngredientCheck = (
+                    ingredientName: string,
+                    ingredient: Ingredient
+                  ) => {
+                    const normalizedName = ingredientName.toLowerCase().trim();
+
                     setCheckedIngredients((prev) => {
                       const newSet = new Set(prev);
-                      const normalizedName = ingredientName
-                        .toLowerCase()
-                        .trim();
 
                       // Check if already checked
                       const isChecked = Array.from(newSet).some(
@@ -1231,9 +1259,34 @@ export default function RecipeDetailScreen() {
                             newSet.delete(checked);
                           }
                         });
+                        // Note: We don't remove from pantry when unchecking
+                        // The user might want to keep it in pantry
                       } else {
                         // Check - add to set (use original name for consistency)
                         newSet.add(ingredientName);
+
+                        // Add to pantry if not already there
+                        const alreadyInPantry = pantryItems.some(
+                          (item) =>
+                            item.name.toLowerCase().trim() === normalizedName
+                        );
+
+                        if (!alreadyInPantry) {
+                          addPantryItem({
+                            name: ingredient.name,
+                            quantity: ingredient.quantity,
+                            unit: ingredient.unit,
+                          });
+                        }
+
+                        // Remove from shopping list if it exists there
+                        const shoppingItem = shoppingItems.find(
+                          (item) =>
+                            item.name.toLowerCase().trim() === normalizedName
+                        );
+                        if (shoppingItem) {
+                          deleteShoppingItem(shoppingItem.id);
+                        }
                       }
 
                       return newSet;
@@ -1336,7 +1389,9 @@ export default function RecipeDetailScreen() {
                         className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
                         activeOpacity={0.7}
                         style={{ minHeight: 44 }}
-                        onPress={() => handleIngredientCheck(ingredient.name)}
+                        onPress={() =>
+                          handleIngredientCheck(ingredient.name, ingredient)
+                        }
                       >
                         {/* Checkbox */}
                         <View
@@ -1728,12 +1783,190 @@ export default function RecipeDetailScreen() {
                             >
                               {enrichInstructionWithAmounts(step.instruction)}
                             </Text>
-                            {step.timerDuration && (
-                              <View className="flex-row items-center mt-2">
-                                <Clock size={16} color="#9CA3AF" />
-                                <Text className="text-charcoal-gray/60 text-sm ml-2">
-                                  {Math.floor(step.timerDuration / 60)} min
-                                </Text>
+
+                            {/* Timer Component */}
+                            {step.timerDuration && timerStates[step.id] && (
+                              <View className="mt-3 bg-white rounded-lg px-3 py-2 border border-warm-sand/50">
+                                <View className="flex-row items-center justify-between">
+                                  <View className="flex-row items-center flex-1">
+                                    <Clock
+                                      size={16}
+                                      color="#5A6E6C"
+                                      style={{ marginRight: 8 }}
+                                    />
+                                    <Text className="text-charcoal-gray font-semibold text-base">
+                                      {(() => {
+                                        const { remaining } =
+                                          timerStates[step.id];
+                                        const minutes = Math.floor(
+                                          remaining / 60
+                                        );
+                                        const seconds = remaining % 60;
+                                        return `${minutes
+                                          .toString()
+                                          .padStart(2, "0")}:${seconds
+                                          .toString()
+                                          .padStart(2, "0")}`;
+                                      })()}
+                                    </Text>
+                                  </View>
+
+                                  {!timerStates[step.id].isCompleted && (
+                                    <View className="flex-row items-center gap-2">
+                                      {timerStates[step.id].isRunning ? (
+                                        <RNTouchableOpacity
+                                          onPress={() => {
+                                            // Pause timer
+                                            if (
+                                              timerIntervals.current[step.id]
+                                            ) {
+                                              clearInterval(
+                                                timerIntervals.current[step.id]
+                                              );
+                                              delete timerIntervals.current[
+                                                step.id
+                                              ];
+                                            }
+                                            setTimerStates((prev) => ({
+                                              ...prev,
+                                              [step.id]: {
+                                                ...prev[step.id],
+                                                isRunning: false,
+                                              },
+                                            }));
+                                          }}
+                                          className="bg-warm-sand rounded-lg px-3 py-1.5"
+                                          activeOpacity={0.7}
+                                        >
+                                          <Pause size={14} color="#3E3E3E" />
+                                        </RNTouchableOpacity>
+                                      ) : (
+                                        <RNTouchableOpacity
+                                          onPress={async () => {
+                                            // Request notification permissions
+                                            const { status } =
+                                              await Notifications.requestPermissionsAsync();
+                                            if (status !== "granted") {
+                                              Alert.alert(
+                                                "Permission Required",
+                                                "Please enable notifications to receive timer alerts."
+                                              );
+                                              return;
+                                            }
+
+                                            // Start timer
+                                            setTimerStates((prev) => ({
+                                              ...prev,
+                                              [step.id]: {
+                                                ...prev[step.id],
+                                                isRunning: true,
+                                              },
+                                            }));
+
+                                            // Schedule notification
+                                            await Notifications.scheduleNotificationAsync(
+                                              {
+                                                content: {
+                                                  title: "Timer Complete!",
+                                                  body: step.instruction.substring(
+                                                    0,
+                                                    100
+                                                  ),
+                                                  sound: true,
+                                                },
+                                                trigger: {
+                                                  seconds:
+                                                    timerStates[step.id]
+                                                      .remaining,
+                                                } as any,
+                                              }
+                                            );
+
+                                            // Start interval
+                                            timerIntervals.current[step.id] =
+                                              setInterval(() => {
+                                                setTimerStates((prev) => {
+                                                  const current = prev[step.id];
+                                                  if (!current) return prev;
+
+                                                  if (current.remaining <= 1) {
+                                                    // Timer completed
+                                                    clearInterval(
+                                                      timerIntervals.current[
+                                                        step.id
+                                                      ]
+                                                    );
+                                                    delete timerIntervals
+                                                      .current[step.id];
+                                                    return {
+                                                      ...prev,
+                                                      [step.id]: {
+                                                        remaining: 0,
+                                                        isRunning: false,
+                                                        isCompleted: true,
+                                                      },
+                                                    };
+                                                  }
+
+                                                  return {
+                                                    ...prev,
+                                                    [step.id]: {
+                                                      ...current,
+                                                      remaining:
+                                                        current.remaining - 1,
+                                                    },
+                                                  };
+                                                });
+                                              }, 1000);
+                                          }}
+                                          className="bg-dark-sage rounded-lg px-3 py-1.5"
+                                          activeOpacity={0.7}
+                                        >
+                                          <Play size={14} color="#FAF9F7" />
+                                        </RNTouchableOpacity>
+                                      )}
+
+                                      <RNTouchableOpacity
+                                        onPress={() => {
+                                          // Reset timer
+                                          if (timerIntervals.current[step.id]) {
+                                            clearInterval(
+                                              timerIntervals.current[step.id]
+                                            );
+                                            delete timerIntervals.current[
+                                              step.id
+                                            ];
+                                          }
+                                          setTimerStates((prev) => ({
+                                            ...prev,
+                                            [step.id]: {
+                                              remaining:
+                                                step.timerDuration || 0,
+                                              isRunning: false,
+                                              isCompleted: false,
+                                            },
+                                          }));
+                                          // Cancel notification
+                                          Notifications.cancelAllScheduledNotificationsAsync();
+                                        }}
+                                        className="bg-soft-beige rounded-lg px-3 py-1.5"
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text className="text-charcoal-gray text-xs font-semibold">
+                                          Reset
+                                        </Text>
+                                      </RNTouchableOpacity>
+                                    </View>
+                                  )}
+
+                                  {timerStates[step.id].isCompleted && (
+                                    <View className="bg-dark-sage/20 rounded-lg px-3 py-1.5">
+                                      <Text className="text-dark-sage text-xs font-semibold">
+                                        Done!
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
                               </View>
                             )}
                           </View>
@@ -1742,6 +1975,74 @@ export default function RecipeDetailScreen() {
                     </Swipeable>
                   );
                 })}
+
+                {/* Mark as Cooked Button */}
+                <RNTouchableOpacity
+                  onPress={() => {
+                    // Get recipe ID - check if it's from store or params
+                    const dataParam = params.importedData || params.recipeData;
+                    let recipeId: string | null = null;
+
+                    if (dataParam) {
+                      try {
+                        const parsed = JSON.parse(dataParam as string) as
+                          | Recipe
+                          | RecipeCreateInput;
+                        recipeId =
+                          "id" in parsed && parsed.id ? parsed.id : null;
+                      } catch (e) {
+                        console.error("Failed to parse recipe data for ID:", e);
+                      }
+                    }
+
+                    // Also check if recipeData has id (if it's a Recipe, not RecipeCreateInput)
+                    if (!recipeId && recipeData && "id" in recipeData) {
+                      const id = (recipeData as Recipe).id;
+                      if (id && typeof id === "string") {
+                        recipeId = id;
+                      }
+                    }
+
+                    if (!recipeId) {
+                      Alert.alert(
+                        "Error",
+                        "Unable to mark recipe as cooked. Recipe ID not found."
+                      );
+                      return;
+                    }
+
+                    // Calculate total time spent (prep time + cook time from steps)
+                    const prepTime = recipeData.prepTime || 0;
+                    const cookTime =
+                      recipeData.steps?.reduce(
+                        (sum, step) => sum + (step.timerDuration || 0),
+                        0
+                      ) || 0;
+                    const totalTimeMinutes =
+                      prepTime + Math.floor(cookTime / 60);
+
+                    addCookingSession(recipeId, totalTimeMinutes);
+
+                    Alert.alert(
+                      "Recipe Marked as Cooked!",
+                      "This recipe has been added to your cooking history.",
+                      [{ text: "OK" }]
+                    );
+                  }}
+                  className="bg-dark-sage rounded-xl py-4 px-6 items-center justify-center mt-6 mb-6"
+                  activeOpacity={0.8}
+                >
+                  <View className="flex-row items-center">
+                    <ChefHat
+                      size={20}
+                      color="#FAF9F7"
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text className="text-off-white text-base font-semibold">
+                      Mark as Cooked
+                    </Text>
+                  </View>
+                </RNTouchableOpacity>
               </View>
             )}
 

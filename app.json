@@ -39,6 +39,14 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#5A6E6C",
+          "sounds": []
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {
