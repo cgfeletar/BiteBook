@@ -52,6 +52,7 @@ interface Recipe {
   tags: string[];
   categoryIds: string[];
   prepTime?: number; // Prep time in minutes (active prep time)
+  cookTime?: number; // Cook time in minutes
   createdAt: admin.firestore.Timestamp | Date;
 }
 
@@ -239,6 +240,89 @@ Return ONLY the JSON object, no markdown, no code blocks, no explanations. The J
 Raw HTML content:
 `;
 
+function parseInstructions(raw: any): Step[] {
+  const steps: Step[] = [];
+
+  if (!raw) return steps;
+
+  const blocks = Array.isArray(raw) ? raw : [raw];
+
+  let stepIndex = 1;
+
+  for (const block of blocks) {
+    // Plain string
+    if (typeof block === "string") {
+      steps.push({
+        id: `step-${stepIndex++}`,
+        instruction: block,
+        isCompleted: false,
+        isBeginnerFriendly: true,
+      });
+      continue;
+    }
+
+    // HowToStep
+    if (block["@type"] === "HowToStep" && block.text) {
+      steps.push({
+        id: `step-${stepIndex++}`,
+        instruction: block.text,
+        isCompleted: false,
+        isBeginnerFriendly: true,
+      });
+      continue;
+    }
+
+    // HowToSection (VERY common)
+    if (block.itemListElement && Array.isArray(block.itemListElement)) {
+      for (const item of block.itemListElement) {
+        if (item.text) {
+          steps.push({
+            id: `step-${stepIndex++}`,
+            instruction: item.text,
+            isCompleted: false,
+            isBeginnerFriendly: true,
+          });
+        }
+      }
+    }
+  }
+
+  return steps;
+}
+
+function extractAuthor(node: any): string | undefined {
+  const author = node.author;
+
+  if (!author) return undefined;
+
+  if (typeof author === "string") return author;
+
+  if (Array.isArray(author)) {
+    const first = author[0];
+    if (typeof first === "string") return first;
+    return first?.name;
+  }
+
+  if (typeof author === "object") {
+    return author.name || author["@name"];
+  }
+
+  return undefined;
+}
+
+function parseISODuration(value?: string): number | undefined {
+  if (!value || typeof value !== "string") return undefined;
+
+  const match = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+  if (!match) return undefined;
+
+  const hours = match[1] ? parseInt(match[1], 10) : 0;
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+
+  const total = hours * 60 + minutes;
+  return total > 0 ? total : undefined;
+}
+
 /**
  * Parse JSON-LD structured data from HTML
  * Returns recipe data if found, null otherwise
@@ -268,18 +352,16 @@ function parseJSONLD(
       : [data];
 
     for (const node of nodes) {
+      const types = Array.isArray(node["@type"])
+        ? node["@type"]
+        : [node["@type"]];
+
       if (
-        node["@type"] !== "Recipe" &&
-        node["@type"] !== "https://schema.org/Recipe"
+        !types.includes("Recipe") &&
+        !types.includes("https://schema.org/Recipe")
       ) {
         continue;
       }
-
-      const author = Array.isArray(node.author)
-        ? node.author[0]?.name
-        : typeof node.author === "string"
-        ? node.author
-        : node.author?.name;
 
       return {
         title: typeof node.name === "string" ? node.name : node.headline || "",
@@ -303,19 +385,7 @@ function parseJSONLD(
             })
           : [],
 
-        steps: Array.isArray(node.recipeInstructions)
-          ? node.recipeInstructions
-              .map((step: any, idx: number) => ({
-                id: `step-${idx + 1}`,
-                instruction: typeof step === "string" ? step : step.text || "",
-                isCompleted: false,
-                isBeginnerFriendly: true,
-              }))
-              .filter(
-                (step: { instruction: string }) =>
-                  step.instruction && step.instruction.trim().length > 0
-              )
-          : [],
+        steps: parseInstructions(node.recipeInstructions),
 
         nutritionalInfo: node.nutrition
           ? {
@@ -329,7 +399,9 @@ function parseJSONLD(
             }
           : {},
 
-        originalAuthor: author || "Unknown",
+        originalAuthor: extractAuthor(node) || "Unknown",
+        prepTime: parseISODuration(node.prepTime),
+        cookTime: parseISODuration(node.cookTime),
         tags: [],
         categoryIds: [],
         sourceUrl: "",
@@ -343,21 +415,59 @@ function parseJSONLD(
 function extractRecipeSection(html: string): string | null {
   const $ = cheerio.load(html);
 
-  const selectors = [
-    "#recipe",
+  // 1️⃣ WP Recipe Maker (VERY common)
+  const wprm = $(".wprm-recipe").first();
+  if (wprm.length) {
+    console.log("Found WP Recipe Maker section (.wprm-recipe)");
+    return wprm.html();
+  }
+
+  // 2️⃣ ID starts with wprm-recipe-container
+  const wprmContainer = $("[id^='wprm-recipe-container']").first();
+  if (wprmContainer.length) {
+    console.log("Found WP Recipe Maker container (#wprm-recipe-container-*)");
+    return wprmContainer.html();
+  }
+
+  // 3️⃣ Schema.org Recipe (very reliable)
+  const schemaRecipe = $("[itemtype*='schema.org/Recipe']").first();
+  if (schemaRecipe.length) {
+    console.log("Found schema.org Recipe container");
+    return schemaRecipe.html();
+  }
+
+  // 4️⃣ Tasty Recipes plugin
+  const tasty = $(".tasty-recipes, .tasty-recipes-entry").first();
+  if (tasty.length) {
+    console.log("Found Tasty Recipes section");
+    return tasty.html();
+  }
+
+  // 5️⃣ Explicit #recipe (keep, but lower priority)
+  const recipeDiv = $("#recipe").first();
+  if (recipeDiv.length) {
+    console.log("Found #recipe div");
+    return recipeDiv.html();
+  }
+
+  // 6️⃣ Generic recipe-ish classes
+  const genericSelectors = [
     ".recipe",
     ".recipe-card",
     ".recipe-content",
-    "[itemtype*='Recipe']",
+    ".post-recipe",
+    ".entry-recipe",
   ];
 
-  for (const selector of selectors) {
+  for (const selector of genericSelectors) {
     const el = $(selector).first();
     if (el.length) {
-      return el.html() || null;
+      console.log(`Found recipe section using selector: ${selector}`);
+      return el.html();
     }
   }
 
+  console.log("No dedicated recipe section found");
   return null;
 }
 
@@ -1325,7 +1435,20 @@ export const extractRecipeFromUrl = functions
             `Steps from JSON-LD: ${extractedData.steps.length}, Valid steps: ${hasValidSteps}`
           );
 
-          const aiHtml = recipeSectionHtml || htmlContent; // 👈 KEY FIX
+          // CRITICAL: Prioritize recipe section (#recipe div) before full HTML
+          const aiHtml = recipeSectionHtml || htmlContent;
+          if (recipeSectionHtml) {
+            console.log(
+              "Using extracted recipe section (#recipe div) to supplement JSON-LD"
+            );
+            console.log(
+              `Recipe section length: ${recipeSectionHtml.length} characters`
+            );
+          } else {
+            console.log(
+              "WARNING: No recipe section found, using full HTML to supplement JSON-LD"
+            );
+          }
           const aiData = await callLLM(aiHtml, actualRecipeUrl);
 
           // Combine duplicate ingredients (e.g., butter from "making the dough" and "making the frosting")
@@ -1347,15 +1470,24 @@ export const extractRecipeFromUrl = functions
           };
         }
       } else {
-        // ❌ No JSON-LD → try DOM recipe section first
+        // ❌ No JSON-LD → prioritize recipe section, then full HTML
         console.log("No JSON-LD found");
 
-        const aiHtml = recipeSectionHtml || htmlContent; // 👈 KEY FIX
-        console.log(
-          recipeSectionHtml
-            ? "Using extracted recipe section for AI"
-            : "Using full HTML for AI"
-        );
+        // CRITICAL: Always try recipe section first (#recipe div)
+        const aiHtml = recipeSectionHtml || htmlContent;
+        if (recipeSectionHtml) {
+          console.log(
+            "Using extracted recipe section (#recipe div or similar) for AI extraction"
+          );
+          console.log(
+            `Recipe section length: ${recipeSectionHtml.length} characters`
+          );
+        } else {
+          console.log(
+            "WARNING: No recipe section found, falling back to full HTML"
+          );
+          console.log(`Full HTML length: ${htmlContent.length} characters`);
+        }
 
         extractedData = await callLLM(aiHtml, actualRecipeUrl);
       }

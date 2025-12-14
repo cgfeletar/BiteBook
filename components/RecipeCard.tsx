@@ -80,7 +80,7 @@ export function RecipeCard({
           </Text>
 
           {/* Time Display */}
-          {(totalMinutes !== null || recipe.prepTime) && (
+          {(recipe.prepTime || recipe.cookTime || totalMinutes !== null) && (
             <View className="flex-row items-center gap-3">
               {/* Prep Time */}
               {recipe.prepTime && (
@@ -91,12 +91,12 @@ export function RecipeCard({
                   </Text>
                 </View>
               )}
-              {/* Cook Time */}
-              {totalMinutes !== null && (
+              {/* Cook Time - use recipe.cookTime if available, otherwise fall back to calculated total */}
+              {(recipe.cookTime || totalMinutes !== null) && (
                 <View className="flex-row items-center">
                   <Clock size={12} color="#9CA3AF" />
                   <Text className="text-charcoal-gray/60 text-xs ml-1">
-                    {totalMinutes} total
+                    {recipe.cookTime || totalMinutes} cook
                   </Text>
                 </View>
               )}

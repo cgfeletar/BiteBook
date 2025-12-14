@@ -1133,26 +1133,32 @@ export default function RecipeDetailScreen() {
                     {recipeData.prepTime} mins
                   </Text>
                   <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                    min prep
+                    prep
                   </Text>
                 </View>
               )}
 
               {/* Cook Time Card */}
               {(() => {
-                const totalSeconds =
-                  recipeData.steps?.reduce(
-                    (sum, step) => sum + (step.timerDuration || 0),
-                    0
-                  ) || 0;
-                const totalMinutes =
-                  totalSeconds > 0 ? Math.round(totalSeconds / 60) : null;
+                // Use recipe.cookTime if available, otherwise calculate from step timers
+                const cookTime =
+                  recipeData.cookTime ||
+                  (() => {
+                    const totalSeconds =
+                      recipeData.steps?.reduce(
+                        (sum, step) => sum + (step.timerDuration || 0),
+                        0
+                      ) || 0;
+                    return totalSeconds > 0
+                      ? Math.round(totalSeconds / 60)
+                      : null;
+                  })();
 
-                return totalMinutes !== null ? (
+                return cookTime !== null && cookTime !== undefined ? (
                   <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
                     <Clock size={20} color="#5A6E6C" />
                     <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                      {totalMinutes} mins
+                      {cookTime} mins
                     </Text>
                     <Text className="text-charcoal-gray/60 text-xs mt-0.5">
                       cook
@@ -1224,7 +1230,7 @@ export default function RecipeDetailScreen() {
             <View className="h-px bg-warm-sand mb-6" />
 
             {/* Segmented Control */}
-            <View className="flex-row bg-soft-beige rounded-xl p-1 mb-6">
+            <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
               <RNTouchableOpacity
                 onPress={() => setActiveTab("ingredients")}
                 className={`flex-1 py-3 rounded-lg items-center ${
@@ -1271,10 +1277,10 @@ export default function RecipeDetailScreen() {
                   <View className="mb-4 bg-soft-beige rounded-xl p-4">
                     <RNTouchableOpacity
                       onPress={() => setShowKitchenware(!showKitchenware)}
-                      className="flex-row items-center justify-between mb-3"
+                      className="flex-row items-center justify-between"
                       activeOpacity={0.7}
                     >
-                      <Text className="text-lg font-bold text-charcoal-gray">
+                      <Text className="text-md font-bold text-charcoal-gray">
                         Kitchenware Needed
                       </Text>
                       {showKitchenware ? (
@@ -1288,7 +1294,7 @@ export default function RecipeDetailScreen() {
                         {kitchenware.map((item, index) => (
                           <View
                             key={index}
-                            className="flex-row items-center mb-2 last:mb-0"
+                            className="flex-row items-center my-2 last:mb-0"
                           >
                             <View className="w-2 h-2 rounded-full bg-dark-sage mr-3" />
                             <Text className="text-base text-charcoal-gray flex-1">

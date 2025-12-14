@@ -52,6 +52,7 @@ export interface Recipe {
   categoryIds: string[];
   rating?: number; // 1-5 star rating
   prepTime?: number; // Prep time in minutes (active prep time)
+  cookTime?: number; // Cook time in minutes
   createdAt: Timestamp | Date;
 }
 
