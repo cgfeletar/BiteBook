@@ -290,23 +290,31 @@ function parseJSONLD(
           ? node.image
           : "",
 
-        // ✅ LOSSLESS: keep raw strings
+        // Parse ingredients to extract quantity, unit, and name
         ingredients: Array.isArray(node.recipeIngredient)
-          ? node.recipeIngredient.map((ing: string) => ({
-              name: ing,
-              quantity: 1,
-              unit: "",
-              isChecked: false,
-            }))
+          ? node.recipeIngredient.map((ing: any) => {
+              const parsed = parseIngredientString(ing);
+              return {
+                name: parsed.name,
+                quantity: parsed.quantity,
+                unit: parsed.unit,
+                isChecked: false,
+              };
+            })
           : [],
 
         steps: Array.isArray(node.recipeInstructions)
-          ? node.recipeInstructions.map((step: any, idx: number) => ({
-              id: `step-${idx + 1}`,
-              instruction: typeof step === "string" ? step : step.text || "",
-              isCompleted: false,
-              isBeginnerFriendly: true,
-            }))
+          ? node.recipeInstructions
+              .map((step: any, idx: number) => ({
+                id: `step-${idx + 1}`,
+                instruction: typeof step === "string" ? step : step.text || "",
+                isCompleted: false,
+                isBeginnerFriendly: true,
+              }))
+              .filter(
+                (step: { instruction: string }) =>
+                  step.instruction && step.instruction.trim().length > 0
+              )
           : [],
 
         nutritionalInfo: node.nutrition
@@ -357,6 +365,383 @@ function parseNumber(value: any): number | undefined {
   if (!value) return undefined;
   const num = parseFloat(String(value).replace(/[^\d.]/g, ""));
   return Number.isNaN(num) ? undefined : num;
+}
+
+/**
+ * Parse ingredient string to extract quantity, unit, and name
+ * Handles formats like "4 1/2 cups flour", "2 teaspoons salt", "1/4 cup butter"
+ */
+function parseIngredientString(ingredientStr: string | any): {
+  name: string;
+  quantity: number;
+  unit: string;
+} {
+  // Handle object format from JSON-LD
+  if (typeof ingredientStr === "object" && ingredientStr !== null) {
+    const name = ingredientStr.name || ingredientStr.text || "";
+    const amount = ingredientStr.amount || ingredientStr.quantity || "";
+
+    if (amount) {
+      const parsed = parseIngredientString(`${amount} ${name}`);
+      return parsed;
+    }
+
+    return {
+      name: name,
+      quantity: 1,
+      unit: "",
+    };
+  }
+
+  const str = String(ingredientStr).trim();
+  if (!str) {
+    return { name: "", quantity: 1, unit: "" };
+  }
+
+  // Pattern to match: optional whole number, optional fraction, optional unit, ingredient name
+  // Examples: "4 1/2 cups flour", "2 teaspoons salt", "1/4 cup butter", "1 egg"
+  // IMPORTANT: Check fraction BEFORE whole number to avoid matching "1" from "1/3"
+  const mixedNumberPattern = /^(\d+)\s+(\d+\/\d+)/;
+  const fractionPattern = /^(\d+\/\d+)/;
+  const decimalPattern = /^(\d+\.\d+)/;
+  // Whole number pattern - must NOT be followed by "/" to avoid matching "1" from "1/3"
+  const wholeNumberPattern = /^(\d+)(?!\/)/;
+
+  let quantity = 1;
+  let remaining = str;
+  let unit = "";
+
+  // Try to match mixed number first (e.g., "4 1/2")
+  const mixedMatch = remaining.match(mixedNumberPattern);
+  if (mixedMatch) {
+    const whole = parseInt(mixedMatch[1], 10);
+    const fraction = mixedMatch[2];
+    const [num, den] = fraction.split("/").map(Number);
+    quantity = whole + num / den;
+    remaining = remaining.substring(mixedMatch[0].length).trim();
+  } else {
+    // Try fraction FIRST (e.g., "1/3", "1/2") - before whole number to avoid matching "1" from "1/3"
+    const fracMatch = remaining.match(fractionPattern);
+    if (fracMatch) {
+      const [num, den] = fracMatch[1].split("/").map(Number);
+      quantity = num / den;
+      remaining = remaining.substring(fracMatch[0].length).trim();
+    } else {
+      // Try decimal (e.g., "1.5")
+      const decMatch = remaining.match(decimalPattern);
+      if (decMatch) {
+        quantity = parseFloat(decMatch[1]);
+        remaining = remaining.substring(decMatch[0].length).trim();
+      } else {
+        // Try whole number (e.g., "2") - but NOT if followed by "/" (already handled by fraction pattern)
+        const wholeMatch = remaining.match(wholeNumberPattern);
+        if (wholeMatch) {
+          quantity = parseInt(wholeMatch[1], 10);
+          remaining = remaining.substring(wholeMatch[0].length).trim();
+        }
+      }
+    }
+  }
+
+  // Common unit patterns
+  const unitPatterns = [
+    /^(cups?|cup)\b/i,
+    /^(teaspoons?|tsp|tsps?)\b/i,
+    /^(tablespoons?|tbsp|tbsps?)\b/i,
+    /^(ounces?|oz)\b/i,
+    /^(pounds?|lbs?|lb)\b/i,
+    /^(grams?|g)\b/i,
+    /^(kilograms?|kg)\b/i,
+    /^(milliliters?|ml)\b/i,
+    /^(liters?|l)\b/i,
+    /^(pints?|pt)\b/i,
+    /^(quarts?|qt)\b/i,
+    /^(gallons?|gal)\b/i,
+    /^(pieces?|piece)\b/i,
+    /^(whole|item|items?)\b/i,
+    /^(large|medium|small)\b/i,
+    /^(eggs?|egg)\b/i,
+  ];
+
+  // Try to match a unit
+  for (const pattern of unitPatterns) {
+    const unitMatch = remaining.match(pattern);
+    if (unitMatch) {
+      unit = unitMatch[1].toLowerCase();
+      remaining = remaining.substring(unitMatch[0].length).trim();
+      break;
+    }
+  }
+
+  // Handle "to taste" or "as needed"
+  if (
+    remaining.toLowerCase().includes("to taste") ||
+    remaining.toLowerCase().includes("as needed")
+  ) {
+    unit = "to taste";
+    remaining = remaining.replace(/\s*(to taste|as needed)\s*/i, "").trim();
+  }
+
+  // The remaining string is the ingredient name
+  const name = remaining.trim() || str;
+
+  return { name, quantity, unit };
+}
+
+/**
+ * Convert ingredient quantity to a base unit for comparison
+ * Returns quantity in the smallest common unit
+ */
+function convertToBaseUnit(
+  quantity: number,
+  unit: string
+): {
+  quantity: number;
+  baseUnit: string;
+} {
+  const normalizedUnit = unit.toLowerCase().trim();
+
+  // Volume conversions (convert to teaspoons as base)
+  if (
+    normalizedUnit.includes("cup") ||
+    normalizedUnit === "cups" ||
+    normalizedUnit === "cup"
+  ) {
+    return { quantity: quantity * 48, baseUnit: "teaspoons" }; // 1 cup = 48 tsp
+  }
+  if (
+    normalizedUnit.includes("tablespoon") ||
+    normalizedUnit === "tbsp" ||
+    normalizedUnit === "tbsps" ||
+    normalizedUnit === "tablespoons"
+  ) {
+    return { quantity: quantity * 3, baseUnit: "teaspoons" }; // 1 tbsp = 3 tsp
+  }
+  if (
+    normalizedUnit.includes("teaspoon") ||
+    normalizedUnit === "tsp" ||
+    normalizedUnit === "tsps" ||
+    normalizedUnit === "teaspoons"
+  ) {
+    return { quantity: quantity, baseUnit: "teaspoons" };
+  }
+  if (
+    normalizedUnit.includes("pint") ||
+    normalizedUnit === "pt" ||
+    normalizedUnit === "pints"
+  ) {
+    return { quantity: quantity * 96, baseUnit: "teaspoons" }; // 1 pint = 96 tsp
+  }
+  if (
+    normalizedUnit.includes("quart") ||
+    normalizedUnit === "qt" ||
+    normalizedUnit === "quarts"
+  ) {
+    return { quantity: quantity * 192, baseUnit: "teaspoons" }; // 1 quart = 192 tsp
+  }
+  if (
+    normalizedUnit.includes("gallon") ||
+    normalizedUnit === "gal" ||
+    normalizedUnit === "gallons"
+  ) {
+    return { quantity: quantity * 768, baseUnit: "teaspoons" }; // 1 gallon = 768 tsp
+  }
+  if (
+    normalizedUnit.includes("ounce") ||
+    normalizedUnit === "oz" ||
+    normalizedUnit === "ounces"
+  ) {
+    return { quantity: quantity * 6, baseUnit: "teaspoons" }; // 1 fl oz = 6 tsp (approx)
+  }
+
+  // Weight conversions (convert to ounces as base)
+  if (
+    normalizedUnit.includes("pound") ||
+    normalizedUnit === "lb" ||
+    normalizedUnit === "lbs" ||
+    normalizedUnit === "pounds"
+  ) {
+    return { quantity: quantity * 16, baseUnit: "ounces" }; // 1 lb = 16 oz
+  }
+  if (
+    normalizedUnit.includes("gram") ||
+    normalizedUnit === "g" ||
+    normalizedUnit === "grams"
+  ) {
+    return { quantity: quantity / 28.35, baseUnit: "ounces" }; // 1 oz = 28.35g
+  }
+  if (
+    normalizedUnit.includes("kilogram") ||
+    normalizedUnit === "kg" ||
+    normalizedUnit === "kilograms"
+  ) {
+    return { quantity: (quantity * 1000) / 28.35, baseUnit: "ounces" }; // 1 kg = 1000g
+  }
+
+  // For items that can't be converted (eggs, pieces, etc.), keep as-is
+  return { quantity, baseUnit: normalizedUnit || "item" };
+}
+
+/**
+ * Convert from base unit back to a reasonable display unit
+ */
+function convertFromBaseUnit(
+  quantity: number,
+  baseUnit: string,
+  originalUnits: string[]
+): {
+  quantity: number;
+  unit: string;
+} {
+  if (baseUnit === "teaspoons") {
+    // Try to convert to the most reasonable unit
+    if (quantity >= 48) {
+      const cups = quantity / 48;
+      if (cups >= 1 && Number.isInteger(cups)) {
+        return { quantity: cups, unit: "cups" };
+      }
+      // Check if we should use cups with fraction
+      if (cups >= 1) {
+        return { quantity: Math.round(cups * 4) / 4, unit: "cups" }; // Round to nearest 1/4 cup
+      }
+    }
+    if (quantity >= 3) {
+      const tbsp = quantity / 3;
+      if (Number.isInteger(tbsp)) {
+        return { quantity: tbsp, unit: "tablespoons" };
+      }
+      // Use the original unit if it was tablespoons
+      if (
+        originalUnits.some(
+          (u) =>
+            u.toLowerCase().includes("tablespoon") || u.toLowerCase() === "tbsp"
+        )
+      ) {
+        return { quantity: Math.round(tbsp * 2) / 2, unit: "tablespoons" }; // Round to nearest 1/2 tbsp
+      }
+    }
+    return { quantity: Math.round(quantity * 2) / 2, unit: "teaspoons" }; // Round to nearest 1/2 tsp
+  }
+
+  if (baseUnit === "ounces") {
+    if (quantity >= 16) {
+      const lbs = quantity / 16;
+      if (Number.isInteger(lbs)) {
+        return { quantity: lbs, unit: "pounds" };
+      }
+      return { quantity: Math.round(lbs * 4) / 4, unit: "pounds" }; // Round to nearest 1/4 lb
+    }
+    return { quantity: Math.round(quantity * 2) / 2, unit: "ounces" }; // Round to nearest 1/2 oz
+  }
+
+  // For non-convertible units, use the most common original unit
+  if (originalUnits.length > 0) {
+    // Count occurrences of each unit
+    const unitCounts: Record<string, number> = {};
+    originalUnits.forEach((u) => {
+      const normalized = u.toLowerCase().trim();
+      unitCounts[normalized] = (unitCounts[normalized] || 0) + 1;
+    });
+    const mostCommon = Object.entries(unitCounts).sort(
+      (a, b) => b[1] - a[1]
+    )[0];
+    return { quantity, unit: mostCommon[0] };
+  }
+
+  return { quantity, unit: baseUnit };
+}
+
+/**
+ * Combine duplicate ingredients by adding their quantities
+ * Handles unit conversion when ingredients have the same name but different units
+ */
+function combineIngredients(ingredients: Ingredient[]): Ingredient[] {
+  if (!ingredients?.length) return [];
+
+  // Group ingredients by normalized name
+  const ingredientMap = new Map<
+    string,
+    {
+      quantities: number[];
+      baseUnits: string[];
+      originalUnits: string[];
+      isChecked: boolean;
+      displayName: string;
+    }
+  >();
+
+  for (const ing of ingredients) {
+    // Normalize name (lowercase, trim, remove extra spaces)
+    const normalizedName = ing.name.toLowerCase().trim().replace(/\s+/g, " ");
+
+    if (!ingredientMap.has(normalizedName)) {
+      ingredientMap.set(normalizedName, {
+        quantities: [],
+        baseUnits: [],
+        originalUnits: [],
+        isChecked: ing.isChecked,
+        displayName: ing.name, // Keep original casing for display
+      });
+    }
+
+    const entry = ingredientMap.get(normalizedName)!;
+
+    // Convert to base unit for comparison
+    const { quantity: baseQuantity, baseUnit } = convertToBaseUnit(
+      ing.quantity,
+      ing.unit
+    );
+    entry.quantities.push(baseQuantity);
+    entry.baseUnits.push(baseUnit);
+    entry.originalUnits.push(ing.unit);
+    // If any instance is checked, mark as checked
+    if (ing.isChecked) {
+      entry.isChecked = true;
+    }
+  }
+
+  // Combine ingredients
+  const combined: Ingredient[] = [];
+
+  for (const [normalizedName, entry] of ingredientMap.entries()) {
+    // Check if all base units are compatible (same category: volume or weight)
+    const isVolume = entry.baseUnits[0] === "teaspoons";
+    const isWeight = entry.baseUnits[0] === "ounces";
+    const allSameCategory = entry.baseUnits.every(
+      (unit) =>
+        (isVolume && unit === "teaspoons") ||
+        (isWeight && unit === "ounces") ||
+        (!isVolume && !isWeight && unit === entry.baseUnits[0])
+    );
+
+    if (allSameCategory) {
+      // All compatible units - can combine
+      const totalBaseQuantity = entry.quantities.reduce((sum, q) => sum + q, 0);
+      const baseUnit = entry.baseUnits[0];
+
+      // Convert back to display unit
+      const { quantity: displayQuantity, unit: displayUnit } =
+        convertFromBaseUnit(totalBaseQuantity, baseUnit, entry.originalUnits);
+
+      combined.push({
+        name: entry.displayName,
+        quantity: displayQuantity,
+        unit: displayUnit,
+        isChecked: entry.isChecked,
+      });
+    } else {
+      // Different unit categories (e.g., volume vs weight) - can't combine, keep the first one
+      const firstIngredient = ingredients.find(
+        (ing) =>
+          ing.name.toLowerCase().trim().replace(/\s+/g, " ") === normalizedName
+      );
+      if (firstIngredient) {
+        combined.push(firstIngredient);
+      }
+    }
+  }
+
+  return combined;
 }
 
 /**
@@ -927,20 +1312,34 @@ export const extractRecipeFromUrl = functions
         };
 
         // 🔧 JSON-LD incomplete → supplement with AI
-        if (!extractedData.ingredients.length || !extractedData.steps.length) {
+        // Check if steps are empty OR if steps exist but have no valid instructions
+        const hasValidSteps =
+          extractedData.steps.length > 0 &&
+          extractedData.steps.some(
+            (step) => step.instruction && step.instruction.trim().length > 0
+          );
+
+        if (!extractedData.ingredients.length || !hasValidSteps) {
           console.log("JSON-LD incomplete, supplementing with AI extraction");
+          console.log(
+            `Steps from JSON-LD: ${extractedData.steps.length}, Valid steps: ${hasValidSteps}`
+          );
 
           const aiHtml = recipeSectionHtml || htmlContent; // 👈 KEY FIX
           const aiData = await callLLM(aiHtml, actualRecipeUrl);
 
+          // Combine duplicate ingredients (e.g., butter from "making the dough" and "making the frosting")
+          const combinedIngredients = combineIngredients(
+            extractedData.ingredients || []
+          );
+
           extractedData = {
             ...extractedData,
             ingredients: extractedData.ingredients.length
-              ? extractedData.ingredients
+              ? combinedIngredients
               : aiData.ingredients,
-            steps: extractedData.steps.length
-              ? extractedData.steps
-              : aiData.steps,
+            // Use AI steps if JSON-LD steps are empty or invalid
+            steps: hasValidSteps ? extractedData.steps : aiData.steps,
             nutritionalInfo: Object.keys(extractedData.nutritionalInfo).length
               ? extractedData.nutritionalInfo
               : aiData.nutritionalInfo,
@@ -983,10 +1382,15 @@ export const extractRecipeFromUrl = functions
         prepTime = Math.max(5, extractedData.steps.length * 3);
       }
 
+      // Combine duplicate ingredients (e.g., butter from "making the dough" and "making the frosting")
+      const combinedIngredients = combineIngredients(
+        extractedData.ingredients || []
+      );
+
       const recipe: Omit<Recipe, "id" | "createdAt"> = {
         title: extractedData.title || "Untitled Recipe",
         coverImage: extractedData.coverImage || "",
-        ingredients: extractedData.ingredients || [],
+        ingredients: combinedIngredients,
         steps: extractedData.steps || [],
         nutritionalInfo: extractedData.nutritionalInfo || {},
         sourceUrl: actualRecipeUrl,

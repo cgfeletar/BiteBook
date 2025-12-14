@@ -15,6 +15,7 @@ import {
   Check,
   ChefHat,
   ChevronDown,
+  ChevronUp,
   Clock,
   ExternalLink,
   MoreVertical,
@@ -95,6 +96,7 @@ export default function RecipeDetailScreen() {
   const [showUnitsDropdown, setShowUnitsDropdown] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
+  const [showKitchenware, setShowKitchenware] = useState(false);
   const isImported = params.isImported === "true";
 
   // Timer states for each step
@@ -115,6 +117,158 @@ export default function RecipeDetailScreen() {
 
   // Refs for Swipeable components to programmatically close them
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
+
+  /**
+   * Extract kitchenware needed from ingredients and instructions
+   */
+  const kitchenware = useMemo(() => {
+    if (!recipeData) return [];
+
+    const kitchenwareSet = new Set<string>();
+    const allText = [
+      ...(recipeData.ingredients || []).map((ing) => ing.name),
+      ...(recipeData.steps || []).map((step) => step.instruction),
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    // Kitchenware keywords and their display names
+    const kitchenwareKeywords: Record<string, string> = {
+      // Mixing & Blending
+      "stand mixer": "Stand Mixer",
+      "hand mixer": "Hand Mixer",
+      "electric mixer": "Electric Mixer",
+      mixer: "Mixer",
+      blender: "Blender",
+      "immersion blender": "Immersion Blender",
+      "food processor": "Food Processor",
+      whisk: "Whisk",
+      "rubber spatula": "Rubber Spatula",
+      spatula: "Spatula",
+      "wooden spoon": "Wooden Spoon",
+      "mixing bowl": "Mixing Bowl",
+      bowl: "Bowl",
+      "large bowl": "Large Bowl",
+      "medium bowl": "Medium Bowl",
+      "small bowl": "Small Bowl",
+
+      // Measuring
+      "measuring cup": "Measuring Cups",
+      "measuring cups": "Measuring Cups",
+      "measuring spoon": "Measuring Spoons",
+      "measuring spoons": "Measuring Spoons",
+      "liquid measuring cup": "Liquid Measuring Cup",
+      "dry measuring cup": "Dry Measuring Cups",
+      "kitchen scale": "Kitchen Scale",
+      scale: "Kitchen Scale",
+
+      // Baking
+      "baking sheet": "Baking Sheet",
+      "sheet pan": "Baking Sheet",
+      "parchment paper": "Parchment Paper",
+      "baking dish": "Baking Dish",
+      "cake pan": "Cake Pan",
+      "muffin tin": "Muffin Tin",
+      "loaf pan": "Loaf Pan",
+      "pie dish": "Pie Dish",
+      "springform pan": "Springform Pan",
+      "bundt pan": "Bundt Pan",
+      "rolling pin": "Rolling Pin",
+      "pastry brush": "Pastry Brush",
+
+      // Cooking
+      "frying pan": "Frying Pan",
+      skillet: "Skillet",
+      saucepan: "Saucepan",
+      pot: "Pot",
+      "large pot": "Large Pot",
+      "dutch oven": "Dutch Oven",
+      stockpot: "Stockpot",
+      wok: "Wok",
+      griddle: "Griddle",
+      "cast iron": "Cast Iron Skillet",
+      "non-stick pan": "Non-Stick Pan",
+
+      // Cutting & Prep
+      "cutting board": "Cutting Board",
+      "chef's knife": "Chef's Knife",
+      "paring knife": "Paring Knife",
+      "serrated knife": "Serrated Knife",
+      "kitchen shears": "Kitchen Shears",
+      peeler: "Vegetable Peeler",
+      grater: "Grater",
+      zester: "Zester",
+      microplane: "Microplane",
+      mandoline: "Mandoline",
+
+      // Other Tools
+      "can opener": "Can Opener",
+      "bottle opener": "Bottle Opener",
+      corkscrew: "Corkscrew",
+      tongs: "Tongs",
+      "slotted spoon": "Slotted Spoon",
+      ladle: "Ladle",
+      strainer: "Strainer",
+      colander: "Colander",
+      sieve: "Sieve",
+      "fine mesh strainer": "Fine Mesh Strainer",
+      "aluminum foil": "Aluminum Foil",
+      "plastic wrap": "Plastic Wrap",
+      "ziploc bag": "Ziploc Bag",
+      parchment: "Parchment Paper",
+      "wax paper": "Wax Paper",
+
+      // Appliances
+      "slow cooker": "Slow Cooker",
+      "crock pot": "Slow Cooker",
+      "instant pot": "Instant Pot",
+      "pressure cooker": "Pressure Cooker",
+      "air fryer": "Air Fryer",
+      "rice cooker": "Rice Cooker",
+      "toaster oven": "Toaster Oven",
+      "food thermometer": "Food Thermometer",
+      "meat thermometer": "Meat Thermometer",
+    };
+
+    // Check for each keyword
+    for (const [keyword, displayName] of Object.entries(kitchenwareKeywords)) {
+      // Use word boundaries to avoid partial matches
+      const regex = new RegExp(`\\b${keyword.replace(/\s+/g, "\\s+")}\\b`, "i");
+      if (regex.test(allText)) {
+        kitchenwareSet.add(displayName);
+      }
+    }
+
+    // Always add basic items if recipe has ingredients
+    if (recipeData.ingredients && recipeData.ingredients.length > 0) {
+      // Check if we need measuring tools
+      const hasVolumeUnits = recipeData.ingredients.some(
+        (ing) =>
+          ing.unit.toLowerCase().includes("cup") ||
+          ing.unit.toLowerCase().includes("tablespoon") ||
+          ing.unit.toLowerCase().includes("teaspoon") ||
+          ing.unit.toLowerCase().includes("tbsp") ||
+          ing.unit.toLowerCase().includes("tsp")
+      );
+      if (hasVolumeUnits && !kitchenwareSet.has("Measuring Cups")) {
+        kitchenwareSet.add("Measuring Cups");
+      }
+      if (hasVolumeUnits && !kitchenwareSet.has("Measuring Spoons")) {
+        kitchenwareSet.add("Measuring Spoons");
+      }
+
+      // Always suggest a mixing bowl if we have multiple ingredients
+      if (
+        recipeData.ingredients.length > 2 &&
+        !kitchenwareSet.has("Mixing Bowl")
+      ) {
+        kitchenwareSet.add("Mixing Bowl");
+      }
+    }
+
+    // Sort alphabetically
+    return Array.from(kitchenwareSet).sort();
+  }, [recipeData]);
 
   // Combine duplicate ingredients (same name and unit)
   const combinedIngredients = useMemo(() => {
@@ -1112,6 +1266,41 @@ export default function RecipeDetailScreen() {
             {/* Ingredients Tab */}
             {activeTab === "ingredients" && (
               <View>
+                {/* Kitchenware Section */}
+                {kitchenware.length > 0 && (
+                  <View className="mb-4 bg-soft-beige rounded-xl p-4">
+                    <RNTouchableOpacity
+                      onPress={() => setShowKitchenware(!showKitchenware)}
+                      className="flex-row items-center justify-between mb-3"
+                      activeOpacity={0.7}
+                    >
+                      <Text className="text-lg font-bold text-charcoal-gray">
+                        Kitchenware Needed
+                      </Text>
+                      {showKitchenware ? (
+                        <ChevronDown size={20} color="#3E3E3E" />
+                      ) : (
+                        <ChevronUp size={20} color="#3E3E3E" />
+                      )}
+                    </RNTouchableOpacity>
+                    {showKitchenware && (
+                      <View>
+                        {kitchenware.map((item, index) => (
+                          <View
+                            key={index}
+                            className="flex-row items-center mb-2 last:mb-0"
+                          >
+                            <View className="w-2 h-2 rounded-full bg-dark-sage mr-3" />
+                            <Text className="text-base text-charcoal-gray flex-1">
+                              {item}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                )}
+
                 {/* Add to Shopping List Button */}
                 {ingredientsToBuy.length > 0 && (
                   <RNTouchableOpacity
@@ -1865,7 +2054,7 @@ export default function RecipeDetailScreen() {
                                 };
 
                                 return (
-                                  <View className="mt-3 bg-white rounded-lg px-3 py-2 border border-warm-sand/50">
+                                  <View className="mt-3 bg-white rounded-lg px-3 py-3 border border-warm-sand/50">
                                     <View className="flex-row items-center justify-between">
                                       <View className="flex-row items-center flex-1">
                                         <Clock
@@ -1935,17 +2124,6 @@ export default function RecipeDetailScreen() {
                                           ) : (
                                             <RNTouchableOpacity
                                               onPress={async () => {
-                                                // Request notification permissions
-                                                const { status } =
-                                                  await Notifications.requestPermissionsAsync();
-                                                if (status !== "granted") {
-                                                  Alert.alert(
-                                                    "Permission Required",
-                                                    "Please enable notifications to receive timer alerts."
-                                                  );
-                                                  return;
-                                                }
-
                                                 // Initialize timer state if it doesn't exist
                                                 const currentRemaining =
                                                   timerStates[step.id]
@@ -1953,7 +2131,11 @@ export default function RecipeDetailScreen() {
                                                   step.timerDuration ||
                                                   0;
 
-                                                // Start timer
+                                                if (currentRemaining <= 0) {
+                                                  return;
+                                                }
+
+                                                // Start timer first (don't wait for notification)
                                                 setTimerStates((prev) => ({
                                                   ...prev,
                                                   [step.id]: {
@@ -1963,22 +2145,48 @@ export default function RecipeDetailScreen() {
                                                   },
                                                 }));
 
-                                                // Schedule notification
-                                                await Notifications.scheduleNotificationAsync(
-                                                  {
-                                                    content: {
-                                                      title: "Timer Complete!",
-                                                      body: step.instruction.substring(
-                                                        0,
-                                                        100
-                                                      ),
-                                                      sound: true,
-                                                    },
-                                                    trigger: {
-                                                      seconds: currentRemaining,
-                                                    } as any,
+                                                // Schedule notification asynchronously (don't block timer start)
+                                                (async () => {
+                                                  try {
+                                                    // Request notification permissions
+                                                    const { status } =
+                                                      await Notifications.requestPermissionsAsync();
+                                                    if (status !== "granted") {
+                                                      console.log(
+                                                        "Notification permission not granted"
+                                                      );
+                                                      return;
+                                                    }
+
+                                                    // Schedule notification
+                                                    // Use timeInterval trigger format
+                                                    await Notifications.scheduleNotificationAsync(
+                                                      {
+                                                        content: {
+                                                          title:
+                                                            "Timer Complete!",
+                                                          body: step.instruction.substring(
+                                                            0,
+                                                            100
+                                                          ),
+                                                          sound: true,
+                                                        },
+                                                        trigger: {
+                                                          type: "timeInterval",
+                                                          seconds:
+                                                            currentRemaining,
+                                                          repeats: false,
+                                                        } as any,
+                                                      }
+                                                    );
+                                                  } catch (error) {
+                                                    console.error(
+                                                      "Failed to schedule notification:",
+                                                      error
+                                                    );
+                                                    // Continue with timer even if notification fails
                                                   }
-                                                );
+                                                })();
 
                                                 // Start interval
                                                 timerIntervals.current[
@@ -2024,7 +2232,7 @@ export default function RecipeDetailScreen() {
                                               className="bg-dark-sage rounded-lg px-3 py-1.5"
                                               activeOpacity={0.7}
                                             >
-                                              <Play size={14} color="#FAF9F7" />
+                                              <Play size={16} color="#FAF9F7" />
                                             </RNTouchableOpacity>
                                           )}
 
@@ -2058,7 +2266,7 @@ export default function RecipeDetailScreen() {
                                             className="bg-soft-beige rounded-lg px-3 py-1.5"
                                             activeOpacity={0.7}
                                           >
-                                            <Text className="text-charcoal-gray text-xs font-semibold">
+                                            <Text className="text-charcoal-gray text-sm font-semibold">
                                               Reset
                                             </Text>
                                           </RNTouchableOpacity>
