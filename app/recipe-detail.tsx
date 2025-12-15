@@ -22,6 +22,7 @@ import {
   Pause,
   Pencil,
   Play,
+  Plus,
   Share2,
   ShoppingBag,
   Star,
@@ -34,8 +35,10 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Linking,
   Modal,
+  Platform,
   Pressable,
   TouchableOpacity as RNTouchableOpacity,
   Share,
@@ -76,6 +79,8 @@ export default function RecipeDetailScreen() {
   const [servings, setServings] = useState(4); // Default servings
   const [recipeScale, setRecipeScale] = useState<1 | 1.5 | 2 | 3>(1);
   const [newTag, setNewTag] = useState("");
+  const [showAddTagInput, setShowAddTagInput] = useState(false);
+  const [originalTags, setOriginalTags] = useState<string[]>([]);
   const addItemsToShoppingList = useShoppingListStore(
     (state) => state.addItems
   );
@@ -100,6 +105,10 @@ export default function RecipeDetailScreen() {
   const [editedTitle, setEditedTitle] = useState("");
   const [showKitchenware, setShowKitchenware] = useState(false);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(false);
+  const [isEditingIngredients, setIsEditingIngredients] = useState(false);
+  const [isEditingInstructions, setIsEditingInstructions] = useState(false);
+  const [editedIngredients, setEditedIngredients] = useState<Ingredient[]>([]);
+  const [editedSteps, setEditedSteps] = useState<Step[]>([]);
   const isImported = params.isImported === "true";
 
   // Timer states for each step
@@ -246,11 +255,12 @@ export default function RecipeDetailScreen() {
     if (recipeData.ingredients && recipeData.ingredients.length > 0) {
       const hasVolumeUnits = recipeData.ingredients.some(
         (ing) =>
-          ing.unit.toLowerCase().includes("cup") ||
-          ing.unit.toLowerCase().includes("tablespoon") ||
-          ing.unit.toLowerCase().includes("teaspoon") ||
-          ing.unit.toLowerCase().includes("tbsp") ||
-          ing.unit.toLowerCase().includes("tsp")
+          ing.unit &&
+          (ing.unit.toLowerCase().includes("cup") ||
+            ing.unit.toLowerCase().includes("tablespoon") ||
+            ing.unit.toLowerCase().includes("teaspoon") ||
+            ing.unit.toLowerCase().includes("tbsp") ||
+            ing.unit.toLowerCase().includes("tsp"))
       );
 
       if (hasVolumeUnits) {
@@ -308,16 +318,19 @@ export default function RecipeDetailScreen() {
 
     recipeData.ingredients.forEach((ing) => {
       // Create a key from normalized name and unit
-      const key = `${ing.name.toLowerCase().trim()}|${ing.unit
-        .toLowerCase()
-        .trim()}`;
+      // Handle null unit (for "to taste" ingredients)
+      const unitKey = ing.unit ? ing.unit.toLowerCase().trim() : "";
+      const key = `${ing.name.toLowerCase().trim()}|${unitKey}`;
 
       if (ingredientMap.has(key)) {
         // Combine with existing ingredient
         const existing = ingredientMap.get(key)!;
+        // Handle null quantities (for "to taste" ingredients)
+        const existingQty = existing.quantity ?? 0;
+        const ingQty = ing.quantity ?? 0;
         ingredientMap.set(key, {
           ...existing,
-          quantity: existing.quantity + ing.quantity,
+          quantity: existingQty + ingQty,
         });
       } else {
         // Add new ingredient
@@ -392,7 +405,18 @@ export default function RecipeDetailScreen() {
         const parsed = JSON.parse(dataParam as string) as
           | Recipe
           | RecipeCreateInput;
-        setRecipeData(parsed);
+        // Limit title to 40 characters
+        const limitedTitle = parsed.title
+          ? parsed.title.slice(0, 40)
+          : parsed.title;
+        setRecipeData({ ...parsed, title: limitedTitle });
+
+        // Store original tags (auto-generated) when recipe is first loaded
+        if (parsed.tags && parsed.tags.length > 0) {
+          setOriginalTags([...parsed.tags]);
+        } else {
+          setOriginalTags([]);
+        }
 
         // Get stored recipe to load rating if it exists
         if ("id" in parsed && parsed.id) {
@@ -402,6 +426,16 @@ export default function RecipeDetailScreen() {
             setRecipeData((prev) =>
               prev ? { ...prev, rating: storedRecipe.rating } : null
             );
+          }
+          // Also update original tags if stored recipe has tags
+          if (storedRecipe?.tags && storedRecipe.tags.length > 0) {
+            // Only set if we haven't set them yet (to preserve auto-generated tags)
+            setOriginalTags((prev) => {
+              if (prev.length === 0) {
+                return [...storedRecipe.tags];
+              }
+              return prev;
+            });
           }
         }
       } catch (error) {
@@ -614,15 +648,35 @@ export default function RecipeDetailScreen() {
           /\d+\s*(cup|tbsp|tsp|g|gram|oz|lb|ml|l|stick|piece|whole|clove|head|bunch|can|package|container|of)/i;
         const hasQuantityNearby = quantityPattern.test(context);
 
-        // If there's already a quantity nearby, skip this match
-        if (!hasQuantityNearby) {
+        // Handle "to taste" ingredients
+        if (ing.unit === "to taste" && ing.quantity === null) {
+          // Check if "to taste" is already mentioned nearby
+          const toTastePattern = /to\s+taste/i;
+          const hasToTasteNearby = toTastePattern.test(context);
+
+          if (!hasToTasteNearby) {
+            // Replace ingredient name with "{ingredient} to taste"
+            replacements.push({
+              start: offset,
+              end: offset + matchText.length,
+              replacement: `${ingredientName} to taste`,
+            });
+          }
+        } else if (
+          !hasQuantityNearby &&
+          ing.quantity !== null &&
+          ing.quantity > 0
+        ) {
           // Format the quantity nicely using fractions when appropriate
           const quantityStr = formatQuantity(ing.quantity, ing.unit);
+
+          // Only include unit if it's not null
+          const unitStr = ing.unit ? ` ${ing.unit}` : "";
 
           replacements.push({
             start: offset,
             end: offset + matchText.length,
-            replacement: `${quantityStr} ${ing.unit} ${ingredientName}`,
+            replacement: `${quantityStr}${unitStr} ${ingredientName}`,
           });
         }
       }
@@ -664,10 +718,11 @@ export default function RecipeDetailScreen() {
     if (!recipeData) return;
 
     try {
-      const shareText = `${recipeData.title}\n\n${recipeData.sourceUrl || ""}`;
+      const titleToShare = recipeData.title.slice(0, 40);
+      const shareText = `${titleToShare}\n\n${recipeData.sourceUrl || ""}`;
       await Share.share({
         message: shareText,
-        title: recipeData.title,
+        title: titleToShare,
       });
       setShowMenu(false);
     } catch (error) {
@@ -727,7 +782,10 @@ export default function RecipeDetailScreen() {
 
     Alert.alert(
       "Delete Recipe",
-      `Are you sure you want to delete "${recipeData.title}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${recipeData.title.slice(
+        0,
+        40
+      )}"? This action cannot be undone.`,
       [
         {
           text: "Cancel",
@@ -749,7 +807,7 @@ export default function RecipeDetailScreen() {
 
   const handleStartEditTitle = () => {
     if (!recipeData) return;
-    setEditedTitle(recipeData.title);
+    setEditedTitle(recipeData.title.slice(0, 40));
     setIsEditingTitle(true);
   };
 
@@ -774,15 +832,10 @@ export default function RecipeDetailScreen() {
       return;
     }
 
-    const trimmedTitle = editedTitle.trim();
+    const trimmedTitle = editedTitle.trim().slice(0, 40);
 
     if (!trimmedTitle) {
       Alert.alert("Error", "Recipe title cannot be empty.");
-      return;
-    }
-
-    if (trimmedTitle.length > 30) {
-      Alert.alert("Error", "Recipe title cannot exceed 30 characters.");
       return;
     }
 
@@ -797,6 +850,129 @@ export default function RecipeDetailScreen() {
   const handleCancelEditTitle = () => {
     setIsEditingTitle(false);
     setEditedTitle("");
+  };
+
+  // Helper to check if recipe can be edited
+  const canEditRecipe = (): boolean => {
+    if (!recipeData) return false;
+    if (!("id" in recipeData)) return false;
+    const id = recipeData.id;
+    return id !== null && id !== undefined && typeof id === "string";
+  };
+
+  // Ingredients editing handlers
+  const handleStartEditIngredients = () => {
+    if (!recipeData || !canEditRecipe()) {
+      Alert.alert(
+        "Cannot Edit",
+        "This recipe hasn't been saved yet. Please save the recipe first before editing."
+      );
+      return;
+    }
+    setEditedIngredients([...recipeData.ingredients]);
+    setIsEditingIngredients(true);
+  };
+
+  const handleSaveIngredients = () => {
+    if (!recipeData || !canEditRecipe()) return;
+
+    if (
+      "id" in recipeData &&
+      recipeData.id &&
+      typeof recipeData.id === "string"
+    ) {
+      const recipeId = recipeData.id;
+      updateRecipe(recipeId, { ingredients: editedIngredients });
+      setRecipeData({ ...recipeData, ingredients: editedIngredients });
+      setIsEditingIngredients(false);
+    }
+  };
+
+  const handleCancelEditIngredients = () => {
+    setIsEditingIngredients(false);
+    setEditedIngredients([]);
+  };
+
+  const handleAddIngredient = () => {
+    const newIngredient: Ingredient = {
+      name: "",
+      quantity: null,
+      unit: "",
+      isChecked: false,
+    };
+    setEditedIngredients([...editedIngredients, newIngredient]);
+  };
+
+  const handleDeleteIngredient = (index: number) => {
+    setEditedIngredients(editedIngredients.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateIngredient = (
+    index: number,
+    field: keyof Ingredient,
+    value: string | number | null
+  ) => {
+    const updated = [...editedIngredients];
+    updated[index] = { ...updated[index], [field]: value };
+    setEditedIngredients(updated);
+  };
+
+  // Instructions editing handlers
+  const handleStartEditInstructions = () => {
+    if (!recipeData || !canEditRecipe()) {
+      Alert.alert(
+        "Cannot Edit",
+        "This recipe hasn't been saved yet. Please save the recipe first before editing."
+      );
+      return;
+    }
+    setEditedSteps([...recipeData.steps]);
+    setIsEditingInstructions(true);
+  };
+
+  const handleSaveInstructions = () => {
+    if (!recipeData || !canEditRecipe()) return;
+
+    if (
+      "id" in recipeData &&
+      recipeData.id &&
+      typeof recipeData.id === "string"
+    ) {
+      const recipeId = recipeData.id;
+      updateRecipe(recipeId, { steps: editedSteps });
+      setRecipeData({ ...recipeData, steps: editedSteps });
+      setIsEditingInstructions(false);
+    }
+  };
+
+  const handleCancelEditInstructions = () => {
+    setIsEditingInstructions(false);
+    setEditedSteps([]);
+  };
+
+  const handleAddStep = () => {
+    const newStep: Step = {
+      id: `step-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      instruction: "",
+      isCompleted: false,
+      isBeginnerFriendly: true,
+    };
+    setEditedSteps([...editedSteps, newStep]);
+  };
+
+  const handleDeleteStep = (stepId: string) => {
+    setEditedSteps(editedSteps.filter((step) => step.id !== stepId));
+  };
+
+  const handleUpdateStep = (
+    stepId: string,
+    field: keyof Step,
+    value: string | number | boolean | undefined
+  ) => {
+    const updated = editedSteps.map((step) =>
+      step.id === stepId ? { ...step, [field]: value } : step
+    );
+    setEditedSteps(updated);
   };
 
   const renderSwipeRightAction = (step: Step, isCompleted: boolean) => {
@@ -934,7 +1110,7 @@ export default function RecipeDetailScreen() {
               numberOfLines={1}
               style={{ fontFamily: "Lora_700Bold" }}
             >
-              {recipeData.title}
+              {recipeData.title.slice(0, 40)}
             </Text>
             <RNTouchableOpacity
               onPress={() => setShowMenu(true)}
@@ -953,1335 +1129,1768 @@ export default function RecipeDetailScreen() {
           </Animated.View>
         </SafeAreaView>
 
-        <Animated.ScrollView
-          onScroll={scrollHandler}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingTop: HEADER_HEIGHT,
-            paddingBottom: 24,
-          }}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
         >
-          {/* Collapsible Header Image */}
-          <Animated.View
-            style={[
-              {
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: HEADER_HEIGHT,
-                overflow: "hidden",
-              },
-              headerImageStyle,
-            ]}
+          <Animated.ScrollView
+            onScroll={scrollHandler}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{
+              paddingTop: HEADER_HEIGHT,
+              paddingBottom: 24,
+            }}
           >
-            {recipeData.coverImage ? (
-              <Image
-                source={{ uri: recipeData.coverImage }}
-                style={{ width: "100%", height: HEADER_HEIGHT }}
-                contentFit="cover"
-                transition={200}
-                placeholder={{ blurhash: "LGF5]+Yk^6#M@-5c,1J5@[or[Q6." }}
-              />
-            ) : (
-              <View className="bg-soft-beige w-full h-full items-center justify-center">
-                <Text className="text-charcoal-gray/50">No Image</Text>
-              </View>
-            )}
-
-            {/* Header Content Overlay */}
-            <View
-              className="absolute top-0 left-0 right-0 bottom-0"
-              style={{ zIndex: 10, justifyContent: "flex-end" }}
+            {/* Collapsible Header Image */}
+            <Animated.View
+              style={[
+                {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: HEADER_HEIGHT,
+                  overflow: "hidden",
+                },
+                headerImageStyle,
+              ]}
             >
-              {/* Navigation buttons at top */}
-              <SafeAreaView
-                edges={["top"]}
-                style={{ position: "absolute", top: 0, left: 0, right: 0 }}
-              >
-                <View className="flex-row items-center justify-between w-full px-4">
-                  <RNTouchableOpacity
-                    onPress={() => {
-                      router.back();
-                    }}
-                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      backgroundColor: "rgba(231, 216, 201, 0.8)",
-                      borderRadius: 22,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <ArrowLeft size={20} color="#3E3E3E" />
-                  </RNTouchableOpacity>
-
-                  <RNTouchableOpacity
-                    onPress={() => setShowMenu(true)}
-                    hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      backgroundColor: "rgba(231, 216, 201, 0.8)",
-                      borderRadius: 22,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <MoreVertical size={20} color="#3E3E3E" />
-                  </RNTouchableOpacity>
+              {recipeData.coverImage ? (
+                <Image
+                  source={{ uri: recipeData.coverImage }}
+                  style={{ width: "100%", height: HEADER_HEIGHT }}
+                  contentFit="cover"
+                  transition={200}
+                  placeholder={{ blurhash: "LGF5]+Yk^6#M@-5c,1J5@[or[Q6." }}
+                />
+              ) : (
+                <View className="bg-soft-beige w-full h-full items-center justify-center">
+                  <Text className="text-charcoal-gray/50">No Image</Text>
                 </View>
-              </SafeAreaView>
+              )}
 
-              {/* Background overlay with content - aligned to bottom of image */}
-              <Animated.View
-                style={[
-                  headerContentStyle,
-                  {
-                    backgroundColor: "rgba(231, 216, 201, 0.8)",
-                    paddingHorizontal: 24,
-                    paddingBottom: 24,
-                    paddingTop: 12,
-                  },
-                ]}
+              {/* Header Content Overlay */}
+              <View
+                className="absolute top-0 left-0 right-0 bottom-0"
+                style={{ zIndex: 10, justifyContent: "flex-end" }}
               >
-                <View className="flex-row items-center mb-2">
-                  {isEditingTitle ? (
-                    <View className="flex-1 flex-row items-center">
-                      <TextInput
-                        value={editedTitle}
-                        onChangeText={(text) => {
-                          if (text.length <= 30) {
-                            setEditedTitle(text);
-                          }
-                        }}
-                        maxLength={30}
-                        className="flex-1 text-3xl font-bold text-charcoal-gray"
-                        style={{ fontFamily: "Lora_700Bold" }}
-                        autoFocus
-                        onSubmitEditing={handleSaveTitle}
-                        onBlur={handleSaveTitle}
-                      />
-                      <RNTouchableOpacity
-                        onPress={handleSaveTitle}
-                        className="ml-2 p-2"
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
-                      >
-                        <Check size={20} color="#5A6E6C" />
-                      </RNTouchableOpacity>
-                      <RNTouchableOpacity
-                        onPress={handleCancelEditTitle}
-                        className="ml-1 p-2"
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
-                      >
-                        <X size={20} color="#5A6E6C" />
-                      </RNTouchableOpacity>
-                    </View>
-                  ) : (
-                    <>
-                      <Text
-                        className="text-3xl font-bold text-charcoal-gray flex-1"
-                        numberOfLines={2}
-                        style={{ fontFamily: "Lora_700Bold" }}
-                      >
-                        {recipeData.title}
-                      </Text>
-                      {"id" in recipeData && recipeData.id && (
+                {/* Navigation buttons at top */}
+                <SafeAreaView
+                  edges={["top"]}
+                  style={{ position: "absolute", top: 0, left: 0, right: 0 }}
+                >
+                  <View className="flex-row items-center justify-between w-full px-4">
+                    <RNTouchableOpacity
+                      onPress={() => {
+                        router.back();
+                      }}
+                      hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        backgroundColor: "rgba(231, 216, 201, 0.8)",
+                        borderRadius: 22,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <ArrowLeft size={20} color="#3E3E3E" />
+                    </RNTouchableOpacity>
+
+                    <RNTouchableOpacity
+                      onPress={() => setShowMenu(true)}
+                      hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        backgroundColor: "rgba(231, 216, 201, 0.8)",
+                        borderRadius: 22,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MoreVertical size={20} color="#3E3E3E" />
+                    </RNTouchableOpacity>
+                  </View>
+                </SafeAreaView>
+
+                {/* Background overlay with content - aligned to bottom of image */}
+                <Animated.View
+                  style={[
+                    headerContentStyle,
+                    {
+                      backgroundColor: "rgba(231, 216, 201, 0.8)",
+                      paddingHorizontal: 24,
+                      paddingBottom: 12,
+                      paddingTop: 12,
+                    },
+                  ]}
+                >
+                  <View className="flex-row items-center mb-2">
+                    {isEditingTitle ? (
+                      <View className="flex-1 flex-row items-center">
+                        <TextInput
+                          value={editedTitle}
+                          onChangeText={(text) => {
+                            if (text.length <= 40) {
+                              setEditedTitle(text);
+                            }
+                          }}
+                          maxLength={40}
+                          className="flex-1 text-3xl font-bold text-charcoal-gray"
+                          style={{ fontFamily: "Lora_700Bold" }}
+                          autoFocus
+                          onSubmitEditing={handleSaveTitle}
+                          onBlur={handleSaveTitle}
+                        />
                         <RNTouchableOpacity
-                          onPress={handleStartEditTitle}
+                          onPress={handleSaveTitle}
                           className="ml-2 p-2"
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           activeOpacity={0.7}
                         >
-                          <Pencil size={20} color="#5A6E6C" />
+                          <Check size={20} color="#5A6E6C" />
                         </RNTouchableOpacity>
-                      )}
-                    </>
-                  )}
-                </View>
-                <View className="flex flex-row items-center justify-between">
-                  {recipeData.originalAuthor ? (
-                    <Text className="text-base text-charcoal-gray/90">
-                      By {recipeData.originalAuthor}
-                    </Text>
-                  ) : (
-                    <View />
-                  )}
-                  {recipeData.sourceUrl ? (
-                    <RNTouchableOpacity
-                      onPress={async () => {
-                        try {
-                          const url = recipeData.sourceUrl;
-                          const canOpen = await Linking.canOpenURL(url);
-                          if (canOpen) {
-                            await Linking.openURL(url);
-                          }
-                        } catch (error) {
-                          Alert.alert("Error", "Could not open the recipe URL");
-                        }
-                      }}
-                      className="flex-row items-center"
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-base text-charcoal-gray/90 mr-1">
-                        Original Recipe
+                        <RNTouchableOpacity
+                          onPress={handleCancelEditTitle}
+                          className="ml-1 p-2"
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <X size={20} color="#5A6E6C" />
+                        </RNTouchableOpacity>
+                      </View>
+                    ) : (
+                      <>
+                        <Text
+                          className="text-3xl font-bold text-charcoal-gray flex-1"
+                          numberOfLines={2}
+                          style={{ fontFamily: "Lora_700Bold" }}
+                        >
+                          {recipeData.title.slice(0, 40)}
+                        </Text>
+                        {"id" in recipeData && recipeData.id && (
+                          <RNTouchableOpacity
+                            onPress={handleStartEditTitle}
+                            className="ml-2 p-2"
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            activeOpacity={0.7}
+                          >
+                            <Pencil size={20} color="#5A6E6C" />
+                          </RNTouchableOpacity>
+                        )}
+                      </>
+                    )}
+                  </View>
+                  <View className="flex flex-row items-center justify-between">
+                    {recipeData.originalAuthor ? (
+                      <Text className="text-base text-charcoal-gray/90">
+                        By {recipeData.originalAuthor}
                       </Text>
-                      <ExternalLink size={16} color="#5A6E6C" />
-                    </RNTouchableOpacity>
-                  ) : (
-                    <View />
-                  )}
-                </View>
-              </Animated.View>
-            </View>
-          </Animated.View>
-
-          {/* Content */}
-          <View className="px-6 pt-6 pb-8">
-            {/* Imported Notice */}
-            {isImported && (
-              <View className="bg-dark-sage/20 rounded-xl p-4 mb-6">
-                <Text className="text-dark-sage font-semibold text-sm">
-                  ✓ Recipe imported successfully! Review and save when ready.
-                </Text>
+                    ) : (
+                      <View />
+                    )}
+                    {recipeData.sourceUrl ? (
+                      <RNTouchableOpacity
+                        onPress={async () => {
+                          try {
+                            const url = recipeData.sourceUrl;
+                            const canOpen = await Linking.canOpenURL(url);
+                            if (canOpen) {
+                              await Linking.openURL(url);
+                            }
+                          } catch (error) {
+                            Alert.alert(
+                              "Error",
+                              "Could not open the recipe URL"
+                            );
+                          }
+                        }}
+                        className="flex-row items-center"
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Text className="text-base text-charcoal-gray/90 mr-1">
+                          Original Recipe
+                        </Text>
+                        <ExternalLink size={16} color="#5A6E6C" />
+                      </RNTouchableOpacity>
+                    ) : (
+                      <View />
+                    )}
+                  </View>
+                </Animated.View>
               </View>
-            )}
+            </Animated.View>
 
-            {/* Prep Time, Total Time, and Servings Cards */}
-            <View className="flex-row items-center justify-between mb-4 gap-3">
-              {/* Prep Time Card */}
-              {recipeData.prepTime && (
-                <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                  <ChefHat size={20} color="#5A6E6C" />
-                  <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                    {recipeData.prepTime} mins
-                  </Text>
-                  <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                    prep
+            {/* Content */}
+            <View className="px-6 pt-6 pb-8">
+              {/* Imported Notice */}
+              {isImported && (
+                <View className="bg-dark-sage/20 rounded-xl p-4 mb-6">
+                  <Text className="text-dark-sage font-semibold text-sm">
+                    ✓ Recipe imported successfully! Review and save when ready.
                   </Text>
                 </View>
               )}
 
-              {/* Total Time Card */}
-              {(() => {
-                // Use recipe.totalTime if available, otherwise calculate from step timers
-                const totalTime =
-                  recipeData.totalTime ||
-                  (() => {
-                    const totalSeconds =
-                      recipeData.steps?.reduce(
-                        (sum, step) => sum + (step.timerDuration || 0),
-                        0
-                      ) || 0;
-                    return totalSeconds > 0
-                      ? Math.round(totalSeconds / 60)
-                      : null;
-                  })();
-
-                return totalTime !== null && totalTime !== undefined ? (
+              {/* Prep Time, Total Time, and Servings Cards */}
+              <View className="flex-row items-center justify-between mb-4 gap-3">
+                {/* Prep Time Card */}
+                {recipeData.prepTime && (
                   <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                    <Clock size={20} color="#5A6E6C" />
+                    <ChefHat size={20} color="#5A6E6C" />
                     <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                      {totalTime} mins
+                      {recipeData.prepTime} mins
                     </Text>
                     <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                      total
+                      prep
                     </Text>
                   </View>
-                ) : null;
-              })()}
+                )}
 
-              {/* Servings Card */}
-              <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                <Users size={20} color="#5A6E6C" />
-                <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                  {servings}
-                </Text>
-                <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                  servings
-                </Text>
-              </View>
-            </View>
+                {/* Total Time Card */}
+                {(() => {
+                  // Use recipe.totalTime if available, otherwise calculate from step timers
+                  const totalTime =
+                    recipeData.totalTime ||
+                    (() => {
+                      const totalSeconds =
+                        recipeData.steps?.reduce(
+                          (sum, step) => sum + (step.timerDuration || 0),
+                          0
+                        ) || 0;
+                      return totalSeconds > 0
+                        ? Math.round(totalSeconds / 60)
+                        : null;
+                    })();
 
-            {/* Divider Line */}
-            <View className="h-px bg-warm-sand mb-4" />
-
-            {/* Star Rating */}
-            <View className="flex-row items-center justify-center mb-4">
-              {[1, 2, 3, 4, 5].map((star) => (
-                <RNTouchableOpacity
-                  key={star}
-                  onPress={() => {
-                    const newRating =
-                      recipeData.rating === star ? undefined : star;
-                    setRecipeData((prev) =>
-                      prev ? { ...prev, rating: newRating } : null
-                    );
-                    // Update in store if recipe exists (check if it's a Recipe with id)
-                    if (
-                      "id" in recipeData &&
-                      typeof recipeData.id === "string"
-                    ) {
-                      const storedRecipe = getRecipe(recipeData.id);
-                      if (storedRecipe) {
-                        updateRecipe(storedRecipe.id, {
-                          rating: newRating,
-                        });
-                      }
-                    }
-                  }}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  activeOpacity={0.7}
-                >
-                  <Star
-                    size={24}
-                    color={
-                      recipeData.rating && star <= recipeData.rating
-                        ? "#7A2E2A"
-                        : "#D1D5DB"
-                    }
-                    fill={
-                      recipeData.rating && star <= recipeData.rating
-                        ? "#7A2E2A"
-                        : "none"
-                    }
-                  />
-                </RNTouchableOpacity>
-              ))}
-            </View>
-
-            {/* Divider Line */}
-            <View className="h-px bg-warm-sand mb-6" />
-
-            {/* Segmented Control */}
-            <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
-              <RNTouchableOpacity
-                onPress={() => setActiveTab("ingredients")}
-                className={`flex-1 py-3 rounded-lg items-center ${
-                  activeTab === "ingredients" ? "bg-dark-sage" : ""
-                }`}
-                activeOpacity={0.7}
-                style={{ minHeight: 44, justifyContent: "center" }}
-              >
-                <Text
-                  className={`font-semibold ${
-                    activeTab === "ingredients"
-                      ? "text-off-white"
-                      : "text-charcoal-gray"
-                  }`}
-                >
-                  Ingredients
-                </Text>
-              </RNTouchableOpacity>
-              <RNTouchableOpacity
-                onPress={() => setActiveTab("instructions")}
-                className={`flex-1 py-3 rounded-lg items-center ${
-                  activeTab === "instructions" ? "bg-dark-sage" : ""
-                }`}
-                activeOpacity={0.7}
-                style={{ minHeight: 44, justifyContent: "center" }}
-              >
-                <Text
-                  className={`font-semibold ${
-                    activeTab === "instructions"
-                      ? "text-off-white"
-                      : "text-charcoal-gray"
-                  }`}
-                >
-                  Instructions
-                </Text>
-              </RNTouchableOpacity>
-            </View>
-
-            {/* Ingredients Tab */}
-            {activeTab === "ingredients" && (
-              <View>
-                {/* Kitchenware Section */}
-                {kitchenware.length > 0 && (
-                  <View className="mb-4 bg-soft-beige rounded-xl p-4">
-                    <RNTouchableOpacity
-                      onPress={() => setShowKitchenware(!showKitchenware)}
-                      className="flex-row items-center justify-between"
-                      activeOpacity={0.7}
-                    >
-                      <Text className="text-md font-bold text-charcoal-gray">
-                        Kitchenware Needed
+                  return totalTime !== null && totalTime !== undefined ? (
+                    <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                      <Clock size={20} color="#5A6E6C" />
+                      <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                        {totalTime} mins
                       </Text>
-                      {showKitchenware ? (
-                        <ChevronDown size={20} color="#3E3E3E" />
-                      ) : (
-                        <ChevronUp size={20} color="#3E3E3E" />
-                      )}
-                    </RNTouchableOpacity>
-                    {showKitchenware && (
-                      <View className="flex-row flex-wrap mb-2">
-                        {kitchenware.map((item, index) => (
-                          <View
-                            key={index}
-                            className="flex-row items-start mb-2"
-                            style={{ width: "48%" }}
-                          >
-                            <View className="w-2 h-2 rounded-full bg-dark-sage mr-3 mt-1.5 flex-shrink-0" />
-                            <Text className="text-base text-charcoal-gray flex-1 flex-wrap">
-                              {item}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                )}
+                      <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                        total
+                      </Text>
+                    </View>
+                  ) : null;
+                })()}
 
-                {/* Add to Shopping List Button */}
-                {ingredientsToBuy.length > 0 && (
+                {/* Servings Card */}
+                <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                  <Users size={20} color="#5A6E6C" />
+                  <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                    {servings}
+                  </Text>
+                  <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                    servings
+                  </Text>
+                </View>
+              </View>
+
+              {/* Divider Line */}
+              <View className="h-px bg-warm-sand mb-4" />
+
+              {/* Star Rating */}
+              <View className="flex-row items-center justify-center mb-4">
+                {[1, 2, 3, 4, 5].map((star) => (
                   <RNTouchableOpacity
+                    key={star}
                     onPress={() => {
-                      addItemsToShoppingList(ingredientsToBuy);
-                      Alert.alert(
-                        "Added to Shopping List",
-                        `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
+                      const newRating =
+                        recipeData.rating === star ? undefined : star;
+                      setRecipeData((prev) =>
+                        prev ? { ...prev, rating: newRating } : null
                       );
+                      // Update in store if recipe exists (check if it's a Recipe with id)
+                      if (
+                        "id" in recipeData &&
+                        typeof recipeData.id === "string"
+                      ) {
+                        const storedRecipe = getRecipe(recipeData.id);
+                        if (storedRecipe) {
+                          updateRecipe(storedRecipe.id, {
+                            rating: newRating,
+                          });
+                        }
+                      }
                     }}
-                    className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
-                    activeOpacity={0.8}
-                    style={{ minHeight: 44 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
                   >
-                    <ShoppingBag size={20} color="#FAF9F7" />
-                    <Text className="text-off-white text-base font-semibold ml-2">
-                      Add All to Shopping List
-                    </Text>
+                    <Star
+                      size={24}
+                      color={
+                        recipeData.rating && star <= recipeData.rating
+                          ? "#7A2E2A"
+                          : "#D1D5DB"
+                      }
+                      fill={
+                        recipeData.rating && star <= recipeData.rating
+                          ? "#7A2E2A"
+                          : "none"
+                      }
+                    />
                   </RNTouchableOpacity>
-                )}
+                ))}
+              </View>
 
-                {/* Scale and Unit Dropdowns */}
-                {(showScaleDropdown || showUnitsDropdown) && (
-                  <Pressable
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      zIndex: 50,
-                    }}
-                    onPress={() => {
-                      setShowScaleDropdown(false);
-                      setShowUnitsDropdown(false);
-                    }}
-                  />
-                )}
-                <View className="flex-row items-center justify-between mb-4">
-                  {/* Scale Dropdown */}
-                  <View
-                    className="flex-1 mr-3 flex-row items-center"
-                    style={{ zIndex: showScaleDropdown ? 100 : 1 }}
+              {/* Divider Line */}
+              <View className="h-px bg-warm-sand mb-6" />
+
+              {/* Segmented Control */}
+              <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
+                <RNTouchableOpacity
+                  onPress={() => setActiveTab("ingredients")}
+                  className={`flex-1 py-3 rounded-lg items-center ${
+                    activeTab === "ingredients" ? "bg-dark-sage" : ""
+                  }`}
+                  activeOpacity={0.7}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  <Text
+                    className={`font-semibold ${
+                      activeTab === "ingredients"
+                        ? "text-off-white"
+                        : "text-charcoal-gray"
+                    }`}
                   >
-                    <Text className="text-charcoal-gray/60 text-sm mr-2">
-                      Scale:
-                    </Text>
-                    <View className="flex-1">
+                    Ingredients
+                  </Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  onPress={() => setActiveTab("instructions")}
+                  className={`flex-1 py-3 rounded-lg items-center ${
+                    activeTab === "instructions" ? "bg-dark-sage" : ""
+                  }`}
+                  activeOpacity={0.7}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
+                  <Text
+                    className={`font-semibold ${
+                      activeTab === "instructions"
+                        ? "text-off-white"
+                        : "text-charcoal-gray"
+                    }`}
+                  >
+                    Instructions
+                  </Text>
+                </RNTouchableOpacity>
+              </View>
+
+              {/* Ingredients Tab */}
+              {activeTab === "ingredients" && (
+                <View>
+                  {/* Kitchenware Section */}
+                  {kitchenware.length > 0 && (
+                    <View className="mb-4 bg-soft-beige rounded-xl p-4">
                       <RNTouchableOpacity
-                        onPress={() => {
-                          setShowScaleDropdown(!showScaleDropdown);
-                          setShowUnitsDropdown(false);
-                        }}
-                        className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                        onPress={() => setShowKitchenware(!showKitchenware)}
+                        className="flex-row items-center justify-between"
                         activeOpacity={0.7}
-                        style={{ minHeight: 44 }}
                       >
-                        <Text className="text-charcoal-gray font-semibold text-sm">
-                          {recipeScale}x
+                        <Text className="text-md font-bold text-charcoal-gray">
+                          Kitchenware Needed
                         </Text>
-                        <ChevronDown
-                          size={18}
-                          color="#3E3E3E"
-                          style={{
-                            transform: [
-                              { rotate: showScaleDropdown ? "180deg" : "0deg" },
-                            ],
-                          }}
-                        />
+                        {showKitchenware ? (
+                          <ChevronDown size={20} color="#3E3E3E" />
+                        ) : (
+                          <ChevronUp size={20} color="#3E3E3E" />
+                        )}
                       </RNTouchableOpacity>
-                      {showScaleDropdown && (
-                        <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
-                          {([1, 1.5, 2, 3] as const).map((scale) => (
+                      {showKitchenware && (
+                        <View className="flex-row flex-wrap mb-2">
+                          {kitchenware.map((item, index) => (
+                            <View
+                              key={index}
+                              className="flex-row items-start mb-2"
+                              style={{ width: "48%" }}
+                            >
+                              <View className="w-2 h-2 rounded-full bg-dark-sage mr-3 mt-1.5 flex-shrink-0" />
+                              <Text className="text-base text-charcoal-gray flex-1 flex-wrap">
+                                {item}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Add to Shopping List Button */}
+                  {ingredientsToBuy.length > 0 && (
+                    <RNTouchableOpacity
+                      onPress={() => {
+                        addItemsToShoppingList(ingredientsToBuy);
+                        Alert.alert(
+                          "Added to Shopping List",
+                          `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
+                        );
+                      }}
+                      className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
+                      activeOpacity={0.8}
+                      style={{ minHeight: 44 }}
+                    >
+                      <ShoppingBag size={20} color="#FAF9F7" />
+                      <Text className="text-off-white text-base font-semibold ml-2">
+                        Add All to Shopping List
+                      </Text>
+                    </RNTouchableOpacity>
+                  )}
+
+                  {/* Scale and Unit Dropdowns */}
+                  {(showScaleDropdown || showUnitsDropdown) && (
+                    <Pressable
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        zIndex: 50,
+                      }}
+                      onPress={() => {
+                        setShowScaleDropdown(false);
+                        setShowUnitsDropdown(false);
+                      }}
+                    />
+                  )}
+                  <View className="flex-row items-center justify-between mb-4">
+                    {/* Scale Dropdown */}
+                    <View
+                      className="flex-1 mr-3 flex-row items-center"
+                      style={{ zIndex: showScaleDropdown ? 100 : 1 }}
+                    >
+                      <Text className="text-charcoal-gray/60 text-sm mr-2">
+                        Scale:
+                      </Text>
+                      <View className="flex-1">
+                        <RNTouchableOpacity
+                          onPress={() => {
+                            setShowScaleDropdown(!showScaleDropdown);
+                            setShowUnitsDropdown(false);
+                          }}
+                          className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                          activeOpacity={0.7}
+                          style={{ minHeight: 44 }}
+                        >
+                          <Text className="text-charcoal-gray font-semibold text-sm">
+                            {recipeScale}x
+                          </Text>
+                          <ChevronDown
+                            size={18}
+                            color="#3E3E3E"
+                            style={{
+                              transform: [
+                                {
+                                  rotate: showScaleDropdown ? "180deg" : "0deg",
+                                },
+                              ],
+                            }}
+                          />
+                        </RNTouchableOpacity>
+                        {showScaleDropdown && (
+                          <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
+                            {([1, 1.5, 2, 3] as const).map((scale) => (
+                              <RNTouchableOpacity
+                                key={scale}
+                                onPress={() => {
+                                  setRecipeScale(scale);
+                                  setShowScaleDropdown(false);
+                                }}
+                                className={`px-4 py-3 ${
+                                  recipeScale === scale ? "bg-dark-sage" : ""
+                                }`}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  className={`text-sm font-semibold ${
+                                    recipeScale === scale
+                                      ? "text-off-white"
+                                      : "text-charcoal-gray"
+                                  }`}
+                                >
+                                  {scale}x
+                                </Text>
+                              </RNTouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    {/* Units Dropdown */}
+                    <View
+                      className="flex-1 flex-row items-center"
+                      style={{ zIndex: showUnitsDropdown ? 100 : 1 }}
+                    >
+                      <Text className="text-charcoal-gray/60 text-sm mr-2">
+                        Units:
+                      </Text>
+                      <View className="flex-1">
+                        <RNTouchableOpacity
+                          onPress={() => {
+                            setShowUnitsDropdown(!showUnitsDropdown);
+                            setShowScaleDropdown(false);
+                          }}
+                          className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
+                          activeOpacity={0.7}
+                          style={{ minHeight: 44 }}
+                        >
+                          <Text className="text-charcoal-gray font-semibold text-sm">
+                            {useMetric ? "Grams" : "Cups"}
+                          </Text>
+                          <ChevronDown
+                            size={18}
+                            color="#3E3E3E"
+                            style={{
+                              transform: [
+                                {
+                                  rotate: showUnitsDropdown ? "180deg" : "0deg",
+                                },
+                              ],
+                            }}
+                          />
+                        </RNTouchableOpacity>
+                        {showUnitsDropdown && (
+                          <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
                             <RNTouchableOpacity
-                              key={scale}
                               onPress={() => {
-                                setRecipeScale(scale);
-                                setShowScaleDropdown(false);
+                                setUseMetric(false);
+                                setShowUnitsDropdown(false);
                               }}
                               className={`px-4 py-3 ${
-                                recipeScale === scale ? "bg-dark-sage" : ""
+                                !useMetric ? "bg-dark-sage" : ""
                               }`}
                               activeOpacity={0.7}
                             >
                               <Text
                                 className={`text-sm font-semibold ${
-                                  recipeScale === scale
+                                  !useMetric
                                     ? "text-off-white"
                                     : "text-charcoal-gray"
                                 }`}
                               >
-                                {scale}x
-                              </Text>
-                            </RNTouchableOpacity>
-                          ))}
-                        </View>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Units Dropdown */}
-                  <View
-                    className="flex-1 flex-row items-center"
-                    style={{ zIndex: showUnitsDropdown ? 100 : 1 }}
-                  >
-                    <Text className="text-charcoal-gray/60 text-sm mr-2">
-                      Units:
-                    </Text>
-                    <View className="flex-1">
-                      <RNTouchableOpacity
-                        onPress={() => {
-                          setShowUnitsDropdown(!showUnitsDropdown);
-                          setShowScaleDropdown(false);
-                        }}
-                        className="bg-soft-beige rounded-xl px-4 py-3 flex-row items-center justify-between"
-                        activeOpacity={0.7}
-                        style={{ minHeight: 44 }}
-                      >
-                        <Text className="text-charcoal-gray font-semibold text-sm">
-                          {useMetric ? "Grams" : "Cups"}
-                        </Text>
-                        <ChevronDown
-                          size={18}
-                          color="#3E3E3E"
-                          style={{
-                            transform: [
-                              { rotate: showUnitsDropdown ? "180deg" : "0deg" },
-                            ],
-                          }}
-                        />
-                      </RNTouchableOpacity>
-                      {showUnitsDropdown && (
-                        <View className="absolute top-full left-0 right-0 mt-1 bg-off-white rounded-xl shadow-lg border border-warm-sand/50 overflow-hidden z-50">
-                          <RNTouchableOpacity
-                            onPress={() => {
-                              setUseMetric(false);
-                              setShowUnitsDropdown(false);
-                            }}
-                            className={`px-4 py-3 ${
-                              !useMetric ? "bg-dark-sage" : ""
-                            }`}
-                            activeOpacity={0.7}
-                          >
-                            <Text
-                              className={`text-sm font-semibold ${
-                                !useMetric
-                                  ? "text-off-white"
-                                  : "text-charcoal-gray"
-                              }`}
-                            >
-                              Cups
-                            </Text>
-                          </RNTouchableOpacity>
-                          <RNTouchableOpacity
-                            onPress={() => {
-                              setUseMetric(true);
-                              setShowUnitsDropdown(false);
-                            }}
-                            className={`px-4 py-3 ${
-                              useMetric ? "bg-dark-sage" : ""
-                            }`}
-                            activeOpacity={0.7}
-                          >
-                            <Text
-                              className={`text-sm font-semibold ${
-                                useMetric
-                                  ? "text-off-white"
-                                  : "text-charcoal-gray"
-                              }`}
-                            >
-                              Grams
-                            </Text>
-                          </RNTouchableOpacity>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                </View>
-
-                {/* Render Ingredient Item */}
-                {(() => {
-                  const handleIngredientCheck = (
-                    ingredientName: string,
-                    ingredient: Ingredient
-                  ) => {
-                    const normalizedName = ingredientName.toLowerCase().trim();
-
-                    setCheckedIngredients((prev) => {
-                      const newSet = new Set(prev);
-
-                      // Check if already checked
-                      const isChecked = Array.from(newSet).some(
-                        (checked) =>
-                          checked.toLowerCase().trim() === normalizedName
-                      );
-
-                      if (isChecked) {
-                        // Uncheck - remove from set
-                        Array.from(newSet).forEach((checked) => {
-                          if (checked.toLowerCase().trim() === normalizedName) {
-                            newSet.delete(checked);
-                          }
-                        });
-                        // Note: We don't remove from pantry when unchecking
-                        // The user might want to keep it in pantry
-                      } else {
-                        // Check - add to set (use original name for consistency)
-                        newSet.add(ingredientName);
-
-                        // Add to pantry if not already there
-                        const alreadyInPantry = pantryItems.some(
-                          (item) =>
-                            item.name.toLowerCase().trim() === normalizedName
-                        );
-
-                        if (!alreadyInPantry) {
-                          addPantryItem({
-                            name: ingredient.name,
-                            quantity: ingredient.quantity,
-                            unit: ingredient.unit,
-                          });
-                        }
-
-                        // Remove from shopping list if it exists there
-                        const shoppingItem = shoppingItems.find(
-                          (item) =>
-                            item.name.toLowerCase().trim() === normalizedName
-                        );
-                        if (shoppingItem) {
-                          deleteShoppingItem(shoppingItem.id);
-                        }
-                      }
-
-                      return newSet;
-                    });
-                  };
-
-                  const isIngredientChecked = (
-                    ingredientName: string
-                  ): boolean => {
-                    const normalizedName = ingredientName.toLowerCase().trim();
-                    return Array.from(checkedIngredients).some(
-                      (checked) =>
-                        checked.toLowerCase().trim() === normalizedName
-                    );
-                  };
-
-                  const renderIngredient = (
-                    ingredient: Ingredient,
-                    index: number,
-                    isInPantry: boolean
-                  ) => {
-                    // Apply scaling to ingredient quantity
-                    const scaledQuantity = ingredient.quantity * recipeScale;
-
-                    // Calculate display quantity (with unit conversion if needed)
-                    let displayQuantity: number | string = scaledQuantity;
-                    let displayUnit = ingredient.unit;
-
-                    // Check if this is a whole item (eggs, pieces, etc.) - don't convert these
-                    const wholeItemUnits = [
-                      "egg",
-                      "eggs",
-                      "piece",
-                      "pieces",
-                      "whole",
-                      "item",
-                      "items",
-                      "large",
-                      "medium",
-                      "small",
-                    ];
-                    const isWholeItem = wholeItemUnits.some((u) =>
-                      ingredient.unit.toLowerCase().includes(u)
-                    );
-
-                    if (useMetric) {
-                      // Convert to metric
-                      if (
-                        !isWholeItem &&
-                        (ingredient.unit.toLowerCase().includes("cup") ||
-                          ingredient.unit.toLowerCase().includes("tbsp") ||
-                          ingredient.unit.toLowerCase().includes("tsp"))
-                      ) {
-                        displayQuantity = convertUnit(
-                          scaledQuantity,
-                          ingredient.unit,
-                          true
-                        );
-                        displayUnit = "g";
-                      } else {
-                        displayQuantity = scaledQuantity;
-                        displayUnit = ingredient.unit;
-                      }
-                    } else {
-                      // Convert from metric to imperial
-                      if (
-                        !isWholeItem &&
-                        ingredient.unit.toLowerCase().includes("g")
-                      ) {
-                        displayQuantity = convertUnit(
-                          scaledQuantity,
-                          ingredient.unit,
-                          false
-                        );
-                        displayUnit = "cups";
-                      } else {
-                        displayQuantity = scaledQuantity;
-                        displayUnit = ingredient.unit;
-                      }
-                    }
-
-                    // Format quantity as fraction for display (only for volume units)
-                    // Ensure we have a valid number
-                    const quantityToFormat =
-                      typeof displayQuantity === "number"
-                        ? displayQuantity
-                        : parseFloat(displayQuantity.toString()) || 0;
-
-                    // Only format and display quantity if it's greater than 0
-                    const shouldShowQuantity = quantityToFormat > 0;
-                    const formattedQuantity = shouldShowQuantity
-                      ? formatQuantity(quantityToFormat, displayUnit)
-                      : "";
-
-                    const checked = isIngredientChecked(ingredient.name);
-                    const inPantry = pantryItems.some(
-                      (item) =>
-                        item.name.toLowerCase().trim() ===
-                        ingredient.name.toLowerCase().trim()
-                    );
-
-                    return (
-                      <RNTouchableOpacity
-                        key={`${ingredient.name}-${index}`}
-                        className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
-                        activeOpacity={0.7}
-                        style={{ minHeight: 44 }}
-                        onPress={() =>
-                          handleIngredientCheck(ingredient.name, ingredient)
-                        }
-                      >
-                        {/* Checkbox */}
-                        <View
-                          className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
-                            checked || inPantry
-                              ? "bg-dark-sage border-dark-sage"
-                              : "border-charcoal-gray/30"
-                          }`}
-                        >
-                          {(checked || inPantry) && (
-                            <Check size={16} color="#FAF9F7" />
-                          )}
-                        </View>
-                        <Text
-                          className={`flex-1 text-base ${
-                            checked || inPantry
-                              ? "text-charcoal-gray/60 line-through"
-                              : "text-charcoal-gray"
-                          }`}
-                        >
-                          {shouldShowQuantity && (
-                            <>
-                              <Text className="font-semibold">
-                                {formattedQuantity}
-                              </Text>
-                              {displayUnit && (
-                                <>
-                                  {" "}
-                                  <Text className="font-semibold">
-                                    {displayUnit}
-                                  </Text>
-                                </>
-                              )}{" "}
-                            </>
-                          )}
-                          {ingredient.name}
-                        </Text>
-                      </RNTouchableOpacity>
-                    );
-                  };
-
-                  return (
-                    <>
-                      {/* Progress Tracker */}
-                      {combinedIngredients.length > 0 && (
-                        <View className="mb-6">
-                          <View className="flex-row items-center justify-between mb-2">
-                            <Text className="text-base font-semibold text-charcoal-gray">
-                              Ingredients in Pantry
-                            </Text>
-                            <Text className="text-sm text-charcoal-gray/60">
-                              {progressInfo.inPantryCount} /{" "}
-                              {progressInfo.total}
-                            </Text>
-                          </View>
-                          <View className="h-2 bg-warm-sand rounded-full overflow-hidden">
-                            <View
-                              className="h-full bg-dark-sage rounded-full transition-all"
-                              style={{
-                                width: `${progressInfo.percentage}%`,
-                              }}
-                            />
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Need to Buy Section */}
-                      {ingredientsToBuy.length > 0 && (
-                        <View className="mb-6">
-                          <Text className="text-xl font-bold text-charcoal-gray mb-4">
-                            Need to Buy
-                          </Text>
-                          {ingredientsToBuy.map((ingredient, index) =>
-                            renderIngredient(ingredient, index, false)
-                          )}
-                        </View>
-                      )}
-
-                      {/* Already in Pantry Section */}
-                      {ingredientsInPantry.length > 0 && (
-                        <View className="mb-6">
-                          <Text className="text-xl font-bold text-charcoal-gray mb-4">
-                            In My Pantry
-                          </Text>
-                          {ingredientsInPantry.map((ingredient, index) =>
-                            renderIngredient(
-                              ingredient,
-                              ingredientsToBuy.length + index,
-                              true
-                            )
-                          )}
-                        </View>
-                      )}
-                    </>
-                  );
-                })()}
-
-                {/* Nutrition Section */}
-                {recipeData.nutritionalInfo &&
-                  Object.keys(recipeData.nutritionalInfo).length > 0 && (
-                    <View className="mt-6 mb-6">
-                      <View className="flex-row items-center justify-between mb-4">
-                        <Text className="text-2xl font-bold text-charcoal-gray">
-                          Nutrition
-                        </Text>
-                        {/* Serving Toggle - only show when not loading */}
-                        {!isLoadingNutrition && (
-                          <View className="flex-row bg-soft-beige rounded-full p-1">
-                            <RNTouchableOpacity
-                              onPress={() => setViewByServing(true)}
-                              className={`px-3 py-1.5 rounded-full items-center ${
-                                viewByServing ? "bg-dark-sage" : ""
-                              }`}
-                              activeOpacity={0.7}
-                              style={{
-                                minHeight: 32,
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Text
-                                className={`text-xs font-semibold ${
-                                  viewByServing
-                                    ? "text-off-white"
-                                    : "text-charcoal-gray"
-                                }`}
-                              >
-                                Per Serving
+                                Cups
                               </Text>
                             </RNTouchableOpacity>
                             <RNTouchableOpacity
-                              onPress={() => setViewByServing(false)}
-                              className={`px-3 py-1.5 rounded-full items-center ${
-                                !viewByServing ? "bg-dark-sage" : ""
+                              onPress={() => {
+                                setUseMetric(true);
+                                setShowUnitsDropdown(false);
+                              }}
+                              className={`px-4 py-3 ${
+                                useMetric ? "bg-dark-sage" : ""
                               }`}
                               activeOpacity={0.7}
-                              style={{
-                                minHeight: 32,
-                                justifyContent: "center",
-                              }}
                             >
                               <Text
-                                className={`text-xs font-semibold ${
-                                  !viewByServing
+                                className={`text-sm font-semibold ${
+                                  useMetric
                                     ? "text-off-white"
                                     : "text-charcoal-gray"
                                 }`}
                               >
-                                Whole Recipe
+                                Grams
                               </Text>
                             </RNTouchableOpacity>
                           </View>
                         )}
                       </View>
+                    </View>
+                  </View>
 
-                      <View className="bg-soft-beige rounded-xl px-4 py-4">
-                        {isLoadingNutrition ? (
-                          <View className="py-8 items-center justify-center">
-                            <ActivityIndicator
-                              size="small"
-                              color="#5A6E6C"
-                              style={{ marginBottom: 8 }}
-                            />
-                            <Text className="text-charcoal-gray/60 text-sm">
-                              Calculating nutrition...
+                  {/* Render Ingredient Item */}
+                  {(() => {
+                    const handleIngredientCheck = (
+                      ingredientName: string,
+                      ingredient: Ingredient
+                    ) => {
+                      const normalizedName = ingredientName
+                        .toLowerCase()
+                        .trim();
+
+                      setCheckedIngredients((prev) => {
+                        const newSet = new Set(prev);
+
+                        // Check if already checked
+                        const isChecked = Array.from(newSet).some(
+                          (checked) =>
+                            checked.toLowerCase().trim() === normalizedName
+                        );
+
+                        if (isChecked) {
+                          // Uncheck - remove from set
+                          Array.from(newSet).forEach((checked) => {
+                            if (
+                              checked.toLowerCase().trim() === normalizedName
+                            ) {
+                              newSet.delete(checked);
+                            }
+                          });
+                          // Note: We don't remove from pantry when unchecking
+                          // The user might want to keep it in pantry
+                        } else {
+                          // Check - add to set (use original name for consistency)
+                          newSet.add(ingredientName);
+
+                          // Add to pantry if not already there
+                          const alreadyInPantry = pantryItems.some(
+                            (item) =>
+                              item.name.toLowerCase().trim() === normalizedName
+                          );
+
+                          if (
+                            !alreadyInPantry &&
+                            ingredient.quantity !== null
+                          ) {
+                            addPantryItem({
+                              name: ingredient.name,
+                              quantity: ingredient.quantity,
+                              unit: ingredient.unit,
+                            });
+                          }
+
+                          // Remove from shopping list if it exists there
+                          const shoppingItem = shoppingItems.find(
+                            (item) =>
+                              item.name.toLowerCase().trim() === normalizedName
+                          );
+                          if (shoppingItem) {
+                            deleteShoppingItem(shoppingItem.id);
+                          }
+                        }
+
+                        return newSet;
+                      });
+                    };
+
+                    const isIngredientChecked = (
+                      ingredientName: string
+                    ): boolean => {
+                      const normalizedName = ingredientName
+                        .toLowerCase()
+                        .trim();
+                      return Array.from(checkedIngredients).some(
+                        (checked) =>
+                          checked.toLowerCase().trim() === normalizedName
+                      );
+                    };
+
+                    const renderIngredient = (
+                      ingredient: Ingredient,
+                      index: number,
+                      isInPantry: boolean
+                    ) => {
+                      // Handle "to taste" ingredients - don't scale or convert
+                      if (ingredient.unit === "to taste") {
+                        const checked = isIngredientChecked(ingredient.name);
+                        const inPantry = pantryItems.some(
+                          (item) =>
+                            item.name.toLowerCase().trim() ===
+                            ingredient.name.toLowerCase().trim()
+                        );
+
+                        return (
+                          <RNTouchableOpacity
+                            key={`${ingredient.name}-${index}`}
+                            className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
+                            activeOpacity={0.7}
+                            style={{ minHeight: 44 }}
+                            onPress={() =>
+                              handleIngredientCheck(ingredient.name, ingredient)
+                            }
+                          >
+                            {/* Checkbox */}
+                            <View
+                              className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
+                                checked || inPantry
+                                  ? "bg-dark-sage border-dark-sage"
+                                  : "border-charcoal-gray/30"
+                              }`}
+                            >
+                              {(checked || inPantry) && (
+                                <Check size={16} color="#FAF9F7" />
+                              )}
+                            </View>
+                            <Text
+                              className={`flex-1 text-base ${
+                                checked || inPantry
+                                  ? "text-charcoal-gray/60 line-through"
+                                  : "text-charcoal-gray"
+                              }`}
+                            >
+                              {ingredient.name} to taste
                             </Text>
+                          </RNTouchableOpacity>
+                        );
+                      }
+
+                      // Apply scaling to ingredient quantity
+                      const scaledQuantity =
+                        (ingredient.quantity || 0) * recipeScale;
+
+                      // Calculate display quantity (with unit conversion if needed)
+                      let displayQuantity: number | string = scaledQuantity;
+                      let displayUnit = ingredient.unit;
+
+                      // Check if this is a whole item (eggs, pieces, etc.) - don't convert these
+                      const wholeItemUnits = [
+                        "egg",
+                        "eggs",
+                        "piece",
+                        "pieces",
+                        "whole",
+                        "item",
+                        "items",
+                        "large",
+                        "medium",
+                        "small",
+                      ];
+                      const isWholeItem =
+                        ingredient.unit &&
+                        wholeItemUnits.some((u) =>
+                          ingredient.unit!.toLowerCase().includes(u)
+                        );
+
+                      if (useMetric) {
+                        // Convert to metric
+                        if (
+                          !isWholeItem &&
+                          ingredient.unit &&
+                          (ingredient.unit.toLowerCase().includes("cup") ||
+                            ingredient.unit.toLowerCase().includes("tbsp") ||
+                            ingredient.unit.toLowerCase().includes("tsp"))
+                        ) {
+                          displayQuantity = convertUnit(
+                            scaledQuantity,
+                            ingredient.unit,
+                            true
+                          );
+                          displayUnit = "g";
+                        } else {
+                          displayQuantity = scaledQuantity;
+                          displayUnit = ingredient.unit;
+                        }
+                      } else {
+                        // Convert from metric to imperial
+                        if (
+                          !isWholeItem &&
+                          ingredient.unit &&
+                          ingredient.unit.toLowerCase().includes("g")
+                        ) {
+                          displayQuantity = convertUnit(
+                            scaledQuantity,
+                            ingredient.unit,
+                            false
+                          );
+                          displayUnit = "cups";
+                        } else {
+                          displayQuantity = scaledQuantity;
+                          displayUnit = ingredient.unit;
+                        }
+                      }
+
+                      // Format quantity as fraction for display (only for volume units)
+                      // Ensure we have a valid number
+                      const quantityToFormat =
+                        typeof displayQuantity === "number"
+                          ? displayQuantity
+                          : parseFloat(displayQuantity.toString()) || 0;
+
+                      // Only format and display quantity if it's greater than 0
+                      const shouldShowQuantity = quantityToFormat > 0;
+                      const formattedQuantity = shouldShowQuantity
+                        ? formatQuantity(quantityToFormat, displayUnit)
+                        : "";
+
+                      const checked = isIngredientChecked(ingredient.name);
+                      const inPantry = pantryItems.some(
+                        (item) =>
+                          item.name.toLowerCase().trim() ===
+                          ingredient.name.toLowerCase().trim()
+                      );
+
+                      return (
+                        <RNTouchableOpacity
+                          key={`${ingredient.name}-${index}`}
+                          className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
+                          activeOpacity={0.7}
+                          style={{ minHeight: 44 }}
+                          onPress={() =>
+                            handleIngredientCheck(ingredient.name, ingredient)
+                          }
+                        >
+                          {/* Checkbox */}
+                          <View
+                            className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
+                              checked || inPantry
+                                ? "bg-dark-sage border-dark-sage"
+                                : "border-charcoal-gray/30"
+                            }`}
+                          >
+                            {(checked || inPantry) && (
+                              <Check size={16} color="#FAF9F7" />
+                            )}
+                          </View>
+                          <Text
+                            className={`flex-1 text-base ${
+                              checked || inPantry
+                                ? "text-charcoal-gray/60 line-through"
+                                : "text-charcoal-gray"
+                            }`}
+                          >
+                            {shouldShowQuantity && (
+                              <>
+                                <Text className="font-semibold">
+                                  {formattedQuantity}
+                                </Text>
+                                {displayUnit && (
+                                  <>
+                                    {" "}
+                                    <Text className="font-semibold">
+                                      {displayUnit}
+                                    </Text>
+                                  </>
+                                )}{" "}
+                              </>
+                            )}
+                            {ingredient.name}
+                          </Text>
+                        </RNTouchableOpacity>
+                      );
+                    };
+
+                    return (
+                      <>
+                        {/* Edit Mode Header */}
+                        {isEditingIngredients ? (
+                          <View className="mb-4 flex-row items-center justify-between">
+                            <Text className="text-xl font-bold text-charcoal-gray">
+                              Edit Ingredients
+                            </Text>
+                            <View className="flex-row gap-2">
+                              <RNTouchableOpacity
+                                onPress={handleCancelEditIngredients}
+                                className="bg-warm-sand rounded-lg px-4 py-2"
+                                activeOpacity={0.7}
+                              >
+                                <Text className="text-charcoal-gray font-semibold">
+                                  Cancel
+                                </Text>
+                              </RNTouchableOpacity>
+                              <RNTouchableOpacity
+                                onPress={handleSaveIngredients}
+                                className="bg-dark-sage rounded-lg px-4 py-2"
+                                activeOpacity={0.7}
+                              >
+                                <Text className="text-off-white font-semibold">
+                                  Save
+                                </Text>
+                              </RNTouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          canEditRecipe() && (
+                            <View className="mb-4 flex-row items-center justify-end">
+                              <RNTouchableOpacity
+                                onPress={handleStartEditIngredients}
+                                className="flex-row items-center bg-soft-beige rounded-lg px-3 py-2"
+                                activeOpacity={0.7}
+                              >
+                                <Pencil size={16} color="#5A6E6C" />
+                                <Text className="text-dark-sage font-semibold ml-2">
+                                  Edit
+                                </Text>
+                              </RNTouchableOpacity>
+                            </View>
+                          )
+                        )}
+
+                        {/* Progress Tracker */}
+                        {!isEditingIngredients &&
+                          combinedIngredients.length > 0 && (
+                            <View className="mb-6">
+                              <View className="flex-row items-center justify-between mb-2">
+                                <Text className="text-base font-semibold text-charcoal-gray">
+                                  Ingredients in Pantry
+                                </Text>
+                                <Text className="text-sm text-charcoal-gray/60">
+                                  {progressInfo.inPantryCount} /{" "}
+                                  {progressInfo.total}
+                                </Text>
+                              </View>
+                              <View className="h-2 bg-warm-sand rounded-full overflow-hidden">
+                                <View
+                                  className="h-full bg-dark-sage rounded-full transition-all"
+                                  style={{
+                                    width: `${progressInfo.percentage}%`,
+                                  }}
+                                />
+                              </View>
+                            </View>
+                          )}
+
+                        {/* Edit Mode: Show all ingredients as editable */}
+                        {isEditingIngredients ? (
+                          <View className="mb-6">
+                            {editedIngredients.map((ingredient, index) => (
+                              <View
+                                key={index}
+                                className="mb-3 bg-soft-beige rounded-xl px-4 py-3 flex-row items-center"
+                              >
+                                <View className="flex-1 flex-row items-center gap-2">
+                                  {/* Quantity Input */}
+                                  <TextInput
+                                    value={
+                                      ingredient.quantity === null
+                                        ? ""
+                                        : ingredient.quantity.toString()
+                                    }
+                                    onChangeText={(text) => {
+                                      if (text === "" || text === "to taste") {
+                                        handleUpdateIngredient(
+                                          index,
+                                          "quantity",
+                                          null
+                                        );
+                                        if (text === "to taste") {
+                                          handleUpdateIngredient(
+                                            index,
+                                            "unit",
+                                            "to taste"
+                                          );
+                                        }
+                                      } else {
+                                        const num = parseFloat(text);
+                                        if (!isNaN(num)) {
+                                          handleUpdateIngredient(
+                                            index,
+                                            "quantity",
+                                            num
+                                          );
+                                        }
+                                      }
+                                    }}
+                                    placeholder="Qty"
+                                    className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-sm flex-1"
+                                    style={{ minWidth: 60, maxWidth: 80 }}
+                                    keyboardType="decimal-pad"
+                                  />
+                                  {/* Unit Input */}
+                                  <TextInput
+                                    value={ingredient.unit}
+                                    onChangeText={(text) =>
+                                      handleUpdateIngredient(
+                                        index,
+                                        "unit",
+                                        text
+                                      )
+                                    }
+                                    placeholder="Unit"
+                                    className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-sm flex-1"
+                                    style={{ minWidth: 80, maxWidth: 120 }}
+                                  />
+                                  {/* Name Input */}
+                                  <TextInput
+                                    value={ingredient.name}
+                                    onChangeText={(text) =>
+                                      handleUpdateIngredient(
+                                        index,
+                                        "name",
+                                        text
+                                      )
+                                    }
+                                    placeholder="Ingredient name"
+                                    className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-sm flex-2"
+                                    style={{ flex: 2 }}
+                                  />
+                                </View>
+                                <RNTouchableOpacity
+                                  onPress={() => handleDeleteIngredient(index)}
+                                  className="ml-2 p-2"
+                                  activeOpacity={0.7}
+                                >
+                                  <X size={20} color="#D7B4B3" />
+                                </RNTouchableOpacity>
+                              </View>
+                            ))}
+                            <RNTouchableOpacity
+                              onPress={handleAddIngredient}
+                              className="bg-dark-sage rounded-xl py-3 px-4 flex-row items-center justify-center mb-4"
+                              activeOpacity={0.8}
+                            >
+                              <Plus size={20} color="#FAF9F7" />
+                              <Text className="text-off-white font-semibold ml-2">
+                                Add Ingredient
+                              </Text>
+                            </RNTouchableOpacity>
                           </View>
                         ) : (
                           <>
-                            {recipeData.nutritionalInfo.calories && (
-                              <View className="mb-4">
-                                <View className="flex-row items-center justify-between mb-1">
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    Calories
-                                  </Text>
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    {viewByServing
-                                      ? Math.round(
-                                          recipeData.nutritionalInfo.calories /
-                                            servings
-                                        )
-                                      : recipeData.nutritionalInfo.calories}
-                                    {viewByServing && (
-                                      <Text className="text-charcoal-gray/60 text-sm">
-                                        {" "}
-                                        / {dailyValues.calories}
-                                      </Text>
-                                    )}
-                                  </Text>
-                                </View>
-                                {viewByServing && (
-                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                    <View
-                                      className="h-full bg-dark-sage rounded-full"
-                                      style={{
-                                        width: `${Math.min(
-                                          100,
-                                          (recipeData.nutritionalInfo.calories /
-                                            servings /
-                                            dailyValues.calories) *
-                                            100
-                                        )}%`,
-                                      }}
-                                    />
-                                  </View>
+                            {/* Need to Buy Section */}
+                            {ingredientsToBuy.length > 0 && (
+                              <View className="mb-6">
+                                <Text className="text-xl font-bold text-charcoal-gray mb-4">
+                                  Need to Buy
+                                </Text>
+                                {ingredientsToBuy.map((ingredient, index) =>
+                                  renderIngredient(ingredient, index, false)
                                 )}
                               </View>
                             )}
 
-                            {recipeData.nutritionalInfo.protein && (
-                              <View className="mb-4">
-                                <View className="flex-row items-center justify-between mb-1">
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    Protein
-                                  </Text>
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    {viewByServing
-                                      ? Math.round(
-                                          recipeData.nutritionalInfo.protein /
-                                            servings
-                                        )
-                                      : recipeData.nutritionalInfo.protein}
-                                    g
-                                    {viewByServing && (
-                                      <Text className="text-charcoal-gray/60 text-sm">
-                                        {" "}
-                                        / {dailyValues.protein}g
-                                      </Text>
-                                    )}
-                                  </Text>
-                                </View>
-                                {viewByServing && (
-                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                    <View
-                                      className="h-full bg-dark-sage rounded-full"
-                                      style={{
-                                        width: `${Math.min(
-                                          100,
-                                          (recipeData.nutritionalInfo.protein /
-                                            servings /
-                                            dailyValues.protein) *
-                                            100
-                                        )}%`,
-                                      }}
-                                    />
-                                  </View>
-                                )}
-                              </View>
-                            )}
-
-                            {recipeData.nutritionalInfo.carbohydrates && (
-                              <View className="mb-4">
-                                <View className="flex-row items-center justify-between mb-1">
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    Carbs
-                                  </Text>
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    {viewByServing
-                                      ? Math.round(
-                                          recipeData.nutritionalInfo
-                                            .carbohydrates / servings
-                                        )
-                                      : recipeData.nutritionalInfo
-                                          .carbohydrates}
-                                    g
-                                    {viewByServing && (
-                                      <Text className="text-charcoal-gray/60 text-sm">
-                                        {" "}
-                                        / {dailyValues.carbohydrates}g
-                                      </Text>
-                                    )}
-                                  </Text>
-                                </View>
-                                {viewByServing && (
-                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                    <View
-                                      className="h-full bg-dark-sage rounded-full"
-                                      style={{
-                                        width: `${Math.min(
-                                          100,
-                                          (recipeData.nutritionalInfo
-                                            .carbohydrates /
-                                            servings /
-                                            dailyValues.carbohydrates) *
-                                            100
-                                        )}%`,
-                                      }}
-                                    />
-                                  </View>
-                                )}
-                              </View>
-                            )}
-
-                            {recipeData.nutritionalInfo.fat && (
-                              <View className="mb-4">
-                                <View className="flex-row items-center justify-between mb-1">
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    Fat
-                                  </Text>
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    {viewByServing
-                                      ? Math.round(
-                                          recipeData.nutritionalInfo.fat /
-                                            servings
-                                        )
-                                      : recipeData.nutritionalInfo.fat}
-                                    g
-                                    {viewByServing && (
-                                      <Text className="text-charcoal-gray/60 text-sm">
-                                        {" "}
-                                        / {dailyValues.fat}g
-                                      </Text>
-                                    )}
-                                  </Text>
-                                </View>
-                                {viewByServing && (
-                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                    <View
-                                      className="h-full bg-dark-sage rounded-full"
-                                      style={{
-                                        width: `${Math.min(
-                                          100,
-                                          (recipeData.nutritionalInfo.fat /
-                                            servings /
-                                            dailyValues.fat) *
-                                            100
-                                        )}%`,
-                                      }}
-                                    />
-                                  </View>
-                                )}
-                              </View>
-                            )}
-
-                            {recipeData.nutritionalInfo.fiber && (
-                              <View>
-                                <View className="flex-row items-center justify-between mb-1">
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    Fiber
-                                  </Text>
-                                  <Text className="text-charcoal-gray font-semibold">
-                                    {viewByServing
-                                      ? Math.round(
-                                          (recipeData.nutritionalInfo.fiber ||
-                                            0) / servings
-                                        )
-                                      : recipeData.nutritionalInfo.fiber || 0}
-                                    g
-                                    {viewByServing && (
-                                      <Text className="text-charcoal-gray/60 text-sm">
-                                        {" "}
-                                        / {dailyValues.fiber}g
-                                      </Text>
-                                    )}
-                                  </Text>
-                                </View>
-                                {viewByServing && (
-                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                    <View
-                                      className="h-full bg-dark-sage rounded-full"
-                                      style={{
-                                        width: `${Math.min(
-                                          100,
-                                          ((recipeData.nutritionalInfo.fiber ||
-                                            0) /
-                                            servings /
-                                            dailyValues.fiber) *
-                                            100
-                                        )}%`,
-                                      }}
-                                    />
-                                  </View>
+                            {/* Already in Pantry Section */}
+                            {ingredientsInPantry.length > 0 && (
+                              <View className="mb-6">
+                                <Text className="text-xl font-bold text-charcoal-gray mb-4">
+                                  In My Pantry
+                                </Text>
+                                {ingredientsInPantry.map((ingredient, index) =>
+                                  renderIngredient(
+                                    ingredient,
+                                    ingredientsToBuy.length + index,
+                                    true
+                                  )
                                 )}
                               </View>
                             )}
                           </>
                         )}
+                      </>
+                    );
+                  })()}
+
+                  {/* Nutrition Section */}
+                  {recipeData.nutritionalInfo &&
+                    Object.keys(recipeData.nutritionalInfo).length > 0 && (
+                      <View className="mt-6 mb-6">
+                        <View className="flex-row items-center justify-between mb-4">
+                          <Text className="text-2xl font-bold text-charcoal-gray">
+                            Nutrition
+                          </Text>
+                          {/* Serving Toggle - only show when not loading */}
+                          {!isLoadingNutrition && (
+                            <View className="flex-row bg-soft-beige rounded-full p-1">
+                              <RNTouchableOpacity
+                                onPress={() => setViewByServing(true)}
+                                className={`px-3 py-1.5 rounded-full items-center ${
+                                  viewByServing ? "bg-dark-sage" : ""
+                                }`}
+                                activeOpacity={0.7}
+                                style={{
+                                  minHeight: 32,
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <Text
+                                  className={`text-xs font-semibold ${
+                                    viewByServing
+                                      ? "text-off-white"
+                                      : "text-charcoal-gray"
+                                  }`}
+                                >
+                                  Per Serving
+                                </Text>
+                              </RNTouchableOpacity>
+                              <RNTouchableOpacity
+                                onPress={() => setViewByServing(false)}
+                                className={`px-3 py-1.5 rounded-full items-center ${
+                                  !viewByServing ? "bg-dark-sage" : ""
+                                }`}
+                                activeOpacity={0.7}
+                                style={{
+                                  minHeight: 32,
+                                  justifyContent: "center",
+                                }}
+                              >
+                                <Text
+                                  className={`text-xs font-semibold ${
+                                    !viewByServing
+                                      ? "text-off-white"
+                                      : "text-charcoal-gray"
+                                  }`}
+                                >
+                                  Whole Recipe
+                                </Text>
+                              </RNTouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+
+                        <View className="bg-soft-beige rounded-xl px-4 py-4">
+                          {isLoadingNutrition ? (
+                            <View className="py-8 items-center justify-center">
+                              <ActivityIndicator
+                                size="small"
+                                color="#5A6E6C"
+                                style={{ marginBottom: 8 }}
+                              />
+                              <Text className="text-charcoal-gray/60 text-sm">
+                                Calculating nutrition...
+                              </Text>
+                            </View>
+                          ) : (
+                            <>
+                              {recipeData.nutritionalInfo.calories && (
+                                <View className="mb-4">
+                                  <View className="flex-row items-center justify-between mb-1">
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      Calories
+                                    </Text>
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      {viewByServing
+                                        ? Math.round(
+                                            recipeData.nutritionalInfo
+                                              .calories / servings
+                                          )
+                                        : recipeData.nutritionalInfo.calories}
+                                      {viewByServing && (
+                                        <Text className="text-charcoal-gray/60 text-sm">
+                                          {" "}
+                                          / {dailyValues.calories}
+                                        </Text>
+                                      )}
+                                    </Text>
+                                  </View>
+                                  {viewByServing && (
+                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                      <View
+                                        className="h-full bg-dark-sage rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            (recipeData.nutritionalInfo
+                                              .calories /
+                                              servings /
+                                              dailyValues.calories) *
+                                              100
+                                          )}%`,
+                                        }}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+
+                              {recipeData.nutritionalInfo.protein && (
+                                <View className="mb-4">
+                                  <View className="flex-row items-center justify-between mb-1">
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      Protein
+                                    </Text>
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      {viewByServing
+                                        ? Math.round(
+                                            recipeData.nutritionalInfo.protein /
+                                              servings
+                                          )
+                                        : recipeData.nutritionalInfo.protein}
+                                      g
+                                      {viewByServing && (
+                                        <Text className="text-charcoal-gray/60 text-sm">
+                                          {" "}
+                                          / {dailyValues.protein}g
+                                        </Text>
+                                      )}
+                                    </Text>
+                                  </View>
+                                  {viewByServing && (
+                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                      <View
+                                        className="h-full bg-dark-sage rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            (recipeData.nutritionalInfo
+                                              .protein /
+                                              servings /
+                                              dailyValues.protein) *
+                                              100
+                                          )}%`,
+                                        }}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+
+                              {recipeData.nutritionalInfo.carbohydrates && (
+                                <View className="mb-4">
+                                  <View className="flex-row items-center justify-between mb-1">
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      Carbs
+                                    </Text>
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      {viewByServing
+                                        ? Math.round(
+                                            recipeData.nutritionalInfo
+                                              .carbohydrates / servings
+                                          )
+                                        : recipeData.nutritionalInfo
+                                            .carbohydrates}
+                                      g
+                                      {viewByServing && (
+                                        <Text className="text-charcoal-gray/60 text-sm">
+                                          {" "}
+                                          / {dailyValues.carbohydrates}g
+                                        </Text>
+                                      )}
+                                    </Text>
+                                  </View>
+                                  {viewByServing && (
+                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                      <View
+                                        className="h-full bg-dark-sage rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            (recipeData.nutritionalInfo
+                                              .carbohydrates /
+                                              servings /
+                                              dailyValues.carbohydrates) *
+                                              100
+                                          )}%`,
+                                        }}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+
+                              {recipeData.nutritionalInfo.fat && (
+                                <View className="mb-4">
+                                  <View className="flex-row items-center justify-between mb-1">
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      Fat
+                                    </Text>
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      {viewByServing
+                                        ? Math.round(
+                                            recipeData.nutritionalInfo.fat /
+                                              servings
+                                          )
+                                        : recipeData.nutritionalInfo.fat}
+                                      g
+                                      {viewByServing && (
+                                        <Text className="text-charcoal-gray/60 text-sm">
+                                          {" "}
+                                          / {dailyValues.fat}g
+                                        </Text>
+                                      )}
+                                    </Text>
+                                  </View>
+                                  {viewByServing && (
+                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                      <View
+                                        className="h-full bg-dark-sage rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            (recipeData.nutritionalInfo.fat /
+                                              servings /
+                                              dailyValues.fat) *
+                                              100
+                                          )}%`,
+                                        }}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+
+                              {recipeData.nutritionalInfo.fiber && (
+                                <View>
+                                  <View className="flex-row items-center justify-between mb-1">
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      Fiber
+                                    </Text>
+                                    <Text className="text-charcoal-gray font-semibold">
+                                      {viewByServing
+                                        ? Math.round(
+                                            (recipeData.nutritionalInfo.fiber ||
+                                              0) / servings
+                                          )
+                                        : recipeData.nutritionalInfo.fiber || 0}
+                                      g
+                                      {viewByServing && (
+                                        <Text className="text-charcoal-gray/60 text-sm">
+                                          {" "}
+                                          / {dailyValues.fiber}g
+                                        </Text>
+                                      )}
+                                    </Text>
+                                  </View>
+                                  {viewByServing && (
+                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                      <View
+                                        className="h-full bg-dark-sage rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            ((recipeData.nutritionalInfo
+                                              .fiber || 0) /
+                                              servings /
+                                              dailyValues.fiber) *
+                                              100
+                                          )}%`,
+                                        }}
+                                      />
+                                    </View>
+                                  )}
+                                </View>
+                              )}
+                            </>
+                          )}
+                        </View>
+                      </View>
+                    )}
+                </View>
+              )}
+
+              {/* Instructions Tab */}
+              {activeTab === "instructions" && (
+                <View>
+                  {/* Edit Mode Header */}
+                  {isEditingInstructions ? (
+                    <View className="mb-4 flex-row items-center justify-between">
+                      <Text className="text-xl font-bold text-charcoal-gray">
+                        Edit Instructions
+                      </Text>
+                      <View className="flex-row gap-2">
+                        <RNTouchableOpacity
+                          onPress={handleCancelEditInstructions}
+                          className="bg-warm-sand rounded-lg px-4 py-2"
+                          activeOpacity={0.7}
+                        >
+                          <Text className="text-charcoal-gray font-semibold">
+                            Cancel
+                          </Text>
+                        </RNTouchableOpacity>
+                        <RNTouchableOpacity
+                          onPress={handleSaveInstructions}
+                          className="bg-dark-sage rounded-lg px-4 py-2"
+                          activeOpacity={0.7}
+                        >
+                          <Text className="text-off-white font-semibold">
+                            Save
+                          </Text>
+                        </RNTouchableOpacity>
                       </View>
                     </View>
+                  ) : (
+                    canEditRecipe() && (
+                      <View className="mb-4 flex-row items-center justify-end">
+                        <RNTouchableOpacity
+                          onPress={handleStartEditInstructions}
+                          className="flex-row items-center bg-soft-beige rounded-lg px-3 py-2"
+                          activeOpacity={0.7}
+                        >
+                          <Pencil size={16} color="#5A6E6C" />
+                          <Text className="text-dark-sage font-semibold ml-2">
+                            Edit
+                          </Text>
+                        </RNTouchableOpacity>
+                      </View>
+                    )
                   )}
-              </View>
-            )}
 
-            {/* Instructions Tab */}
-            {activeTab === "instructions" && (
-              <View>
-                {recipeData.steps.map((step, index) => {
-                  const isCompleted = completedSteps.has(step.id);
-                  return (
-                    <Swipeable
-                      key={step.id}
-                      ref={(ref) => {
-                        if (ref) {
-                          swipeableRefs.current[step.id] = ref;
-                        }
-                      }}
-                      renderRightActions={() =>
-                        renderSwipeRightAction(step, isCompleted)
-                      }
-                      onSwipeableWillOpen={() => handleStepComplete(step.id)}
-                      overshootRight={false}
-                      friction={2}
-                    >
-                      <View
-                        className={`mb-4 rounded-xl px-4 py-4 ${
-                          isCompleted
-                            ? "bg-dark-sage/30 border-2 border-dark-sage"
-                            : "bg-soft-beige"
-                        }`}
-                        style={{ minHeight: 44 }}
-                      >
-                        {/* Step Title */}
-                        {step.title && (
-                          <View className="mb-3">
-                            <Text className="text-lg font-bold text-dark-sage">
-                              {step.title}
-                            </Text>
-                          </View>
-                        )}
-
-                        <View className="flex-row items-start">
-                          <View
-                            className={`rounded-full w-10 h-10 items-center justify-center mr-4 mt-1 ${
-                              isCompleted ? "bg-dark-sage" : "bg-dark-sage"
-                            }`}
-                          >
-                            {isCompleted ? (
-                              <Check size={20} color="#FAF9F7" />
-                            ) : (
+                  {/* Edit Mode: Show all steps as editable */}
+                  {isEditingInstructions ? (
+                    <>
+                      {editedSteps.map((step, index) => (
+                        <View
+                          key={step.id}
+                          className="mb-4 bg-soft-beige rounded-xl px-4 py-4"
+                        >
+                          <View className="flex-row items-start mb-3">
+                            <View className="rounded-full w-10 h-10 items-center justify-center mr-4 mt-1 bg-dark-sage">
                               <Text className="text-off-white font-bold text-base">
                                 {index + 1}
                               </Text>
-                            )}
-                          </View>
-                          <View className="flex-1">
-                            <Text
-                              className={`text-base leading-6 ${
-                                isCompleted
-                                  ? "text-charcoal-gray/60 line-through"
-                                  : "text-charcoal-gray"
-                              }`}
+                            </View>
+                            <View className="flex-1">
+                              {/* Step Title Input */}
+                              <TextInput
+                                value={step.title || ""}
+                                onChangeText={(text) =>
+                                  handleUpdateStep(
+                                    step.id,
+                                    "title",
+                                    text || undefined
+                                  )
+                                }
+                                placeholder="Step title (optional)"
+                                placeholderTextColor="#6B7280"
+                                className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-base mb-2"
+                                style={{
+                                  fontFamily: "Lora_700",
+                                }}
+                              />
+                              {/* Instruction Input */}
+                              <TextInput
+                                value={step.instruction}
+                                onChangeText={(text) =>
+                                  handleUpdateStep(step.id, "instruction", text)
+                                }
+                                placeholder="Enter instruction..."
+                                className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-base min-h-[80px]"
+                                multiline
+                                textAlignVertical="top"
+                                style={{ minHeight: 80 }}
+                              />
+                              {/* Timer Duration Input */}
+                              <View className="mt-2 flex-row items-center">
+                                <Text className="text-sm text-charcoal-gray/60 mr-2">
+                                  Timer (minutes):
+                                </Text>
+                                <TextInput
+                                  value={
+                                    step.timerDuration
+                                      ? Math.round(
+                                          step.timerDuration / 60
+                                        ).toString()
+                                      : ""
+                                  }
+                                  onChangeText={(text) => {
+                                    const num = parseInt(text, 10);
+                                    handleUpdateStep(
+                                      step.id,
+                                      "timerDuration",
+                                      text === ""
+                                        ? undefined
+                                        : isNaN(num)
+                                        ? undefined
+                                        : num * 60 // Convert minutes to seconds
+                                    );
+                                  }}
+                                  placeholder="Optional"
+                                  placeholderTextColor="#6B7280"
+                                  className="bg-white rounded-lg px-3 py-2 text-charcoal-gray text-sm flex-1"
+                                  keyboardType="number-pad"
+                                  style={{ maxWidth: 120 }}
+                                />
+                              </View>
+                            </View>
+                            <RNTouchableOpacity
+                              onPress={() => handleDeleteStep(step.id)}
+                              className="ml-2 p-2"
+                              activeOpacity={0.7}
                             >
-                              {enrichInstructionWithAmounts(step.instruction)}
-                            </Text>
+                              <X size={20} color="#D7B4B3" />
+                            </RNTouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                      <RNTouchableOpacity
+                        onPress={handleAddStep}
+                        className="bg-dark-sage rounded-xl py-3 px-4 flex-row items-center justify-center mb-4"
+                        activeOpacity={0.8}
+                      >
+                        <Plus size={20} color="#FAF9F7" />
+                        <Text className="text-off-white font-semibold ml-2">
+                          Add Step
+                        </Text>
+                      </RNTouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      {recipeData.steps.map((step, index) => {
+                        const isCompleted = completedSteps.has(step.id);
+                        return (
+                          <Swipeable
+                            key={step.id}
+                            ref={(ref) => {
+                              if (ref) {
+                                swipeableRefs.current[step.id] = ref;
+                              }
+                            }}
+                            renderRightActions={() =>
+                              renderSwipeRightAction(step, isCompleted)
+                            }
+                            onSwipeableWillOpen={() =>
+                              handleStepComplete(step.id)
+                            }
+                            overshootRight={false}
+                            friction={2}
+                          >
+                            <View
+                              className={`mb-4 rounded-xl px-4 py-4 ${
+                                isCompleted
+                                  ? "bg-dark-sage/30 border-2 border-dark-sage"
+                                  : "bg-soft-beige"
+                              }`}
+                              style={{ minHeight: 44 }}
+                            >
+                              {/* Step Title */}
+                              {step.title && (
+                                <View className="mb-3">
+                                  <Text className="text-lg font-bold text-dark-sage">
+                                    {step.title}
+                                  </Text>
+                                </View>
+                              )}
 
-                            {/* Timer Component */}
-                            {step.timerDuration &&
-                              (() => {
-                                // Get timer state or use default from step.timerDuration
-                                const timerState = timerStates[step.id] || {
-                                  remaining: step.timerDuration,
-                                  isRunning: false,
-                                  isCompleted: false,
-                                };
+                              <View className="flex-row items-start">
+                                <View
+                                  className={`rounded-full w-10 h-10 items-center justify-center mr-4 mt-1 ${
+                                    isCompleted
+                                      ? "bg-dark-sage"
+                                      : "bg-dark-sage"
+                                  }`}
+                                >
+                                  {isCompleted ? (
+                                    <Check size={20} color="#FAF9F7" />
+                                  ) : (
+                                    <Text className="text-off-white font-bold text-base">
+                                      {index + 1}
+                                    </Text>
+                                  )}
+                                </View>
+                                <View className="flex-1">
+                                  <Text
+                                    className={`text-base leading-6 ${
+                                      isCompleted
+                                        ? "text-charcoal-gray/60 line-through"
+                                        : "text-charcoal-gray"
+                                    }`}
+                                  >
+                                    {enrichInstructionWithAmounts(
+                                      step.instruction
+                                    )}
+                                  </Text>
 
-                                return (
-                                  <View className="mt-3 bg-white rounded-lg px-3 py-3 border border-warm-sand/50">
-                                    <View className="flex-row items-center justify-between">
-                                      <View className="flex-row items-center flex-1">
-                                        <Clock
-                                          size={16}
-                                          color="#5A6E6C"
-                                          style={{ marginRight: 8 }}
-                                        />
-                                        <Text className="text-charcoal-gray font-semibold text-base">
-                                          {(() => {
-                                            const minutes = Math.floor(
-                                              timerState.remaining / 60
-                                            );
-                                            const seconds =
-                                              timerState.remaining % 60;
-                                            return `${minutes
-                                              .toString()
-                                              .padStart(2, "0")}:${seconds
-                                              .toString()
-                                              .padStart(2, "0")}`;
-                                          })()}
-                                        </Text>
-                                      </View>
+                                  {/* Timer Component */}
+                                  {step.timerDuration &&
+                                    (() => {
+                                      // Get timer state or use default from step.timerDuration
+                                      const timerState = timerStates[
+                                        step.id
+                                      ] || {
+                                        remaining: step.timerDuration,
+                                        isRunning: false,
+                                        isCompleted: false,
+                                      };
 
-                                      {!timerState.isCompleted && (
-                                        <View className="flex-row items-center gap-2">
-                                          {timerState.isRunning ? (
-                                            <RNTouchableOpacity
-                                              onPress={() => {
-                                                // Pause timer
-                                                if (
-                                                  timerIntervals.current[
-                                                    step.id
-                                                  ]
-                                                ) {
-                                                  clearInterval(
-                                                    timerIntervals.current[
-                                                      step.id
-                                                    ]
-                                                  );
-                                                  delete timerIntervals.current[
-                                                    step.id
-                                                  ];
-                                                }
-                                                setTimerStates((prev) => ({
-                                                  ...prev,
-                                                  [step.id]: {
-                                                    remaining:
-                                                      prev[step.id]
-                                                        ?.remaining ||
-                                                      step.timerDuration ||
-                                                      0,
-                                                    isRunning: false,
-                                                    isCompleted:
-                                                      prev[step.id]
-                                                        ?.isCompleted || false,
-                                                  },
-                                                }));
-                                              }}
-                                              className="bg-warm-sand rounded-lg px-3 py-1.5"
-                                              activeOpacity={0.7}
-                                            >
-                                              <Pause
-                                                size={14}
-                                                color="#3E3E3E"
+                                      return (
+                                        <View className="mt-3 bg-white rounded-lg px-3 py-3 border border-warm-sand/50">
+                                          <View className="flex-row items-center justify-between">
+                                            <View className="flex-row items-center flex-1">
+                                              <Clock
+                                                size={16}
+                                                color="#5A6E6C"
+                                                style={{ marginRight: 8 }}
                                               />
-                                            </RNTouchableOpacity>
-                                          ) : (
-                                            <RNTouchableOpacity
-                                              onPress={async () => {
-                                                // Initialize timer state if it doesn't exist
-                                                const currentRemaining =
-                                                  timerStates[step.id]
-                                                    ?.remaining ||
-                                                  step.timerDuration ||
-                                                  0;
+                                              <Text className="text-charcoal-gray font-semibold text-base">
+                                                {(() => {
+                                                  const minutes = Math.floor(
+                                                    timerState.remaining / 60
+                                                  );
+                                                  const seconds =
+                                                    timerState.remaining % 60;
+                                                  return `${minutes
+                                                    .toString()
+                                                    .padStart(2, "0")}:${seconds
+                                                    .toString()
+                                                    .padStart(2, "0")}`;
+                                                })()}
+                                              </Text>
+                                            </View>
 
-                                                if (currentRemaining <= 0) {
-                                                  return;
-                                                }
-
-                                                // Start timer first (don't wait for notification)
-                                                setTimerStates((prev) => ({
-                                                  ...prev,
-                                                  [step.id]: {
-                                                    remaining: currentRemaining,
-                                                    isRunning: true,
-                                                    isCompleted: false,
-                                                  },
-                                                }));
-
-                                                // Schedule notification asynchronously (don't block timer start)
-                                                (async () => {
-                                                  try {
-                                                    // Request notification permissions
-                                                    const { status } =
-                                                      await Notifications.requestPermissionsAsync();
-                                                    if (status !== "granted") {
-                                                      console.log(
-                                                        "Notification permission not granted"
-                                                      );
-                                                      return;
-                                                    }
-
-                                                    // Schedule notification
-                                                    // Use timeInterval trigger format
-                                                    await Notifications.scheduleNotificationAsync(
-                                                      {
-                                                        content: {
-                                                          title:
-                                                            "Timer Complete!",
-                                                          body: step.instruction.substring(
-                                                            0,
-                                                            100
-                                                          ),
-                                                          sound: true,
-                                                        },
-                                                        trigger: {
-                                                          type: "timeInterval",
-                                                          seconds:
-                                                            currentRemaining,
-                                                          repeats: false,
-                                                        } as any,
+                                            {!timerState.isCompleted && (
+                                              <View className="flex-row items-center gap-2">
+                                                {timerState.isRunning ? (
+                                                  <RNTouchableOpacity
+                                                    onPress={() => {
+                                                      // Pause timer
+                                                      if (
+                                                        timerIntervals.current[
+                                                          step.id
+                                                        ]
+                                                      ) {
+                                                        clearInterval(
+                                                          timerIntervals
+                                                            .current[step.id]
+                                                        );
+                                                        delete timerIntervals
+                                                          .current[step.id];
                                                       }
-                                                    );
-                                                  } catch (error) {
-                                                    console.error(
-                                                      "Failed to schedule notification:",
-                                                      error
-                                                    );
-                                                    // Continue with timer even if notification fails
-                                                  }
-                                                })();
+                                                      setTimerStates(
+                                                        (prev) => ({
+                                                          ...prev,
+                                                          [step.id]: {
+                                                            remaining:
+                                                              prev[step.id]
+                                                                ?.remaining ||
+                                                              step.timerDuration ||
+                                                              0,
+                                                            isRunning: false,
+                                                            isCompleted:
+                                                              prev[step.id]
+                                                                ?.isCompleted ||
+                                                              false,
+                                                          },
+                                                        })
+                                                      );
+                                                    }}
+                                                    className="bg-warm-sand rounded-lg px-3 py-1.5"
+                                                    activeOpacity={0.7}
+                                                  >
+                                                    <Pause
+                                                      size={14}
+                                                      color="#3E3E3E"
+                                                    />
+                                                  </RNTouchableOpacity>
+                                                ) : (
+                                                  <RNTouchableOpacity
+                                                    onPress={async () => {
+                                                      // Initialize timer state if it doesn't exist
+                                                      const currentRemaining =
+                                                        timerStates[step.id]
+                                                          ?.remaining ||
+                                                        step.timerDuration ||
+                                                        0;
 
-                                                // Start interval
-                                                timerIntervals.current[
-                                                  step.id
-                                                ] = setInterval(() => {
-                                                  setTimerStates((prev) => {
-                                                    const current =
-                                                      prev[step.id];
-                                                    if (!current) return prev;
+                                                      if (
+                                                        currentRemaining <= 0
+                                                      ) {
+                                                        return;
+                                                      }
 
+                                                      // Start timer first (don't wait for notification)
+                                                      setTimerStates(
+                                                        (prev) => ({
+                                                          ...prev,
+                                                          [step.id]: {
+                                                            remaining:
+                                                              currentRemaining,
+                                                            isRunning: true,
+                                                            isCompleted: false,
+                                                          },
+                                                        })
+                                                      );
+
+                                                      // Schedule notification asynchronously (don't block timer start)
+                                                      (async () => {
+                                                        try {
+                                                          // Request notification permissions
+                                                          const { status } =
+                                                            await Notifications.requestPermissionsAsync();
+                                                          if (
+                                                            status !== "granted"
+                                                          ) {
+                                                            console.log(
+                                                              "Notification permission not granted"
+                                                            );
+                                                            return;
+                                                          }
+
+                                                          // Schedule notification
+                                                          // Use timeInterval trigger format
+                                                          await Notifications.scheduleNotificationAsync(
+                                                            {
+                                                              content: {
+                                                                title:
+                                                                  "Timer Complete!",
+                                                                body: step.instruction.substring(
+                                                                  0,
+                                                                  100
+                                                                ),
+                                                                sound: true,
+                                                              },
+                                                              trigger: {
+                                                                type: "timeInterval",
+                                                                seconds:
+                                                                  currentRemaining,
+                                                                repeats: false,
+                                                              } as any,
+                                                            }
+                                                          );
+                                                        } catch (error) {
+                                                          console.error(
+                                                            "Failed to schedule notification:",
+                                                            error
+                                                          );
+                                                          // Continue with timer even if notification fails
+                                                        }
+                                                      })();
+
+                                                      // Start interval
+                                                      timerIntervals.current[
+                                                        step.id
+                                                      ] = setInterval(() => {
+                                                        setTimerStates(
+                                                          (prev) => {
+                                                            const current =
+                                                              prev[step.id];
+                                                            if (!current)
+                                                              return prev;
+
+                                                            if (
+                                                              current.remaining <=
+                                                              1
+                                                            ) {
+                                                              // Timer completed
+                                                              clearInterval(
+                                                                timerIntervals
+                                                                  .current[
+                                                                  step.id
+                                                                ]
+                                                              );
+                                                              delete timerIntervals
+                                                                .current[
+                                                                step.id
+                                                              ];
+                                                              return {
+                                                                ...prev,
+                                                                [step.id]: {
+                                                                  remaining: 0,
+                                                                  isRunning:
+                                                                    false,
+                                                                  isCompleted:
+                                                                    true,
+                                                                },
+                                                              };
+                                                            }
+
+                                                            return {
+                                                              ...prev,
+                                                              [step.id]: {
+                                                                ...current,
+                                                                remaining:
+                                                                  current.remaining -
+                                                                  1,
+                                                              },
+                                                            };
+                                                          }
+                                                        );
+                                                      }, 1000);
+                                                    }}
+                                                    className="bg-dark-sage rounded-lg px-3 py-1.5"
+                                                    activeOpacity={0.7}
+                                                  >
+                                                    <Play
+                                                      size={16}
+                                                      color="#FAF9F7"
+                                                    />
+                                                  </RNTouchableOpacity>
+                                                )}
+
+                                                <RNTouchableOpacity
+                                                  onPress={() => {
+                                                    // Reset timer
                                                     if (
-                                                      current.remaining <= 1
+                                                      timerIntervals.current[
+                                                        step.id
+                                                      ]
                                                     ) {
-                                                      // Timer completed
                                                       clearInterval(
                                                         timerIntervals.current[
                                                           step.id
@@ -2289,321 +2898,349 @@ export default function RecipeDetailScreen() {
                                                       );
                                                       delete timerIntervals
                                                         .current[step.id];
-                                                      return {
-                                                        ...prev,
-                                                        [step.id]: {
-                                                          remaining: 0,
-                                                          isRunning: false,
-                                                          isCompleted: true,
-                                                        },
-                                                      };
                                                     }
-
-                                                    return {
+                                                    setTimerStates((prev) => ({
                                                       ...prev,
                                                       [step.id]: {
-                                                        ...current,
                                                         remaining:
-                                                          current.remaining - 1,
+                                                          step.timerDuration ||
+                                                          0,
+                                                        isRunning: false,
+                                                        isCompleted: false,
                                                       },
-                                                    };
-                                                  });
-                                                }, 1000);
-                                              }}
-                                              className="bg-dark-sage rounded-lg px-3 py-1.5"
-                                              activeOpacity={0.7}
-                                            >
-                                              <Play size={16} color="#FAF9F7" />
-                                            </RNTouchableOpacity>
-                                          )}
+                                                    }));
+                                                    // Cancel notification
+                                                    Notifications.cancelAllScheduledNotificationsAsync();
+                                                  }}
+                                                  className="bg-soft-beige rounded-lg px-3 py-1.5"
+                                                  activeOpacity={0.7}
+                                                >
+                                                  <Text className="text-charcoal-gray text-sm font-semibold">
+                                                    Reset
+                                                  </Text>
+                                                </RNTouchableOpacity>
+                                              </View>
+                                            )}
 
-                                          <RNTouchableOpacity
-                                            onPress={() => {
-                                              // Reset timer
-                                              if (
-                                                timerIntervals.current[step.id]
-                                              ) {
-                                                clearInterval(
-                                                  timerIntervals.current[
-                                                    step.id
-                                                  ]
-                                                );
-                                                delete timerIntervals.current[
-                                                  step.id
-                                                ];
-                                              }
-                                              setTimerStates((prev) => ({
-                                                ...prev,
-                                                [step.id]: {
-                                                  remaining:
-                                                    step.timerDuration || 0,
-                                                  isRunning: false,
-                                                  isCompleted: false,
-                                                },
-                                              }));
-                                              // Cancel notification
-                                              Notifications.cancelAllScheduledNotificationsAsync();
-                                            }}
-                                            className="bg-soft-beige rounded-lg px-3 py-1.5"
-                                            activeOpacity={0.7}
-                                          >
-                                            <Text className="text-charcoal-gray text-sm font-semibold">
-                                              Reset
-                                            </Text>
-                                          </RNTouchableOpacity>
+                                            {timerState.isCompleted && (
+                                              <View className="bg-dark-sage/20 rounded-lg px-3 py-1.5">
+                                                <Text className="text-dark-sage text-xs font-semibold">
+                                                  Done!
+                                                </Text>
+                                              </View>
+                                            )}
+                                          </View>
                                         </View>
-                                      )}
-
-                                      {timerState.isCompleted && (
-                                        <View className="bg-dark-sage/20 rounded-lg px-3 py-1.5">
-                                          <Text className="text-dark-sage text-xs font-semibold">
-                                            Done!
-                                          </Text>
-                                        </View>
-                                      )}
-                                    </View>
-                                  </View>
-                                );
-                              })()}
-                          </View>
-                        </View>
-                      </View>
-                    </Swipeable>
-                  );
-                })}
-
-                {/* Mark as Cooked Button */}
-                <RNTouchableOpacity
-                  onPress={() => {
-                    // Get recipe ID - check if it's from store or params
-                    const dataParam = params.importedData || params.recipeData;
-                    let recipeId: string | null = null;
-
-                    if (dataParam) {
-                      try {
-                        const parsed = JSON.parse(dataParam as string) as
-                          | Recipe
-                          | RecipeCreateInput;
-                        recipeId =
-                          "id" in parsed && parsed.id ? parsed.id : null;
-                      } catch (e) {
-                        console.error("Failed to parse recipe data for ID:", e);
-                      }
-                    }
-
-                    // Also check if recipeData has id (if it's a Recipe, not RecipeCreateInput)
-                    if (!recipeId && recipeData && "id" in recipeData) {
-                      const id = (recipeData as Recipe).id;
-                      if (id && typeof id === "string") {
-                        recipeId = id;
-                      }
-                    }
-
-                    if (!recipeId) {
-                      Alert.alert(
-                        "Error",
-                        "Unable to mark recipe as cooked. Recipe ID not found."
-                      );
-                      return;
-                    }
-
-                    // Calculate total time spent (prep time + cook time from steps)
-                    const prepTime = recipeData.prepTime || 0;
-                    const cookTime =
-                      recipeData.steps?.reduce(
-                        (sum, step) => sum + (step.timerDuration || 0),
-                        0
-                      ) || 0;
-                    const totalTimeMinutes =
-                      prepTime + Math.floor(cookTime / 60);
-
-                    addCookingSession(recipeId, totalTimeMinutes);
-
-                    Alert.alert(
-                      "Recipe Marked as Cooked!",
-                      "This recipe has been added to your cooking history.",
-                      [{ text: "OK" }]
-                    );
-                  }}
-                  className="bg-dark-sage rounded-xl py-4 px-6 items-center justify-center mt-6 mb-6"
-                  activeOpacity={0.8}
-                >
-                  <View className="flex-row items-center">
-                    <ChefHat
-                      size={20}
-                      color="#FAF9F7"
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text className="text-off-white text-base font-semibold">
-                      Mark as Cooked
-                    </Text>
-                  </View>
-                </RNTouchableOpacity>
-              </View>
-            )}
-
-            {/* Notes Section */}
-            {activeTab === "instructions" && (
-              <View className="mt-6 mb-6">
-                <Text className="text-2xl font-bold text-charcoal-gray mb-4">
-                  Notes
-                </Text>
-                <TextInput
-                  className="bg-soft-beige rounded-xl px-4 py-4 text-charcoal-gray text-base min-h-[120px]"
-                  placeholder="Add your notes, substitutions, or tips here..."
-                  placeholderTextColor="#9CA3AF"
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                  textAlignVertical="top"
-                  style={{ minHeight: 120 }}
-                />
-              </View>
-            )}
-
-            {/* Tags */}
-            <View className="mb-6">
-              <Text className="text-2xl font-bold text-charcoal-gray mb-4">
-                Tags
-              </Text>
-
-              {/* Existing Tags */}
-              {recipeData.tags && recipeData.tags.length > 0 && (
-                <View className="flex-row flex-wrap mb-4">
-                  {recipeData.tags.map((tag, index) => (
-                    <RNTouchableOpacity
-                      key={index}
-                      onPress={() => {
-                        // Remove tag
-                        const updatedTags = recipeData.tags.filter(
-                          (_, i) => i !== index
+                                      );
+                                    })()}
+                                </View>
+                              </View>
+                            </View>
+                          </Swipeable>
                         );
-                        const updatedRecipeData = {
-                          ...recipeData,
-                          tags: updatedTags,
-                        };
-                        setRecipeData(updatedRecipeData);
+                      })}
+                    </>
+                  )}
 
-                        // Update in store if recipe exists
-                        if (
-                          "id" in recipeData &&
-                          recipeData.id &&
-                          typeof recipeData.id === "string"
-                        ) {
-                          updateRecipe(recipeData.id, { tags: updatedTags });
+                  {/* Mark as Cooked Button */}
+                  <RNTouchableOpacity
+                    onPress={() => {
+                      // Get recipe ID - check if it's from store or params
+                      const dataParam =
+                        params.importedData || params.recipeData;
+                      let recipeId: string | null = null;
+
+                      if (dataParam) {
+                        try {
+                          const parsed = JSON.parse(dataParam as string) as
+                            | Recipe
+                            | RecipeCreateInput;
+                          recipeId =
+                            "id" in parsed && parsed.id ? parsed.id : null;
+                        } catch (e) {
+                          console.error(
+                            "Failed to parse recipe data for ID:",
+                            e
+                          );
                         }
-                      }}
-                      className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
-                      activeOpacity={0.7}
-                      style={{ minHeight: 44, justifyContent: "center" }}
-                    >
-                      <Text className="text-charcoal-gray text-sm mr-2">
-                        {tag}
+                      }
+
+                      // Also check if recipeData has id (if it's a Recipe, not RecipeCreateInput)
+                      if (!recipeId && recipeData && "id" in recipeData) {
+                        const id = (recipeData as Recipe).id;
+                        if (id && typeof id === "string") {
+                          recipeId = id;
+                        }
+                      }
+
+                      if (!recipeId) {
+                        Alert.alert(
+                          "Error",
+                          "Unable to mark recipe as cooked. Recipe ID not found."
+                        );
+                        return;
+                      }
+
+                      // Calculate total time spent (prep time + cook time from steps)
+                      const prepTime = recipeData.prepTime || 0;
+                      const cookTime =
+                        recipeData.steps?.reduce(
+                          (sum, step) => sum + (step.timerDuration || 0),
+                          0
+                        ) || 0;
+                      const totalTimeMinutes =
+                        prepTime + Math.floor(cookTime / 60);
+
+                      addCookingSession(recipeId, totalTimeMinutes);
+
+                      Alert.alert(
+                        "Recipe Marked as Cooked!",
+                        "This recipe has been added to your cooking history.",
+                        [{ text: "OK" }]
+                      );
+                    }}
+                    className="bg-dark-sage rounded-xl py-4 px-6 items-center justify-center mt-6 mb-6"
+                    activeOpacity={0.8}
+                  >
+                    <View className="flex-row items-center">
+                      <ChefHat
+                        size={20}
+                        color="#FAF9F7"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text className="text-off-white text-base font-semibold">
+                        Mark as Cooked
                       </Text>
-                      <X size={14} color="#3E3E3E" />
-                    </RNTouchableOpacity>
-                  ))}
+                    </View>
+                  </RNTouchableOpacity>
                 </View>
               )}
 
-              {/* Add New Tag */}
-              <View className="flex-row gap-2">
-                <TextInput
-                  className="flex-1 bg-soft-beige rounded-xl px-4 py-3 text-charcoal-gray text-base"
-                  placeholder="Add a tag..."
-                  placeholderTextColor="#9CA3AF"
-                  value={newTag}
-                  onChangeText={setNewTag}
-                  onSubmitEditing={() => {
-                    if (newTag.trim()) {
-                      const trimmedTag = newTag.trim();
-                      const currentTags = recipeData.tags || [];
+              {/* Notes Section */}
+              {activeTab === "instructions" && (
+                <View className="mt-6 mb-6">
+                  <Text className="text-2xl font-bold text-charcoal-gray mb-4">
+                    Notes
+                  </Text>
+                  <TextInput
+                    className="bg-soft-beige rounded-xl px-4 py-4 text-charcoal-gray text-base min-h-[120px]"
+                    placeholder="Add your notes, substitutions, or tips here..."
+                    placeholderTextColor="#9CA3AF"
+                    value={notes}
+                    onChangeText={setNotes}
+                    multiline
+                    textAlignVertical="top"
+                    style={{ minHeight: 120 }}
+                  />
+                </View>
+              )}
 
-                      // Don't add duplicate tags
-                      if (!currentTags.includes(trimmedTag)) {
-                        const updatedTags = [...currentTags, trimmedTag];
-                        const updatedRecipeData = {
-                          ...recipeData,
-                          tags: updatedTags,
-                        };
-                        setRecipeData(updatedRecipeData);
-                        setNewTag("");
-
-                        // Update in store if recipe exists
-                        if (
-                          "id" in recipeData &&
-                          recipeData.id &&
-                          typeof recipeData.id === "string"
-                        ) {
-                          updateRecipe(recipeData.id, { tags: updatedTags });
-                        }
-                      } else {
+              {/* Tags */}
+              <View className="mb-6">
+                <View className="flex-row items-center justify-between mb-4">
+                  <Text className="text-2xl font-bold text-charcoal-gray">
+                    Tags
+                  </Text>
+                  <RNTouchableOpacity
+                    onPress={() => {
+                      setShowAddTagInput(!showAddTagInput);
+                      if (!showAddTagInput) {
                         setNewTag("");
                       }
-                    }
-                  }}
-                  returnKeyType="done"
-                  style={{ minHeight: 44 }}
-                />
+                    }}
+                    className="bg-dark-sage rounded-full px-4 py-2 flex-row items-center"
+                    activeOpacity={0.8}
+                  >
+                    <Plus
+                      size={16}
+                      color="#FAF9F7"
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text className="text-off-white text-sm font-semibold">
+                      {showAddTagInput ? "Cancel" : "Add Custom"}
+                    </Text>
+                  </RNTouchableOpacity>
+                </View>
+
+                {/* Auto-generated Tags (read-only) */}
+                {originalTags.length > 0 && (
+                  <View className="mb-4">
+                    <View className="flex-row flex-wrap">
+                      {originalTags.map((tag, index) => (
+                        <View
+                          key={index}
+                          className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2"
+                          style={{ minHeight: 44, justifyContent: "center" }}
+                        >
+                          <Text className="text-charcoal-gray text-sm">
+                            {tag}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Custom Tags (removable) */}
+                {(() => {
+                  const customTags =
+                    recipeData.tags?.filter(
+                      (tag) => !originalTags.includes(tag)
+                    ) || [];
+                  return customTags.length > 0 ? (
+                    <View className="mb-4">
+                      <View className="flex-row flex-wrap">
+                        {customTags.map((tag, index) => (
+                          <RNTouchableOpacity
+                            key={index}
+                            onPress={() => {
+                              // Remove custom tag
+                              const updatedTags = recipeData.tags.filter(
+                                (t) => t !== tag
+                              );
+                              const updatedRecipeData = {
+                                ...recipeData,
+                                tags: updatedTags,
+                              };
+                              setRecipeData(updatedRecipeData);
+
+                              // Update in store if recipe exists
+                              if (
+                                "id" in recipeData &&
+                                recipeData.id &&
+                                typeof recipeData.id === "string"
+                              ) {
+                                updateRecipe(recipeData.id, {
+                                  tags: updatedTags,
+                                });
+                              }
+                            }}
+                            className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
+                            activeOpacity={0.7}
+                            style={{
+                              minHeight: 44,
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Text className="text-charcoal-gray text-sm mr-2">
+                              {tag}
+                            </Text>
+                            <X size={14} color="#3E3E3E" />
+                          </RNTouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null;
+                })()}
+
+                {/* Add Custom Tag Input (shown when "Add Custom" is clicked) */}
+                {showAddTagInput && (
+                  <View className="flex-row gap-2">
+                    <TextInput
+                      className="flex-1 bg-soft-beige rounded-xl px-4 py-3 text-charcoal-gray text-base"
+                      placeholder="Ex: Grandma's Recipe"
+                      placeholderTextColor="#9CA3AF"
+                      value={newTag}
+                      onChangeText={setNewTag}
+                      onSubmitEditing={() => {
+                        if (newTag.trim()) {
+                          const trimmedTag = newTag.trim();
+                          const currentTags = recipeData.tags || [];
+
+                          // Don't add duplicate tags
+                          if (!currentTags.includes(trimmedTag)) {
+                            const updatedTags = [...currentTags, trimmedTag];
+                            const updatedRecipeData = {
+                              ...recipeData,
+                              tags: updatedTags,
+                            };
+                            setRecipeData(updatedRecipeData);
+                            setNewTag("");
+                            setShowAddTagInput(false);
+
+                            // Update in store if recipe exists
+                            if (
+                              "id" in recipeData &&
+                              recipeData.id &&
+                              typeof recipeData.id === "string"
+                            ) {
+                              updateRecipe(recipeData.id, {
+                                tags: updatedTags,
+                              });
+                            }
+                          } else {
+                            setNewTag("");
+                          }
+                        }
+                      }}
+                      returnKeyType="done"
+                      style={{ minHeight: 44 }}
+                      autoFocus
+                    />
+                    <RNTouchableOpacity
+                      onPress={() => {
+                        if (newTag.trim()) {
+                          const trimmedTag = newTag.trim();
+                          const currentTags = recipeData.tags || [];
+
+                          // Don't add duplicate tags
+                          if (!currentTags.includes(trimmedTag)) {
+                            const updatedTags = [...currentTags, trimmedTag];
+                            const updatedRecipeData = {
+                              ...recipeData,
+                              tags: updatedTags,
+                            };
+                            setRecipeData(updatedRecipeData);
+                            setNewTag("");
+                            setShowAddTagInput(false);
+
+                            // Update in store if recipe exists
+                            if (
+                              "id" in recipeData &&
+                              recipeData.id &&
+                              typeof recipeData.id === "string"
+                            ) {
+                              updateRecipe(recipeData.id, {
+                                tags: updatedTags,
+                              });
+                            }
+                          } else {
+                            setNewTag("");
+                          }
+                        }
+                      }}
+                      className="bg-dark-sage rounded-xl px-6 py-3 items-center justify-center"
+                      activeOpacity={0.8}
+                      style={{ minHeight: 44 }}
+                      disabled={!newTag.trim()}
+                    >
+                      <Text className="text-off-white text-base font-semibold">
+                        Add
+                      </Text>
+                    </RNTouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Save Button (for imported recipes) */}
+              {isImported && (
                 <RNTouchableOpacity
-                  onPress={() => {
-                    if (newTag.trim()) {
-                      const trimmedTag = newTag.trim();
-                      const currentTags = recipeData.tags || [];
-
-                      // Don't add duplicate tags
-                      if (!currentTags.includes(trimmedTag)) {
-                        const updatedTags = [...currentTags, trimmedTag];
-                        const updatedRecipeData = {
-                          ...recipeData,
-                          tags: updatedTags,
-                        };
-                        setRecipeData(updatedRecipeData);
-                        setNewTag("");
-
-                        // Update in store if recipe exists
-                        if (
-                          "id" in recipeData &&
-                          recipeData.id &&
-                          typeof recipeData.id === "string"
-                        ) {
-                          updateRecipe(recipeData.id, { tags: updatedTags });
-                        }
-                      } else {
-                        setNewTag("");
-                      }
-                    }
-                  }}
-                  className="bg-dark-sage rounded-xl px-6 py-3 items-center justify-center"
+                  className="bg-dark-sage rounded-xl py-4 items-center justify-center mb-8"
                   activeOpacity={0.8}
+                  onPress={() => {
+                    // TODO: Implement save to Firestore
+                    Alert.alert("Success", "Recipe saved!");
+                  }}
                   style={{ minHeight: 44 }}
-                  disabled={!newTag.trim()}
                 >
                   <Text className="text-off-white text-base font-semibold">
-                    Add
+                    Save Recipe
                   </Text>
                 </RNTouchableOpacity>
-              </View>
+              )}
             </View>
-
-            {/* Save Button (for imported recipes) */}
-            {isImported && (
-              <RNTouchableOpacity
-                className="bg-dark-sage rounded-xl py-4 items-center justify-center mb-8"
-                activeOpacity={0.8}
-                onPress={() => {
-                  // TODO: Implement save to Firestore
-                  Alert.alert("Success", "Recipe saved!");
-                }}
-                style={{ minHeight: 44 }}
-              >
-                <Text className="text-off-white text-base font-semibold">
-                  Save Recipe
-                </Text>
-              </RNTouchableOpacity>
-            )}
-          </View>
-        </Animated.ScrollView>
+          </Animated.ScrollView>
+        </KeyboardAvoidingView>
 
         {/* Menu Modal */}
         <Modal

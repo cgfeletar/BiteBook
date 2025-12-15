@@ -428,7 +428,7 @@ export default function ShoppingListScreen() {
           sections={groupedByAisle}
           renderItem={renderItem}
           renderSectionHeader={({ section: { title } }) => (
-            <View className="px-4 pt-4 pb-2 bg-warm-sand/50">
+            <View className="px-4 py-3 bg-warm-sand/50">
               <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
                 {title}
               </Text>

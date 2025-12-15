@@ -15,7 +15,7 @@ const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
  */
 interface Ingredient {
   name: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
   isChecked: boolean;
 }
@@ -115,20 +115,20 @@ EXTRACTION RULES:
 
 3. INGREDIENTS:
    - CRITICAL: Locate the ingredient list section in the HTML. Look for headings like "Ingredients", "Ingredients You'll Need", "For the [X]", or similar. The ingredient list is usually in a <ul>, <ol>, or <div> with classes like "ingredients", "recipe-ingredients", "ingredient-list", etc.
-   - CRITICAL: Extract the ACTUAL quantity and unit from each ingredient line. Do NOT default to "1 to taste" unless the recipe explicitly says "to taste" or "as needed".
+   - CRITICAL: Extract the ACTUAL quantity and unit from each ingredient line.
    - Parse ingredient lists from various formats (do not round):
      * "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }
      * "1/2 tsp salt" → { name: "salt", quantity: 0.5, unit: "tsp" }
      * "1/4 cup butter" → { name: "butter", quantity: 0.25, unit: "cup" }
      * "1 egg" → { name: "egg", quantity: 1, unit: "egg" } (NOT cups!)
      * "3 large eggs" → { name: "eggs", quantity: 3, unit: "large" }
-     * "salt, to taste" → { name: "salt", quantity: 1, unit: "to taste" } (ONLY when explicitly stated)
-     * "pepper (optional)" → { name: "pepper", quantity: 1, unit: "to taste" } (if no quantity given and optional)
+     * "salt, to taste" → { name: "salt", quantity: null, unit: "to taste" } (ONLY when explicitly stated)
+     * "pepper (optional)" → { name: "pepper", quantity: null, unit: "to taste" } (if no quantity given and optional)
    - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
    - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
    - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
    - Handle ranges: "2-3 cups" → Print as written (e.g., "2-3 cups")
-   - Handle "to taste", "as needed", "optional" → quantity: "", unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
+   - Handle "to taste", "as needed", "optional" → quantity: null, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
    - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
    - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
    - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists, or any list items under an "Ingredients" heading
@@ -672,6 +672,7 @@ function parseIngredientString(ingredientStr: string | any): {
     remaining.toLowerCase().includes("as needed")
   ) {
     unit = "to taste";
+    quantity = null; // Set quantity to null for "to taste" ingredients
     remaining = remaining.replace(/\s*(to taste|as needed)\s*/i, "").trim();
   }
 
@@ -686,12 +687,17 @@ function parseIngredientString(ingredientStr: string | any): {
  * Returns quantity in the smallest common unit
  */
 function convertToBaseUnit(
-  quantity: number,
+  quantity: number | null,
   unit: string
 ): {
   quantity: number;
   baseUnit: string;
 } {
+  // Handle null quantity (shouldn't happen for non-"to taste" ingredients)
+  if (quantity === null) {
+    return { quantity: 0, baseUnit: "" };
+  }
+
   const normalizedUnit = unit.toLowerCase().trim();
 
   // Volume conversions (convert to teaspoons as base)
@@ -863,7 +869,25 @@ function combineIngredients(ingredients: Ingredient[]): Ingredient[] {
     }
   >();
 
+  // Separate "to taste" ingredients - they won't be combined
+  const toTasteIngredients: Ingredient[] = [];
+  const regularIngredients: Ingredient[] = [];
+
   for (const ing of ingredients) {
+    // Handle "to taste" ingredients separately - don't combine them
+    if (ing.unit === "to taste") {
+      toTasteIngredients.push({
+        name: ing.name,
+        quantity: null,
+        unit: "to taste",
+        isChecked: ing.isChecked,
+      });
+      continue;
+    }
+    regularIngredients.push(ing);
+  }
+
+  for (const ing of regularIngredients) {
     // Normalize name (lowercase, trim, remove extra spaces)
     const normalizedName = ing.name.toLowerCase().trim().replace(/\s+/g, " ");
 
@@ -878,6 +902,11 @@ function combineIngredients(ingredients: Ingredient[]): Ingredient[] {
     }
 
     const entry = ingredientMap.get(normalizedName)!;
+
+    // Skip if quantity is null (shouldn't happen for non-"to taste" ingredients, but be safe)
+    if (ing.quantity === null) {
+      continue;
+    }
 
     // Convert to base unit for comparison
     const { quantity: baseQuantity, baseUnit } = convertToBaseUnit(
@@ -924,7 +953,7 @@ function combineIngredients(ingredients: Ingredient[]): Ingredient[] {
       });
     } else {
       // Different unit categories (e.g., volume vs weight) - can't combine, keep the first one
-      const firstIngredient = ingredients.find(
+      const firstIngredient = regularIngredients.find(
         (ing) =>
           ing.name.toLowerCase().trim().replace(/\s+/g, " ") === normalizedName
       );

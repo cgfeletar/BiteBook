@@ -5,7 +5,7 @@ import { Timestamp } from "firebase/firestore";
  */
 export interface Ingredient {
   name: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
   isChecked: boolean;
 }

@@ -103,8 +103,13 @@ function calculateExactFraction(decimal: number, maxDenominator: number = 64): s
  */
 export function formatQuantity(
   quantity: number,
-  unit: string
+  unit: string | null
 ): string {
+  // Handle null unit (for "to taste" ingredients)
+  if (!unit) {
+    return quantity.toString();
+  }
+
   // Don't convert to fractions for whole items or non-volume units
   const wholeItemUnits = ["egg", "eggs", "piece", "pieces", "whole", "item", "items", "large", "medium", "small"];
   const isWholeItem = wholeItemUnits.some((u) =>
