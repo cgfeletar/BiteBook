@@ -53,6 +53,7 @@ export interface Recipe {
   rating?: number; // 1-5 star rating
   prepTime?: number; // Prep time in minutes (active prep time)
   cookTime?: number; // Cook time in minutes
+  totalTime?: number; // Total time in minutes (prep + cook)
   createdAt: Timestamp | Date;
 }
 

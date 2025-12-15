@@ -51,8 +51,9 @@ interface Recipe {
   originalAuthor: string;
   tags: string[];
   categoryIds: string[];
-  prepTime?: number; // Prep time in minutes (active prep time)
-  cookTime?: number; // Cook time in minutes
+  prepTime?: number | null; // Prep time in minutes (active prep time)
+  cookTime?: number | null; // Cook time in minutes
+  totalTime?: number | null; // Total time in minutes (prep + cook)
   createdAt: admin.firestore.Timestamp | Date;
 }
 
@@ -126,8 +127,8 @@ EXTRACTION RULES:
    - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
    - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
    - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
-   - Handle ranges: "2-3 cups" → use average (2.5) or first number (2)
-   - Handle "to taste", "as needed", "optional" → quantity: 1, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
+   - Handle ranges: "2-3 cups" → Print as written (e.g., "2-3 cups")
+   - Handle "to taste", "as needed", "optional" → quantity: "", unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
    - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
    - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
    - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists, or any list items under an "Ingredients" heading
@@ -290,38 +291,38 @@ function parseInstructions(raw: any): Step[] {
   return steps;
 }
 
-function extractAuthor(node: any): string | undefined {
-  const author = node.author;
+// function extractAuthor(node: any): string | undefined {
+//   const author = node.author;
 
-  if (!author) return undefined;
+//   if (!author) return undefined;
 
-  if (typeof author === "string") return author;
+//   if (typeof author === "string") return author;
 
-  if (Array.isArray(author)) {
-    const first = author[0];
-    if (typeof first === "string") return first;
-    return first?.name;
-  }
+//   if (Array.isArray(author)) {
+//     const first = author[0];
+//     if (typeof first === "string") return first;
+//     return first?.name;
+//   }
 
-  if (typeof author === "object") {
-    return author.name || author["@name"];
-  }
+//   if (typeof author === "object") {
+//     return author.name || author["@name"];
+//   }
 
-  return undefined;
-}
+//   return undefined;
+// }
 
-function parseISODuration(value?: string): number | undefined {
-  if (!value || typeof value !== "string") return undefined;
+// function parseISODuration(value?: string): number | undefined {
+//   if (!value || typeof value !== "string") return undefined;
 
-  const match = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
-  if (!match) return undefined;
+//   const match = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?/);
+//   if (!match) return undefined;
 
-  const hours = match[1] ? parseInt(match[1], 10) : 0;
-  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+//   const hours = match[1] ? parseInt(match[1], 10) : 0;
+//   const minutes = match[2] ? parseInt(match[2], 10) : 0;
 
-  const total = hours * 60 + minutes;
-  return total > 0 ? total : undefined;
-}
+//   const total = hours * 60 + minutes;
+//   return total > 0 ? total : undefined;
+// }
 
 /**
  * Parse JSON-LD structured data from HTML
@@ -333,6 +334,40 @@ function parseJSONLD(
 ): Partial<Omit<Recipe, "id" | "createdAt">> | null {
   const $ = cheerio.load(html);
   const scripts = $('script[type="application/ld+json"]');
+
+  // Helper: parse ISO 8601 duration → minutes
+  const parseDurationToMinutes = (value?: string): number | null => {
+    if (!value || typeof value !== "string") return null;
+
+    const match = value.match(/PT(?:(\d+)H)?(?:(\d+)M)?/i);
+    if (!match) return null;
+
+    const hours = match[1] ? parseInt(match[1], 10) : 0;
+    const minutes = match[2] ? parseInt(match[2], 10) : 0;
+
+    return hours * 60 + minutes;
+  };
+
+  // Helper: extract author name safely
+  const extractAuthor = (node: any, fallbackSiteName?: string): string => {
+    const author = node.author;
+
+    if (typeof author === "string") return author;
+
+    if (Array.isArray(author)) {
+      return (
+        author.find((a) => typeof a?.name === "string")?.name ||
+        fallbackSiteName ||
+        "Unknown"
+      );
+    }
+
+    if (typeof author?.name === "string") {
+      return author.name;
+    }
+
+    return fallbackSiteName || "Unknown";
+  };
 
   for (let i = 0; i < scripts.length; i++) {
     const raw = scripts.eq(i).html();
@@ -351,20 +386,24 @@ function parseJSONLD(
       ? data
       : [data];
 
-    for (const node of nodes) {
-      const types = Array.isArray(node["@type"])
-        ? node["@type"]
-        : [node["@type"]];
+    // Grab site name from WebSite / Organization nodes
+    const siteName =
+      nodes.find((n: any) => n["@type"] === "WebSite")?.name ||
+      nodes.find((n: any) => n["@type"] === "Organization")?.name ||
+      undefined;
 
+    for (const node of nodes) {
       if (
-        !types.includes("Recipe") &&
-        !types.includes("https://schema.org/Recipe")
+        node["@type"] !== "Recipe" &&
+        node["@type"] !== "https://schema.org/Recipe"
       ) {
         continue;
       }
 
+      const authorName = extractAuthor(node, siteName);
+
       return {
-        title: typeof node.name === "string" ? node.name : node.headline || "",
+        title: typeof node.name === "string" ? node.name : "",
 
         coverImage: Array.isArray(node.image)
           ? node.image[0]
@@ -372,7 +411,6 @@ function parseJSONLD(
           ? node.image
           : "",
 
-        // Parse ingredients to extract quantity, unit, and name
         ingredients: Array.isArray(node.recipeIngredient)
           ? node.recipeIngredient.map((ing: any) => {
               const parsed = parseIngredientString(ing);
@@ -387,6 +425,11 @@ function parseJSONLD(
 
         steps: parseInstructions(node.recipeInstructions),
 
+        // ⏱️ TIME FIELDS (minutes)
+        prepTime: parseDurationToMinutes(node.prepTime),
+        cookTime: parseDurationToMinutes(node.cookTime),
+        totalTime: parseDurationToMinutes(node.totalTime),
+
         nutritionalInfo: node.nutrition
           ? {
               calories: parseNumber(node.nutrition.calories),
@@ -399,9 +442,7 @@ function parseJSONLD(
             }
           : {},
 
-        originalAuthor: extractAuthor(node) || "Unknown",
-        prepTime: parseISODuration(node.prepTime),
-        cookTime: parseISODuration(node.cookTime),
+        originalAuthor: authorName,
         tags: [],
         categoryIds: [],
         sourceUrl: "",
@@ -410,6 +451,48 @@ function parseJSONLD(
   }
 
   return null;
+}
+
+function extractAuthorAndTimesFromDOM(html: string) {
+  const $ = cheerio.load(html);
+
+  let author = "";
+  let prepTime = null;
+  let cookTime = null;
+  let totalTime = null;
+
+  // Look for common plain text selectors
+  // Example: <div>Author Erin Collins</div>
+  const authorText = $("body")
+    .text()
+    .match(/Author\s*([A-Za-z\s]+)/i);
+  if (authorText) {
+    author = authorText[1].trim();
+  }
+
+  // Look for times like "Prep Time 30", "Cook Time 45", "Total Time 2"
+  const prepMatch = $("body")
+    .text()
+    .match(/Prep Time\s*([\d]+)\s*minutes?/i);
+  if (prepMatch) {
+    prepTime = parseInt(prepMatch[1], 10);
+  }
+
+  const cookMatch = $("body")
+    .text()
+    .match(/Cook Time\s*([\d]+)\s*minutes?/i);
+  if (cookMatch) {
+    cookTime = parseInt(cookMatch[1], 10);
+  }
+
+  const totalMatch = $("body")
+    .text()
+    .match(/Total Time\s*([\d]+)\s*hours?/i);
+  if (totalMatch) {
+    totalTime = parseInt(totalMatch[1], 10) * 60;
+  }
+
+  return { author, prepTime, cookTime, totalTime };
 }
 
 function extractRecipeSection(html: string): string | null {
@@ -483,7 +566,7 @@ function parseNumber(value: any): number | undefined {
  */
 function parseIngredientString(ingredientStr: string | any): {
   name: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
 } {
   // Handle object format from JSON-LD
@@ -498,14 +581,14 @@ function parseIngredientString(ingredientStr: string | any): {
 
     return {
       name: name,
-      quantity: 1,
+      quantity: null,
       unit: "",
     };
   }
 
   const str = String(ingredientStr).trim();
   if (!str) {
-    return { name: "", quantity: 1, unit: "" };
+    return { name: "", quantity: null, unit: "" };
   }
 
   // Pattern to match: optional whole number, optional fraction, optional unit, ingredient name
@@ -517,7 +600,7 @@ function parseIngredientString(ingredientStr: string | any): {
   // Whole number pattern - must NOT be followed by "/" to avoid matching "1" from "1/3"
   const wholeNumberPattern = /^(\d+)(?!\/)/;
 
-  let quantity = 1;
+  let quantity = null;
   let remaining = str;
   let unit = "";
 
@@ -1400,12 +1483,13 @@ export const extractRecipeFromUrl = functions
         .trim();
 
       const jsonLdData = parseJSONLD(response.data);
+      const fallbackDomData = extractAuthorAndTimesFromDOM(response.data);
+      console.log("DOM fallback data:", fallbackDomData);
+
       const recipeSectionHtml = extractRecipeSection(response.data);
       let extractedData: Omit<Recipe, "id" | "createdAt">;
 
       if (jsonLdData) {
-        console.log("Using JSON-LD data for recipe extraction");
-
         extractedData = {
           title: jsonLdData.title || "",
           coverImage: jsonLdData.coverImage || "",
@@ -1413,12 +1497,30 @@ export const extractRecipeFromUrl = functions
           steps: jsonLdData.steps || [],
           nutritionalInfo: jsonLdData.nutritionalInfo || {},
           sourceUrl: actualRecipeUrl,
-          originalAuthor: jsonLdData.originalAuthor || "Unknown",
+          originalAuthor:
+            jsonLdData.originalAuthor || fallbackDomData?.author || "Unknown",
           tags: jsonLdData.tags || [],
           categoryIds: jsonLdData.categoryIds || [],
           ...(jsonLdData.prepTime !== undefined && {
             prepTime: jsonLdData.prepTime,
           }),
+          ...(jsonLdData.prepTime !== undefined
+            ? { prepTime: jsonLdData.prepTime }
+            : fallbackDomData?.prepTime !== undefined
+            ? { prepTime: fallbackDomData.prepTime }
+            : {}),
+
+          ...(jsonLdData.cookTime !== undefined
+            ? { cookTime: jsonLdData.cookTime }
+            : fallbackDomData?.cookTime !== undefined
+            ? { cookTime: fallbackDomData.cookTime }
+            : {}),
+
+          ...(jsonLdData.totalTime !== undefined
+            ? { totalTime: jsonLdData.totalTime }
+            : fallbackDomData?.totalTime !== undefined
+            ? { totalTime: fallbackDomData.totalTime }
+            : {}),
         };
 
         // 🔧 JSON-LD incomplete → supplement with AI
@@ -1467,6 +1569,13 @@ export const extractRecipeFromUrl = functions
               ? extractedData.nutritionalInfo
               : aiData.nutritionalInfo,
             coverImage: extractedData.coverImage || aiData.coverImage,
+            // Preserve cookTime and totalTime from extractedData (which may have come from fallbackDomData)
+            ...(extractedData.cookTime !== undefined && {
+              cookTime: extractedData.cookTime,
+            }),
+            ...(extractedData.totalTime !== undefined && {
+              totalTime: extractedData.totalTime,
+            }),
           };
         }
       } else {
@@ -1490,6 +1599,14 @@ export const extractRecipeFromUrl = functions
         }
 
         extractedData = await callLLM(aiHtml, actualRecipeUrl);
+
+        // Add cookTime and totalTime from DOM fallback if available
+        if (fallbackDomData?.cookTime !== undefined) {
+          extractedData.cookTime = fallbackDomData.cookTime;
+        }
+        if (fallbackDomData?.totalTime !== undefined) {
+          extractedData.totalTime = fallbackDomData.totalTime;
+        }
       }
 
       // For TikTok, override title, image, and author from oEmbed API
@@ -1530,6 +1647,12 @@ export const extractRecipeFromUrl = functions
         tags: extractedData.tags || [],
         categoryIds: extractedData.categoryIds || [],
         ...(prepTime !== undefined && { prepTime }),
+        ...(extractedData.cookTime !== undefined && {
+          cookTime: extractedData.cookTime,
+        }),
+        ...(extractedData.totalTime !== undefined && {
+          totalTime: extractedData.totalTime,
+        }),
       };
 
       // Cache the result for future requests (if Firestore is available)

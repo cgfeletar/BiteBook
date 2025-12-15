@@ -318,6 +318,8 @@ export default function RecipeFeed() {
     dietary: [],
     minRating: null,
     sourceTypes: [],
+    nutritional: [],
+    customTags: [],
   });
   const recipes = useRecipeStore((state) => state.recipes);
   const pantryItems = usePantryStore((state) => state.items);
@@ -431,6 +433,39 @@ export default function RecipeFeed() {
           }
         });
         if (!matchesSourceType) return false;
+      }
+
+      // Nutritional content filter
+      if (filters.nutritional.length > 0) {
+        const nutrition = recipe.nutritionalInfo || {};
+        const matchesNutritional = filters.nutritional.every((filterId) => {
+          switch (filterId) {
+            case "low-fat":
+              return nutrition.fat !== undefined && nutrition.fat <= 3;
+            case "high-protein":
+              return nutrition.protein !== undefined && nutrition.protein >= 10;
+            case "high-fiber":
+              return nutrition.fiber !== undefined && nutrition.fiber >= 3;
+            case "low-sodium":
+              return nutrition.sodium !== undefined && nutrition.sodium <= 140;
+            case "low-sugar":
+              return nutrition.sugar !== undefined && nutrition.sugar <= 5;
+            case "low-calorie":
+              return nutrition.calories !== undefined && nutrition.calories <= 200;
+            default:
+              return false;
+          }
+        });
+        if (!matchesNutritional) return false;
+      }
+
+      // Custom tags filter
+      if (filters.customTags.length > 0) {
+        const recipeTags = recipe.tags?.map((t) => t) || [];
+        const hasCustomTag = filters.customTags.some((filterTag) =>
+          recipeTags.includes(filterTag)
+        );
+        if (!hasCustomTag) return false;
       }
 
       return true;
@@ -729,7 +764,9 @@ export default function RecipeFeed() {
                   filters.cookedBefore !== "all" ||
                   filters.dietary.length > 0 ||
                   filters.minRating !== null ||
-                  filters.sourceTypes.length > 0)
+                  filters.sourceTypes.length > 0 ||
+                  filters.nutritional.length > 0 ||
+                  filters.customTags.length > 0)
                   ? "bg-dark-sage"
                   : "bg-soft-beige"
               }`}
@@ -744,7 +781,9 @@ export default function RecipeFeed() {
                   filters.cookedBefore !== "all" ||
                   filters.dietary.length > 0 ||
                   filters.minRating !== null ||
-                  filters.sourceTypes.length > 0
+                  filters.sourceTypes.length > 0 ||
+                  filters.nutritional.length > 0 ||
+                  filters.customTags.length > 0
                     ? "#FAF9F7"
                     : "#3E3E3E"
                 }

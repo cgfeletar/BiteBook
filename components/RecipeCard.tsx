@@ -96,7 +96,7 @@ export function RecipeCard({
                 <View className="flex-row items-center">
                   <Clock size={12} color="#9CA3AF" />
                   <Text className="text-charcoal-gray/60 text-xs ml-1">
-                    {recipe.cookTime || totalMinutes} cook
+                    {recipe.totalTime || totalMinutes} total
                   </Text>
                 </View>
               )}

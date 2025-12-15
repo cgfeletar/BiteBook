@@ -75,6 +75,7 @@ export default function RecipeDetailScreen() {
   const [viewByServing, setViewByServing] = useState(true); // true = by serving, false = whole recipe
   const [servings, setServings] = useState(4); // Default servings
   const [recipeScale, setRecipeScale] = useState<1 | 1.5 | 2 | 3>(1);
+  const [newTag, setNewTag] = useState("");
   const addItemsToShoppingList = useShoppingListStore(
     (state) => state.addItems
   );
@@ -1153,7 +1154,7 @@ export default function RecipeDetailScreen() {
               </View>
             )}
 
-            {/* Prep Time, Cook Time, and Servings Cards */}
+            {/* Prep Time, Total Time, and Servings Cards */}
             <View className="flex-row items-center justify-between mb-4 gap-3">
               {/* Prep Time Card */}
               {recipeData.prepTime && (
@@ -1168,11 +1169,11 @@ export default function RecipeDetailScreen() {
                 </View>
               )}
 
-              {/* Cook Time Card */}
+              {/* Total Time Card */}
               {(() => {
-                // Use recipe.cookTime if available, otherwise calculate from step timers
-                const cookTime =
-                  recipeData.cookTime ||
+                // Use recipe.totalTime if available, otherwise calculate from step timers
+                const totalTime =
+                  recipeData.totalTime ||
                   (() => {
                     const totalSeconds =
                       recipeData.steps?.reduce(
@@ -1184,14 +1185,14 @@ export default function RecipeDetailScreen() {
                       : null;
                   })();
 
-                return cookTime !== null && cookTime !== undefined ? (
+                return totalTime !== null && totalTime !== undefined ? (
                   <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
                     <Clock size={20} color="#5A6E6C" />
                     <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                      {cookTime} mins
+                      {totalTime} mins
                     </Text>
                     <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                      cook
+                      total
                     </Text>
                   </View>
                 ) : null;
@@ -1320,14 +1321,15 @@ export default function RecipeDetailScreen() {
                       )}
                     </RNTouchableOpacity>
                     {showKitchenware && (
-                      <View>
+                      <View className="flex-row flex-wrap mb-2">
                         {kitchenware.map((item, index) => (
                           <View
                             key={index}
-                            className="flex-row items-center my-2 last:mb-0"
+                            className="flex-row items-start mb-2"
+                            style={{ width: "48%" }}
                           >
-                            <View className="w-2 h-2 rounded-full bg-dark-sage mr-3" />
-                            <Text className="text-base text-charcoal-gray flex-1">
+                            <View className="w-2 h-2 rounded-full bg-dark-sage mr-3 mt-1.5 flex-shrink-0" />
+                            <Text className="text-base text-charcoal-gray flex-1 flex-wrap">
                               {item}
                             </Text>
                           </View>
@@ -1650,12 +1652,17 @@ export default function RecipeDetailScreen() {
                     }
 
                     // Format quantity as fraction for display (only for volume units)
-                    const formattedQuantity = formatQuantity(
+                    // Ensure we have a valid number
+                    const quantityToFormat =
                       typeof displayQuantity === "number"
                         ? displayQuantity
-                        : parseFloat(displayQuantity.toString()),
-                      displayUnit
-                    );
+                        : parseFloat(displayQuantity.toString()) || 0;
+
+                    // Only format and display quantity if it's greater than 0
+                    const shouldShowQuantity = quantityToFormat > 0;
+                    const formattedQuantity = shouldShowQuantity
+                      ? formatQuantity(quantityToFormat, displayUnit)
+                      : "";
 
                     const checked = isIngredientChecked(ingredient.name);
                     const inPantry = pantryItems.some(
@@ -1693,9 +1700,21 @@ export default function RecipeDetailScreen() {
                               : "text-charcoal-gray"
                           }`}
                         >
-                          <Text className="font-semibold">
-                            {formattedQuantity} {displayUnit}
-                          </Text>{" "}
+                          {shouldShowQuantity && (
+                            <>
+                              <Text className="font-semibold">
+                                {formattedQuantity}
+                              </Text>
+                              {displayUnit && (
+                                <>
+                                  {" "}
+                                  <Text className="font-semibold">
+                                    {displayUnit}
+                                  </Text>
+                                </>
+                              )}{" "}
+                            </>
+                          )}
                           {ingredient.name}
                         </Text>
                       </RNTouchableOpacity>
@@ -2443,25 +2462,129 @@ export default function RecipeDetailScreen() {
             )}
 
             {/* Tags */}
-            {recipeData.tags && recipeData.tags.length > 0 && (
-              <View className="mb-6">
-                <Text className="text-2xl font-bold text-charcoal-gray mb-4">
-                  Tags
-                </Text>
-                <View className="flex-row flex-wrap">
+            <View className="mb-6">
+              <Text className="text-2xl font-bold text-charcoal-gray mb-4">
+                Tags
+              </Text>
+
+              {/* Existing Tags */}
+              {recipeData.tags && recipeData.tags.length > 0 && (
+                <View className="flex-row flex-wrap mb-4">
                   {recipeData.tags.map((tag, index) => (
                     <RNTouchableOpacity
                       key={index}
-                      className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2"
+                      onPress={() => {
+                        // Remove tag
+                        const updatedTags = recipeData.tags.filter(
+                          (_, i) => i !== index
+                        );
+                        const updatedRecipeData = {
+                          ...recipeData,
+                          tags: updatedTags,
+                        };
+                        setRecipeData(updatedRecipeData);
+
+                        // Update in store if recipe exists
+                        if (
+                          "id" in recipeData &&
+                          recipeData.id &&
+                          typeof recipeData.id === "string"
+                        ) {
+                          updateRecipe(recipeData.id, { tags: updatedTags });
+                        }
+                      }}
+                      className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
                       activeOpacity={0.7}
                       style={{ minHeight: 44, justifyContent: "center" }}
                     >
-                      <Text className="text-charcoal-gray text-sm">{tag}</Text>
+                      <Text className="text-charcoal-gray text-sm mr-2">
+                        {tag}
+                      </Text>
+                      <X size={14} color="#3E3E3E" />
                     </RNTouchableOpacity>
                   ))}
                 </View>
+              )}
+
+              {/* Add New Tag */}
+              <View className="flex-row gap-2">
+                <TextInput
+                  className="flex-1 bg-soft-beige rounded-xl px-4 py-3 text-charcoal-gray text-base"
+                  placeholder="Add a tag..."
+                  placeholderTextColor="#9CA3AF"
+                  value={newTag}
+                  onChangeText={setNewTag}
+                  onSubmitEditing={() => {
+                    if (newTag.trim()) {
+                      const trimmedTag = newTag.trim();
+                      const currentTags = recipeData.tags || [];
+
+                      // Don't add duplicate tags
+                      if (!currentTags.includes(trimmedTag)) {
+                        const updatedTags = [...currentTags, trimmedTag];
+                        const updatedRecipeData = {
+                          ...recipeData,
+                          tags: updatedTags,
+                        };
+                        setRecipeData(updatedRecipeData);
+                        setNewTag("");
+
+                        // Update in store if recipe exists
+                        if (
+                          "id" in recipeData &&
+                          recipeData.id &&
+                          typeof recipeData.id === "string"
+                        ) {
+                          updateRecipe(recipeData.id, { tags: updatedTags });
+                        }
+                      } else {
+                        setNewTag("");
+                      }
+                    }
+                  }}
+                  returnKeyType="done"
+                  style={{ minHeight: 44 }}
+                />
+                <RNTouchableOpacity
+                  onPress={() => {
+                    if (newTag.trim()) {
+                      const trimmedTag = newTag.trim();
+                      const currentTags = recipeData.tags || [];
+
+                      // Don't add duplicate tags
+                      if (!currentTags.includes(trimmedTag)) {
+                        const updatedTags = [...currentTags, trimmedTag];
+                        const updatedRecipeData = {
+                          ...recipeData,
+                          tags: updatedTags,
+                        };
+                        setRecipeData(updatedRecipeData);
+                        setNewTag("");
+
+                        // Update in store if recipe exists
+                        if (
+                          "id" in recipeData &&
+                          recipeData.id &&
+                          typeof recipeData.id === "string"
+                        ) {
+                          updateRecipe(recipeData.id, { tags: updatedTags });
+                        }
+                      } else {
+                        setNewTag("");
+                      }
+                    }
+                  }}
+                  className="bg-dark-sage rounded-xl px-6 py-3 items-center justify-center"
+                  activeOpacity={0.8}
+                  style={{ minHeight: 44 }}
+                  disabled={!newTag.trim()}
+                >
+                  <Text className="text-off-white text-base font-semibold">
+                    Add
+                  </Text>
+                </RNTouchableOpacity>
               </View>
-            )}
+            </View>
 
             {/* Save Button (for imported recipes) */}
             {isImported && (
