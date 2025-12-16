@@ -2076,22 +2076,7 @@ export default function RecipeDetailScreen() {
                               </RNTouchableOpacity>
                             </View>
                           </View>
-                        ) : (
-                          canEditRecipe() && (
-                            <View className="mb-4 flex-row items-center justify-end">
-                              <RNTouchableOpacity
-                                onPress={handleStartEditIngredients}
-                                className="flex-row items-center bg-soft-beige rounded-lg px-3 py-2"
-                                activeOpacity={0.7}
-                              >
-                                <Pencil size={16} color="#5A6E6C" />
-                                <Text className="text-dark-sage font-semibold ml-2">
-                                  Edit
-                                </Text>
-                              </RNTouchableOpacity>
-                            </View>
-                          )
-                        )}
+                        ) : null}
 
                         {/* Progress Tracker */}
                         {!isEditingIngredients &&
@@ -2232,9 +2217,23 @@ export default function RecipeDetailScreen() {
                             {/* Need to Buy Section */}
                             {ingredientsToBuy.length > 0 && (
                               <View className="mb-6">
-                                <Text className="text-xl font-bold text-charcoal-gray mb-4">
-                                  Need to Buy
-                                </Text>
+                                <View className="flex-row items-center justify-between mb-4">
+                                  <Text className="text-xl font-bold text-charcoal-gray">
+                                    Need to Buy
+                                  </Text>
+                                  {canEditRecipe() && (
+                                    <RNTouchableOpacity
+                                      onPress={handleStartEditIngredients}
+                                      className="flex-row items-center bg-soft-beige rounded-lg px-3 py-2"
+                                      activeOpacity={0.7}
+                                    >
+                                      <Pencil size={16} color="#5A6E6C" />
+                                      <Text className="text-dark-sage font-semibold ml-2">
+                                        Edit
+                                      </Text>
+                                    </RNTouchableOpacity>
+                                  )}
+                                </View>
                                 {ingredientsToBuy.map((ingredient, index) =>
                                   renderIngredient(ingredient, index, false)
                                 )}

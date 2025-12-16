@@ -1,6 +1,6 @@
 import { usePathname, useRouter, useSegments } from "expo-router";
 import {
-  Home,
+  BookOpen,
   Plus,
   Settings,
   ShoppingBag,
@@ -25,7 +25,7 @@ export function CustomTabBar() {
   }, [pathname]);
 
   const tabs = [
-    { name: "index", icon: Home, route: "/(tabs)/" },
+    { name: "index", icon: BookOpen, route: "/(tabs)/" },
     { name: "shopping", icon: ShoppingBag, route: "/(tabs)/shopping" },
     { name: "add", icon: Plus, route: "/(tabs)/add", isMiddle: true },
     { name: "progress", icon: ChefHat, route: "/(tabs)/progress" },
