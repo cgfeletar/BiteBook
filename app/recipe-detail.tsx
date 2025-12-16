@@ -69,6 +69,7 @@ export default function RecipeDetailScreen() {
   const params = useLocalSearchParams();
   const [recipeData, setRecipeData] = useState<RecipeCreateInput | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("ingredients");
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [useMetric, setUseMetric] = useState(false); // true = grams, false = cups
   const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
   const [checkedIngredients, setCheckedIngredients] = useState<Set<string>>(
@@ -409,7 +410,25 @@ export default function RecipeDetailScreen() {
         const limitedTitle = parsed.title
           ? parsed.title.slice(0, 40)
           : parsed.title;
-        setRecipeData({ ...parsed, title: limitedTitle });
+        // Set recipe data with all fields including coverImage
+        setRecipeData({
+          ...parsed,
+          title: limitedTitle,
+          // Ensure coverImage is preserved
+          coverImage: parsed.coverImage || "",
+        });
+
+        // Parse missing fields if provided
+        if (params.missingFields) {
+          try {
+            const missing = JSON.parse(params.missingFields as string);
+            if (Array.isArray(missing)) {
+              setMissingFields(missing);
+            }
+          } catch (error) {
+            console.error("Failed to parse missingFields:", error);
+          }
+        }
 
         // Store original tags (auto-generated) when recipe is first loaded
         if (parsed.tags && parsed.tags.length > 0) {
@@ -418,14 +437,22 @@ export default function RecipeDetailScreen() {
           setOriginalTags([]);
         }
 
-        // Get stored recipe to load rating if it exists
+        // Get stored recipe to load rating and other fields if it exists
         if ("id" in parsed && parsed.id) {
           const storedRecipe = getRecipe(parsed.id);
-          if (storedRecipe?.rating) {
-            // Update recipeData with rating from store
-            setRecipeData((prev) =>
-              prev ? { ...prev, rating: storedRecipe.rating } : null
-            );
+          if (storedRecipe) {
+            // Update recipeData with stored recipe data (rating, etc.)
+            // Note: Prioritize coverImage from params (most recent) over stored
+            setRecipeData((prev) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                // Keep coverImage from params (most recent), only use stored if params doesn't have one
+                coverImage: prev.coverImage || storedRecipe.coverImage || "",
+                // Use stored rating if it exists
+                rating: storedRecipe.rating || prev.rating,
+              };
+            });
           }
           // Also update original tags if stored recipe has tags
           if (storedRecipe?.tags && storedRecipe.tags.length > 0) {
@@ -438,6 +465,9 @@ export default function RecipeDetailScreen() {
             });
           }
         }
+
+        // Log coverImage for debugging
+        console.log("Recipe detail - coverImage:", parsed.coverImage);
       } catch (error) {
         console.error("Failed to parse recipe data:", error);
       }
@@ -594,6 +624,9 @@ export default function RecipeDetailScreen() {
       return quantity; // Already in cups or unknown
     }
   };
+
+  const customTags =
+    recipeData?.tags?.filter((tag) => !originalTags.includes(tag)) || [];
 
   // Enrich instruction text with ingredient amounts
   const enrichInstructionWithAmounts = (instruction: string): string => {
@@ -1267,13 +1300,24 @@ export default function RecipeDetailScreen() {
                       </View>
                     ) : (
                       <>
-                        <Text
-                          className="text-3xl font-bold text-charcoal-gray flex-1"
-                          numberOfLines={2}
-                          style={{ fontFamily: "Lora_700Bold" }}
-                        >
-                          {recipeData.title.slice(0, 40)}
-                        </Text>
+                        <View className="flex-1">
+                          <Text
+                            className={`text-3xl font-bold flex-1 ${
+                              missingFields.includes("title")
+                                ? "text-dusty-rose"
+                                : "text-charcoal-gray"
+                            }`}
+                            numberOfLines={2}
+                            style={{ fontFamily: "Lora_700Bold" }}
+                          >
+                            {recipeData.title.slice(0, 40) || "Untitled Recipe"}
+                          </Text>
+                          {missingFields.includes("title") && (
+                            <Text className="text-xs text-dusty-rose mt-1">
+                              Missing title - please edit
+                            </Text>
+                          )}
+                        </View>
                         {"id" in recipeData && recipeData.id && (
                           <RNTouchableOpacity
                             onPress={handleStartEditTitle}
@@ -1445,6 +1489,25 @@ export default function RecipeDetailScreen() {
               {/* Divider Line */}
               <View className="h-px bg-warm-sand mb-6" />
 
+              {/* Missing Fields Warning Banner */}
+              {missingFields.length > 0 && (
+                <View className="mb-4 bg-dusty-rose/20 border-2 border-dusty-rose rounded-xl p-4">
+                  <View className="flex-row items-start">
+                    <Text className="text-dusty-rose text-lg mr-2">⚠️</Text>
+                    <View className="flex-1">
+                      <Text className="text-charcoal-gray font-semibold mb-1">
+                        Some fields are missing
+                      </Text>
+                      <Text className="text-charcoal-gray/70 text-sm">
+                        The following fields could not be extracted from the
+                        image: {missingFields.join(", ")}. Please review and
+                        edit the recipe.
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
               {/* Segmented Control */}
               <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
                 <RNTouchableOpacity
@@ -1455,15 +1518,20 @@ export default function RecipeDetailScreen() {
                   activeOpacity={0.7}
                   style={{ minHeight: 44, justifyContent: "center" }}
                 >
-                  <Text
-                    className={`font-semibold ${
-                      activeTab === "ingredients"
-                        ? "text-off-white"
-                        : "text-charcoal-gray"
-                    }`}
-                  >
-                    Ingredients
-                  </Text>
+                  <View className="flex-row items-center">
+                    <Text
+                      className={`font-semibold ${
+                        activeTab === "ingredients"
+                          ? "text-off-white"
+                          : "text-charcoal-gray"
+                      }`}
+                    >
+                      Ingredients
+                    </Text>
+                    {missingFields.includes("ingredients") && (
+                      <Text className="text-dusty-rose ml-1">⚠️</Text>
+                    )}
+                  </View>
                 </RNTouchableOpacity>
                 <RNTouchableOpacity
                   onPress={() => setActiveTab("instructions")}
@@ -1473,21 +1541,32 @@ export default function RecipeDetailScreen() {
                   activeOpacity={0.7}
                   style={{ minHeight: 44, justifyContent: "center" }}
                 >
-                  <Text
-                    className={`font-semibold ${
-                      activeTab === "instructions"
-                        ? "text-off-white"
-                        : "text-charcoal-gray"
-                    }`}
-                  >
-                    Instructions
-                  </Text>
+                  <View className="flex-row items-center">
+                    <Text
+                      className={`font-semibold ${
+                        activeTab === "instructions"
+                          ? "text-off-white"
+                          : "text-charcoal-gray"
+                      }`}
+                    >
+                      Instructions
+                    </Text>
+                    {missingFields.includes("steps") && (
+                      <Text className="text-dusty-rose ml-1">⚠️</Text>
+                    )}
+                  </View>
                 </RNTouchableOpacity>
               </View>
 
               {/* Ingredients Tab */}
               {activeTab === "ingredients" && (
-                <View>
+                <View
+                  className={
+                    missingFields.includes("ingredients")
+                      ? "border-2 border-dusty-rose rounded-xl p-4"
+                      : ""
+                  }
+                >
                   {/* Kitchenware Section */}
                   {kitchenware.length > 0 && (
                     <View className="mb-4 bg-soft-beige rounded-xl p-4">
@@ -2135,6 +2214,21 @@ export default function RecipeDetailScreen() {
                           </View>
                         ) : (
                           <>
+                            {/* Missing Ingredients Message */}
+                            {missingFields.includes("ingredients") &&
+                              combinedIngredients.length === 0 && (
+                                <View className="mb-6 bg-dusty-rose/10 border border-dusty-rose rounded-xl p-4">
+                                  <Text className="text-dusty-rose font-semibold mb-1">
+                                    ⚠️ Ingredients not detected
+                                  </Text>
+                                  <Text className="text-charcoal-gray/70 text-sm">
+                                    We couldn't extract ingredients from the
+                                    image. Please add them manually using the
+                                    Edit button.
+                                  </Text>
+                                </View>
+                              )}
+
                             {/* Need to Buy Section */}
                             {ingredientsToBuy.length > 0 && (
                               <View className="mb-6">
@@ -2457,7 +2551,13 @@ export default function RecipeDetailScreen() {
 
               {/* Instructions Tab */}
               {activeTab === "instructions" && (
-                <View>
+                <View
+                  className={
+                    missingFields.includes("steps")
+                      ? "border-2 border-dusty-rose rounded-xl p-4"
+                      : ""
+                  }
+                >
                   {/* Edit Mode Header */}
                   {isEditingInstructions ? (
                     <View className="mb-4 flex-row items-center justify-between">
@@ -2602,6 +2702,20 @@ export default function RecipeDetailScreen() {
                     </>
                   ) : (
                     <>
+                      {/* Missing Steps Message */}
+                      {missingFields.includes("steps") &&
+                        recipeData.steps.length === 0 && (
+                          <View className="mb-6 bg-dusty-rose/10 border border-dusty-rose rounded-xl p-4">
+                            <Text className="text-dusty-rose font-semibold mb-1">
+                              ⚠️ Instructions not detected
+                            </Text>
+                            <Text className="text-charcoal-gray/70 text-sm">
+                              We couldn't extract instructions from the image.
+                              Please add them manually using the Edit button.
+                            </Text>
+                          </View>
+                        )}
+
                       {recipeData.steps.map((step, index) => {
                         const isCompleted = completedSteps.has(step.id);
                         return (
@@ -3077,61 +3191,47 @@ export default function RecipeDetailScreen() {
                           </Text>
                         </View>
                       ))}
+                      {customTags.map((tag, index) => (
+                        <RNTouchableOpacity
+                          key={index}
+                          onPress={() => {
+                            // Remove custom tag
+                            const updatedTags = recipeData.tags.filter(
+                              (t) => t !== tag
+                            );
+                            const updatedRecipeData = {
+                              ...recipeData,
+                              tags: updatedTags,
+                            };
+                            setRecipeData(updatedRecipeData);
+
+                            // Update in store if recipe exists
+                            if (
+                              "id" in recipeData &&
+                              recipeData.id &&
+                              typeof recipeData.id === "string"
+                            ) {
+                              updateRecipe(recipeData.id, {
+                                tags: updatedTags,
+                              });
+                            }
+                          }}
+                          className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
+                          activeOpacity={0.7}
+                          style={{
+                            minHeight: 44,
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Text className="text-charcoal-gray text-sm mr-2">
+                            {tag}
+                          </Text>
+                          <X size={14} color="#3E3E3E" />
+                        </RNTouchableOpacity>
+                      ))}
                     </View>
                   </View>
                 )}
-
-                {/* Custom Tags (removable) */}
-                {(() => {
-                  const customTags =
-                    recipeData.tags?.filter(
-                      (tag) => !originalTags.includes(tag)
-                    ) || [];
-                  return customTags.length > 0 ? (
-                    <View className="mb-4">
-                      <View className="flex-row flex-wrap">
-                        {customTags.map((tag, index) => (
-                          <RNTouchableOpacity
-                            key={index}
-                            onPress={() => {
-                              // Remove custom tag
-                              const updatedTags = recipeData.tags.filter(
-                                (t) => t !== tag
-                              );
-                              const updatedRecipeData = {
-                                ...recipeData,
-                                tags: updatedTags,
-                              };
-                              setRecipeData(updatedRecipeData);
-
-                              // Update in store if recipe exists
-                              if (
-                                "id" in recipeData &&
-                                recipeData.id &&
-                                typeof recipeData.id === "string"
-                              ) {
-                                updateRecipe(recipeData.id, {
-                                  tags: updatedTags,
-                                });
-                              }
-                            }}
-                            className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
-                            activeOpacity={0.7}
-                            style={{
-                              minHeight: 44,
-                              justifyContent: "center",
-                            }}
-                          >
-                            <Text className="text-charcoal-gray text-sm mr-2">
-                              {tag}
-                            </Text>
-                            <X size={14} color="#3E3E3E" />
-                          </RNTouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  ) : null;
-                })()}
 
                 {/* Add Custom Tag Input (shown when "Add Custom" is clicked) */}
                 {showAddTagInput && (

@@ -24,6 +24,13 @@ export const useRecipeStore = create<RecipeStore>()(
           createdAt: recipeData.createdAt || Timestamp.now(),
         };
 
+        console.log("Adding recipe to store:", {
+          id: newRecipe.id,
+          title: newRecipe.title,
+          coverImage: newRecipe.coverImage,
+          coverImageLength: newRecipe.coverImage?.length,
+        });
+
         set((state) => ({
           recipes: [newRecipe, ...state.recipes], // Add to beginning for newest first
         }));

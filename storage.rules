@@ -1,0 +1,22 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Recipe images - allow public read and write for recipe imports
+    // This allows users to import recipes even without authentication
+    match /recipe-images/{imageId} {
+      // Allow anyone to read recipe images
+      allow read: if true;
+      
+      // Allow public uploads for recipe images (required for recipe import feature)
+      // File size limit: 10MB (10485760 bytes)
+      // More permissive: allow if size is reasonable, content type check is optional
+      allow write: if request.resource.size < 10485760;
+    }
+    
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

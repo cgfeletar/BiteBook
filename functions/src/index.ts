@@ -1,8 +1,10 @@
+import { ImageAnnotatorClient } from "@google-cloud/vision";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions";
 import { defineSecret } from "firebase-functions/params";
+import sharp from "sharp";
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -1916,6 +1918,394 @@ export const generateNutritionalInfo = functions
       throw new functions.https.HttpsError(
         "internal",
         `Failed to generate nutritional info: ${error.message}`
+      );
+    }
+  });
+
+/**
+ * Prompt for extracting structured recipe data from OCR text
+ */
+const RECIPE_EXTRACTION_FROM_OCR_PROMPT = `You are an expert recipe data extraction assistant. Your task is to extract structured recipe information from OCR text extracted from a recipe photo or screenshot and output it as a JSON object.
+
+IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript interface:
+
+{
+  "title": string,
+  "coverImage": string (empty string "" for image imports),
+  "ingredients": Array<{
+    "name": string,
+    "quantity": number,
+    "unit": string,
+    "isChecked": boolean (always false)
+  }>,
+  "steps": Array<{
+    "id": string (unique, e.g., "step-1", "step-2"),
+    "instruction": string,
+    "isCompleted": boolean (always false),
+    "isBeginnerFriendly": boolean,
+    "timerDuration": number | null (in seconds, optional),
+    "title": string | null (optional title for instruction sections)
+  }>,
+  "nutritionalInfo": {
+    "calories": number | null,
+    "protein": number | null (in grams),
+    "carbohydrates": number | null (in grams),
+    "fat": number | null (in grams),
+    "fiber": number | null (in grams),
+    "sugar": number | null (in grams),
+    "sodium": number | null (in milligrams)
+  },
+  "sourceUrl": string (empty string "" for image imports),
+  "originalAuthor": string,
+  "tags": string[],
+  "categoryIds": [] (always empty array),
+  "prepTime": number | null (in minutes, optional - active prep time only)
+}
+
+EXTRACTION RULES:
+
+1. TITLE:
+   - Extract the main recipe title (usually at the top)
+   - Clean up extra whitespace and formatting artifacts from OCR
+   - If multiple titles exist, choose the most prominent one
+
+2. COVER IMAGE:
+   - Always use empty string "" for image imports
+
+3. INGREDIENTS:
+   - Locate the ingredient list section in the OCR text
+   - Look for headings like "Ingredients", "Ingredients You'll Need", "For the [X]", or similar
+   - Parse ingredient lists from various formats (do not round):
+     * "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }
+     * "1/2 tsp salt" → { name: "salt", quantity: 0.5, unit: "tsp" }
+     * "1/4 cup butter" → { name: "butter", quantity: 0.25, unit: "cup" }
+     * "1 egg" → { name: "egg", quantity: 1, unit: "egg" }
+     * "3 large eggs" → { name: "eggs", quantity: 3, unit: "large" }
+   - Handle OCR errors: common misreads like "O" for "0", "I" for "1", etc.
+   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc.
+   - Handle ranges: "2-3 cups" → use average or first value
+   - Handle "to taste", "as needed", "optional" → quantity: null, unit: "to taste"
+   - Clean ingredient names: remove quantities, units, and OCR artifacts
+   - Always set isChecked to false
+
+4. STEPS:
+   - Find the instructions/steps section (usually below ingredients)
+   - Look for numbered lists, bullet points, or paragraph-form instructions
+   - Split instructions into individual steps if they're in paragraph form
+   - Each step should be a complete, actionable instruction
+   - Generate unique IDs: "step-1", "step-2", etc.
+   - CRITICAL FORMATTING RULE: When an instruction mentions multiple ingredients (2 or more), format them as a bulleted list:
+     * Example: "Combine butter, flour, and sugar" → "Combine:\n• butter\n• flour\n• sugar"
+   - TIME INFORMATION IN INSTRUCTIONS:
+     * Keep time information in the instruction text when it's part of the actual cooking instruction
+     * Examples: "Bake for 20 minutes", "Simmer for 10 minutes"
+   - Determine isBeginnerFriendly:
+     * true: Simple actions like "mix", "stir", "bake at 350°F"
+     * false: Complex techniques like "temper", "braise", "sous vide"
+   - Extract timerDuration from text:
+     * "bake for 20 minutes" → 1200 seconds
+     * "simmer 5 min" → 300 seconds
+     * "cook until golden" → null
+   - Always set isCompleted to false
+
+5. NUTRITIONAL INFO:
+   - Extract from nutrition facts tables or text if present
+   - Look for patterns: "Calories: 250", "Protein 10g", etc.
+   - Convert units: ensure protein/carbs/fat in grams, sodium in mg
+   - If not found, set to null (not 0)
+
+6. SOURCE URL:
+   - Always use empty string "" for image imports
+
+7. ORIGINAL AUTHOR:
+   - Extract from text if present (e.g., "By [Name]")
+   - If not found, use "Imported from photo"
+
+8. TAGS:
+   - Generate relevant tags from recipe content:
+     * Recipe type: "dessert", "main-course", "appetizer", "breakfast"
+     * Cuisine: "italian", "mexican", "asian", etc.
+     * Dietary: "vegetarian", "vegan", "gluten-free", "keto"
+     * Cooking method: "baked", "grilled", "slow-cooked"
+   - Minimum 2-3 tags, maximum 8 tags
+   - Always include "imported from photo" tag
+
+9. CATEGORY IDS:
+   - Always use empty array []
+
+10. PREP TIME:
+   - Extract prep time (active preparation time) in minutes if explicitly stated
+   - If NOT explicitly stated, estimate based on instructions:
+     * Analyze all steps and count only active prep work (chopping, mixing, measuring, etc.)
+     * Exclude passive steps (waiting, resting, marinating, baking, cooking)
+     * Estimate time per active prep step: 2-10 min each
+   - Always provide a prep time estimate - never return null unless zero active prep
+   - Return value in minutes
+
+HANDLING OCR ERRORS:
+- OCR text may have character recognition errors (e.g., "O" for "0", "rn" for "m")
+- Use context to correct common OCR mistakes
+- If data is ambiguous, make reasonable inferences
+- If critical data is missing, use sensible defaults (empty arrays, null values)
+- Preserve original meaning even if formatting is inconsistent
+
+HANDWRITING DETECTION:
+Before extracting the recipe, analyze the OCR text to determine if it appears to be handwritten.
+- Look for characteristics of handwriting: inconsistent letter shapes, variable spacing, cursive script, personal notes
+- Compare against typed/printed text: consistent fonts, uniform spacing, professional formatting
+- If the text appears to be handwritten, set "hasHandwriting": true
+- If the text appears to be typed/printed text, set "hasHandwriting": false
+
+OUTPUT FORMAT:
+Return ONLY the JSON object, no markdown, no code blocks, no explanations. The JSON must be valid and parseable.
+
+The JSON object must include an additional field:
+{
+  ... (all recipe fields above),
+  "hasHandwriting": boolean (true if the image contains handwritten text, false if typed/printed)
+}
+
+OCR text content:
+`;
+
+/**
+ * Preprocess image: resize and auto-rotate
+ */
+async function preprocessImage(imageBuffer: Buffer): Promise<Buffer> {
+  try {
+    // Get image metadata to check orientation
+    const metadata = await sharp(imageBuffer).metadata();
+
+    // Auto-rotate based on EXIF orientation and resize if needed
+    let processed = sharp(imageBuffer).rotate(); // Auto-rotate based on EXIF
+
+    // Resize if too large (max 2000px on longest side for better OCR)
+    if (metadata.width && metadata.height) {
+      const maxDimension = 2000;
+      if (metadata.width > maxDimension || metadata.height > maxDimension) {
+        processed = processed.resize(maxDimension, maxDimension, {
+          fit: "inside",
+          withoutEnlargement: true,
+        });
+      }
+    }
+
+    // Convert to JPEG for consistency
+    return await processed.jpeg({ quality: 90 }).toBuffer();
+  } catch (error: any) {
+    console.error("Error preprocessing image:", error);
+    // Return original if preprocessing fails
+    return imageBuffer;
+  }
+}
+
+/**
+ * Extract text from image using Google Cloud Vision OCR
+ */
+async function extractTextFromImage(imageBuffer: Buffer): Promise<string> {
+  try {
+    // Initialize Vision client
+    const client = new ImageAnnotatorClient();
+
+    // Perform OCR with optimized settings for printed text
+    const [result] = await client.textDetection({
+      image: { content: imageBuffer },
+    });
+
+    const detections = result.textAnnotations;
+    if (!detections || detections.length === 0) {
+      throw new Error("No text detected in image");
+    }
+
+    // The first detection contains the full text
+    const fullText = detections[0].description || "";
+
+    if (!fullText || fullText.trim().length === 0) {
+      throw new Error("No text content extracted from image");
+    }
+
+    return fullText;
+  } catch (error: any) {
+    console.error("Error extracting text from image:", error);
+    throw new Error(`OCR failed: ${error.message}`);
+  }
+}
+
+/**
+ * Extract recipe from OCR text using OpenAI
+ */
+async function extractRecipeFromOCRText(
+  ocrText: string
+): Promise<Omit<Recipe, "id" | "createdAt"> & { hasHandwriting?: boolean }> {
+  const prompt = RECIPE_EXTRACTION_FROM_OCR_PROMPT + ocrText;
+
+  // Access API key from secret
+  const apiKeyRaw = OPENAI_API_KEY.value();
+
+  if (!apiKeyRaw) {
+    throw new Error(
+      "OPENAI_API_KEY is not configured. Please set it using:\n" +
+        "firebase functions:secrets:set OPENAI_API_KEY"
+    );
+  }
+
+  // Clean the API key
+  const apiKey = apiKeyRaw.trim().replace(/\s+/g, "");
+
+  try {
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini", // Using GPT-4o-mini for cost-effective results
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a recipe data extraction assistant. Extract structured recipe information from OCR text and return ONLY valid JSON matching the required schema.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 4000,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        timeout: 60000, // 60 second timeout
+      }
+    );
+
+    // Check if response has choices
+    if (!response.data.choices || response.data.choices.length === 0) {
+      throw new Error("No choices in OpenAI response");
+    }
+
+    const choice = response.data.choices[0];
+    if (choice.finish_reason !== "stop") {
+      console.warn(
+        `OpenAI finish reason: ${choice.finish_reason}. This may indicate truncated response.`
+      );
+    }
+
+    const responseText = choice.message?.content;
+    if (!responseText) {
+      throw new Error("OpenAI returned no content");
+    }
+
+    let recipeData: any;
+
+    try {
+      recipeData = JSON.parse(responseText);
+    } catch (parseError: any) {
+      throw new Error(
+        `Failed to parse OpenAI response as JSON: ${
+          parseError.message
+        }. Response: ${responseText.substring(0, 200)}`
+      );
+    }
+
+    // Validate and set defaults
+    const hasHandwriting = recipeData.hasHandwriting === true;
+
+    return {
+      title: recipeData.title || "Imported Recipe",
+      coverImage: recipeData.coverImage || "", // Preserve coverImage if provided, otherwise empty
+      ingredients: Array.isArray(recipeData.ingredients)
+        ? recipeData.ingredients
+        : [],
+      steps: Array.isArray(recipeData.steps) ? recipeData.steps : [],
+      nutritionalInfo: recipeData.nutritionalInfo || {},
+      sourceUrl: "", // Empty for image imports
+      originalAuthor: recipeData.originalAuthor || "Imported from photo",
+      tags: Array.isArray(recipeData.tags)
+        ? [...recipeData.tags, "imported from photo"]
+        : ["imported from photo"],
+      categoryIds: [],
+      prepTime: recipeData.prepTime || null,
+      cookTime: recipeData.cookTime || null,
+      totalTime: recipeData.totalTime || null,
+      hasHandwriting, // Include handwriting detection result
+    };
+  } catch (error: any) {
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+      throw new Error(`OpenAI API error (${status}): ${JSON.stringify(data)}`);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Extract recipe from image using OCR and AI
+ */
+export const extractRecipeFromImage = functions
+  .region("us-central1")
+  .runWith({
+    secrets: [OPENAI_API_KEY],
+    timeoutSeconds: 300, // 5 minutes for image processing
+    memory: "1GB", // More memory for image processing
+  })
+  .https.onCall(async (data: { imageBase64: string }, context) => {
+    // Note: Authentication is optional - users can import recipes without logging in
+
+    // Validate input
+    if (!data.imageBase64 || typeof data.imageBase64 !== "string") {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "imageBase64 is required and must be a string"
+      );
+    }
+
+    try {
+      // Convert base64 to buffer
+      const imageBuffer = Buffer.from(data.imageBase64, "base64");
+
+      // Preprocess image: resize and auto-rotate
+      console.log("Preprocessing image...");
+      const processedImage = await preprocessImage(imageBuffer);
+
+      // Extract text using OCR
+      console.log("Running OCR...");
+      const ocrText = await extractTextFromImage(processedImage);
+
+      if (!ocrText || ocrText.trim().length === 0) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "No text detected in image. Please ensure the image contains typed text."
+        );
+      }
+
+      console.log(`OCR extracted ${ocrText.length} characters`);
+
+      // Extract structured recipe data from OCR text using OpenAI
+      console.log("Extracting recipe data from OCR text...");
+      const recipeResult = await extractRecipeFromOCRText(ocrText);
+
+      // Extract hasHandwriting and remove it from recipe data
+      const { hasHandwriting, ...recipe } = recipeResult;
+
+      // Return recipe with handwriting flag
+      return {
+        ...recipe,
+        hasHandwriting: hasHandwriting || false,
+      };
+    } catch (error: any) {
+      console.error("Error extracting recipe from image:", error);
+
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+
+      throw new functions.https.HttpsError(
+        "internal",
+        `Failed to extract recipe from image: ${error.message}`
       );
     }
   });

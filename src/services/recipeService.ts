@@ -71,6 +71,53 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
 }
 
 /**
+ * Import recipe from image using OCR and AI extraction
+ * @param imageBase64 - Base64 encoded image data (without data URI prefix)
+ * @returns Extracted recipe data (without id and createdAt) and handwriting detection flag
+ */
+export async function importRecipeFromImage(
+  imageBase64: string
+): Promise<RecipeCreateInput & { hasHandwriting?: boolean }> {
+  try {
+    // Validate image data
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      throw new Error("Invalid image data provided");
+    }
+
+    // Call the Cloud Function
+    const extractRecipeFromImage = httpsCallable<
+      { imageBase64: string },
+      RecipeCreateInput
+    >(functions, "extractRecipeFromImage");
+
+    const result = await extractRecipeFromImage({ imageBase64 });
+
+    return result.data;
+  } catch (error: any) {
+    // Handle Firebase function errors
+    const errorCode = error?.code || error?.details?.code || "";
+    const errorMessage = error?.message || error?.details?.message || "";
+
+    if (
+      errorCode === "functions/unauthenticated" ||
+      errorCode === "unauthenticated" ||
+      errorMessage.includes("authenticated")
+    ) {
+      throw new Error("You must be logged in to import recipes");
+    } else if (
+      errorCode === "functions/invalid-argument" ||
+      errorCode === "invalid-argument"
+    ) {
+      throw new Error("Invalid image data provided");
+    } else if (errorMessage) {
+      throw new Error(errorMessage);
+    } else {
+      throw new Error("Failed to import recipe from image. Please try again.");
+    }
+  }
+}
+
+/**
  * Generate nutritional information from ingredients using AI
  * @param ingredients - Array of ingredients
  * @returns Generated nutritional information
