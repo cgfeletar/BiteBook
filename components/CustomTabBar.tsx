@@ -2,7 +2,7 @@ import { usePathname, useRouter, useSegments } from "expo-router";
 import {
   BookOpen,
   Plus,
-  Settings,
+  Calendar,
   ShoppingBag,
   ChefHat,
 } from "lucide-react-native";
@@ -29,7 +29,7 @@ export function CustomTabBar() {
     { name: "shopping", icon: ShoppingBag, route: "/(tabs)/shopping" },
     { name: "add", icon: Plus, route: "/(tabs)/add", isMiddle: true },
     { name: "progress", icon: ChefHat, route: "/(tabs)/progress" },
-    { name: "settings", icon: Settings, route: "/(tabs)/settings" },
+    { name: "meal-plan", icon: Calendar, route: "/(tabs)/meal-plan" },
   ];
 
   const isActive = (route: string) => {

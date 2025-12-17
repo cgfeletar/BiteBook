@@ -13,7 +13,7 @@ export default function TabLayout() {
         <Tabs.Screen name="index" />
         <Tabs.Screen name="add" />
         <Tabs.Screen name="progress" />
-        <Tabs.Screen name="settings" />
+        <Tabs.Screen name="meal-plan" />
         <Tabs.Screen name="shopping" />
       </Tabs>
       <CustomTabBar />

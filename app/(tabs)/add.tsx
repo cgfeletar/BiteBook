@@ -1,11 +1,14 @@
 import "@/nativewind-setup";
-import { importRecipe, importRecipeFromImage } from "@/src/services/recipeService";
-import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { storage } from "@/src/config/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import {
+  importRecipe,
+  importRecipeFromImage,
+} from "@/src/services/recipeService";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
 import * as ImageManipulator from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
+import { router } from "expo-router";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { Camera, Image as ImageIcon, Link } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -42,7 +45,8 @@ export default function AddScreen() {
   useEffect(() => {
     (async () => {
       if (Platform.OS !== "web") {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") {
           Alert.alert(
             "Permission Required",
@@ -63,7 +67,7 @@ export default function AddScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        
+
         // Preprocess image: resize and auto-rotate
         const manipulatedImage = await ImageManipulator.manipulateAsync(
           asset.uri,
@@ -75,9 +79,10 @@ export default function AddScreen() {
             compress: 0.9,
             format: ImageManipulator.SaveFormat.JPEG,
             // Resize if too large (max 2000px on longest side for OCR)
-            resize: asset.width > 2000 || asset.height > 2000 
-              ? { width: 2000 } 
-              : undefined,
+            resize:
+              asset.width > 2000 || asset.height > 2000
+                ? { width: 2000 }
+                : undefined,
           }
         );
 
@@ -108,7 +113,7 @@ export default function AddScreen() {
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        
+
         // Preprocess image: resize and auto-rotate
         const manipulatedImage = await ImageManipulator.manipulateAsync(
           asset.uri,
@@ -118,9 +123,10 @@ export default function AddScreen() {
           {
             compress: 0.9,
             format: ImageManipulator.SaveFormat.JPEG,
-            resize: asset.width > 2000 || asset.height > 2000 
-              ? { width: 2000 } 
-              : undefined,
+            resize:
+              asset.width > 2000 || asset.height > 2000
+                ? { width: 2000 }
+                : undefined,
           }
         );
 
@@ -144,23 +150,25 @@ export default function AddScreen() {
 
     try {
       let imageUrl = "";
-      
+
       // Upload image to Firebase Storage first
       try {
         console.log("Uploading image to Firebase Storage...");
         const response = await fetch(selectedImage);
         const blob = await response.blob();
-        
+
         // Create a unique filename
         const timestamp = Date.now();
-        const filename = `recipe-images/${timestamp}-${Math.random().toString(36).substring(7)}.jpg`;
+        const filename = `recipe-images/${timestamp}-${Math.random()
+          .toString(36)
+          .substring(7)}.jpg`;
         const storageRef = ref(storage, filename);
-        
+
         // Upload the image with explicit content type metadata
         await uploadBytes(storageRef, blob, {
-          contentType: 'image/jpeg',
+          contentType: "image/jpeg",
         });
-        
+
         // Get the download URL
         imageUrl = await getDownloadURL(storageRef);
         console.log("Image uploaded, URL:", imageUrl);
@@ -187,10 +195,10 @@ export default function AddScreen() {
 
       // Import recipe from image
       const recipeResult = await importRecipeFromImage(base64Image);
-      
+
       // Extract hasHandwriting flag and remove it from recipe data
       const { hasHandwriting, ...recipeData } = recipeResult;
-      
+
       // Set the uploaded image as the cover image (if upload was successful)
       if (imageUrl) {
         console.log("Setting cover image URL:", imageUrl);
@@ -198,7 +206,7 @@ export default function AddScreen() {
       } else {
         console.warn("No image URL available, recipe will have no cover image");
       }
-      
+
       console.log("Recipe data before save:", {
         title: recipeData.title,
         coverImage: recipeData.coverImage,
@@ -239,7 +247,7 @@ export default function AddScreen() {
 
       // Validate and highlight missing fields
       const missingFields = validateRecipeData(recipeData);
-      
+
       if (missingFields.length > 0) {
         const missingText = missingFields.join(", ");
         Alert.alert(
@@ -260,7 +268,6 @@ export default function AddScreen() {
       // Success case: no handwriting detected, no missing fields
       // Add recipe and navigate
       handleRecipeImport(recipeData);
-
     } catch (error: any) {
       console.error("Error importing recipe from image:", error);
 
@@ -269,7 +276,8 @@ export default function AddScreen() {
       }
 
       const errorMessage =
-        error.message || "Failed to import recipe from image. Please try again.";
+        error.message ||
+        "Failed to import recipe from image. Please try again.";
 
       Alert.alert("Import Failed", errorMessage, [{ text: "OK" }]);
     } finally {
@@ -293,7 +301,10 @@ export default function AddScreen() {
     return missing;
   };
 
-  const handleRecipeImport = (recipeData: any, missingFields: string[] = []) => {
+  const handleRecipeImport = (
+    recipeData: any,
+    missingFields: string[] = []
+  ) => {
     // Add recipe to store
     const newRecipe = addRecipe(recipeData);
 
@@ -464,8 +475,9 @@ export default function AddScreen() {
                 Add Recipe
               </Text>
               <Text className="text-base text-charcoal-gray/60">
-                Import a recipe from a URL, photo, or screenshot. We will extract
-                the ingredients, instructions, and cover image automatically.
+                Import a recipe from a URL, photo, or screenshot. We will
+                extract the ingredients, instructions, and cover image
+                automatically.
               </Text>
             </View>
 
@@ -496,7 +508,7 @@ export default function AddScreen() {
                         : "text-charcoal-gray"
                     }`}
                   >
-                    From URL
+                    URL
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -523,7 +535,7 @@ export default function AddScreen() {
                         : "text-charcoal-gray"
                     }`}
                   >
-                    From Photo
+                    Photo
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -610,7 +622,7 @@ export default function AddScreen() {
                   <Text className="text-base font-semibold text-charcoal-gray mb-2">
                     Recipe Photo or Screenshot
                   </Text>
-                  
+
                   {selectedImage ? (
                     <View className="relative">
                       <Image
@@ -689,8 +701,8 @@ export default function AddScreen() {
                         Processing your image...
                       </Text>
                       {"\n"}
-                      Running OCR and extracting recipe data. This may take up to
-                      30 seconds.
+                      Running OCR and extracting recipe data. This may take up
+                      to 30 seconds.
                     </Text>
                   </View>
                 )}
