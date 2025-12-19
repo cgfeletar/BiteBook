@@ -1,5 +1,7 @@
 import { importRecipe } from "@/src/services/recipeService";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
+import { useAuthStore } from "@/src/store/useAuthStore";
+import { AuthPromptModal } from "@/components/AuthPromptModal";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { Link2, X } from "lucide-react-native";
@@ -25,7 +27,9 @@ interface ImportModalProps {
 export function ImportModal({ visible, onClose }: ImportModalProps) {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const addRecipe = useRecipeStore((state) => state.addRecipe);
+  const user = useAuthStore((state) => state.user);
 
   const handleAutoPaste = async () => {
     try {
@@ -51,6 +55,12 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
       new URL(url.startsWith("http") ? url : `https://${url}`);
     } catch {
       Alert.alert("Error", "Please enter a valid URL");
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      setShowAuthPrompt(true);
       return;
     }
 
@@ -293,6 +303,19 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
+
+      {/* Auth Prompt Modal */}
+      <AuthPromptModal
+        visible={showAuthPrompt}
+        onClose={() => setShowAuthPrompt(false)}
+        onSuccess={() => {
+          // Retry the import after successful auth
+          if (url.trim()) {
+            handleImport();
+          }
+        }}
+        message="Please sign in to import recipes"
+      />
     </Modal>
   );
 }

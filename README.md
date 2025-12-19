@@ -84,3 +84,10 @@ https://console.firebase.google.com/u/1/project/savorboard-5d4cc/overview
 ## Firebase Commands
 
 firebase functions:list - list firebase calls and status
+
+## Google Cloud Keystore
+
+If you need SHA-1 later
+Option 1: Generate debug keystore manually
+
+# Create the debug keystorekeytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"# Then get SHA-1keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA1

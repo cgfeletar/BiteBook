@@ -4,6 +4,8 @@ import { useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
+import { useAuthStore } from "@/src/store/useAuthStore";
+import { AuthPromptModal } from "@/components/AuthPromptModal";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
 import { formatQuantity } from "@/src/utils/fractionFormatter";
 import { Image } from "expo-image";
@@ -98,10 +100,12 @@ export default function RecipeDetailScreen() {
   const addCookingSession = useProgressStore(
     (state) => state.addCookingSession
   );
+  const user = useAuthStore((state) => state.user);
   const [showMenu, setShowMenu] = useState(false);
   const [showBookSelector, setShowBookSelector] = useState(false);
   const [showScaleDropdown, setShowScaleDropdown] = useState(false);
   const [showUnitsDropdown, setShowUnitsDropdown] = useState(false);
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editedTitle, setEditedTitle] = useState("");
   const [showKitchenware, setShowKitchenware] = useState(false);
@@ -3327,6 +3331,11 @@ export default function RecipeDetailScreen() {
                   className="bg-dark-sage rounded-xl py-4 items-center justify-center mb-8"
                   activeOpacity={0.8}
                   onPress={() => {
+                    // Check if user is authenticated
+                    if (!user) {
+                      setShowAuthPrompt(true);
+                      return;
+                    }
                     // TODO: Implement save to Firestore
                     Alert.alert("Success", "Recipe saved!");
                   }}
@@ -3486,6 +3495,20 @@ export default function RecipeDetailScreen() {
           </View>
         </Modal>
       </View>
+
+      {/* Auth Prompt Modal */}
+      <AuthPromptModal
+        visible={showAuthPrompt}
+        onClose={() => setShowAuthPrompt(false)}
+        onSuccess={() => {
+          // Retry the save after successful auth
+          if (isImported && recipeData) {
+            // TODO: Implement save to Firestore
+            Alert.alert("Success", "Recipe saved!");
+          }
+        }}
+        message="Please sign in to save recipes"
+      />
     </GestureHandlerRootView>
   );
 }

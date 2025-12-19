@@ -1,9 +1,11 @@
+import { AuthPromptModal } from "@/components/AuthPromptModal";
 import "@/nativewind-setup";
 import { storage } from "@/src/config/firebase";
 import {
   importRecipe,
   importRecipeFromImage,
 } from "@/src/services/recipeService";
+import { useAuthStore } from "@/src/store/useAuthStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
@@ -30,7 +32,9 @@ export default function AddScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [importMode, setImportMode] = useState<"url" | "image">("url");
+  const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const addRecipe = useRecipeStore((state) => state.addRecipe);
+  const user = useAuthStore((state) => state.user);
   const isMountedRef = useRef(true);
 
   // Track if component is mounted to prevent state updates after unmount
@@ -142,6 +146,12 @@ export default function AddScreen() {
   const handleImportFromImage = async () => {
     if (!selectedImage) {
       Alert.alert("Error", "Please select an image first");
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      setShowAuthPrompt(true);
       return;
     }
 
@@ -340,6 +350,12 @@ export default function AddScreen() {
       new URL(url.startsWith("http") ? url : `https://${url}`);
     } catch {
       Alert.alert("Error", "Please enter a valid URL");
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      setShowAuthPrompt(true);
       return;
     }
 
@@ -749,6 +765,21 @@ export default function AddScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Auth Prompt Modal */}
+      <AuthPromptModal
+        visible={showAuthPrompt}
+        onClose={() => setShowAuthPrompt(false)}
+        onSuccess={() => {
+          // Retry the import after successful auth
+          if (importMode === "url" && url.trim()) {
+            handleImport();
+          } else if (importMode === "image" && selectedImage) {
+            handleImportFromImage();
+          }
+        }}
+        message="Please sign in to import recipes"
+      />
     </SafeAreaView>
   );
 }

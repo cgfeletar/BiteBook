@@ -1,6 +1,8 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as AuthSession from "expo-auth-session";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,7 +20,25 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const { signIn, signUp, loading } = useAuthStore();
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  const { signIn, signUp, signInWithGoogle, signInWithApple, loading } =
+    useAuthStore();
+
+  useEffect(() => {
+    // Check if Apple Sign-In is available
+    if (Platform.OS === "ios") {
+      AppleAuthentication.isAvailableAsync().then(setIsAppleAvailable);
+    }
+
+    // TEMPORARY: Log redirect URI for Google OAuth setup
+    // Remove this after you've added the URI to Google Cloud Console
+    const redirectUri = AuthSession.makeRedirectUri({
+      useProxy: true,
+    } as any);
+    console.log("🔗 Google OAuth Redirect URI:", redirectUri);
+    // Show alert with the URI so you can copy it
+    Alert.alert("Redirect URI (Copy This)", redirectUri);
+  }, []);
 
   const handleSubmit = async () => {
     if (!email || !password) {
@@ -142,6 +162,64 @@ export default function LoginScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+
+            {/* Divider */}
+            <View className="flex-row items-center my-6">
+              <View className="flex-1 h-px bg-warm-sand" />
+              <Text className="mx-4 text-charcoal-gray/50 text-sm">or</Text>
+              <View className="flex-1 h-px bg-warm-sand" />
+            </View>
+
+            {/* Google Sign In */}
+            <TouchableOpacity
+              className="bg-soft-beige rounded-2xl py-4 mt-2 items-center justify-center border-2 border-warm-sand"
+              onPress={async () => {
+                try {
+                  await signInWithGoogle();
+                  router.replace("/(tabs)");
+                } catch (error: any) {
+                  if (error.message && !error.message.includes("cancelled")) {
+                    Alert.alert(
+                      "Error",
+                      error.message || "Failed to sign in with Google"
+                    );
+                  }
+                }
+              }}
+              disabled={loading}
+              activeOpacity={0.8}
+            >
+              <Text className="text-charcoal-gray text-base font-semibold">
+                Continue with Google
+              </Text>
+            </TouchableOpacity>
+
+            {/* Apple Sign In (iOS only) */}
+            {Platform.OS === "ios" && isAppleAvailable && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={
+                  AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                }
+                buttonStyle={
+                  AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                }
+                cornerRadius={16}
+                style={{ width: "100%", height: 50, marginTop: 12 }}
+                onPress={async () => {
+                  try {
+                    await signInWithApple();
+                    router.replace("/(tabs)");
+                  } catch (error: any) {
+                    if (error.message && !error.message.includes("cancelled")) {
+                      Alert.alert(
+                        "Error",
+                        error.message || "Failed to sign in with Apple"
+                      );
+                    }
+                  }
+                }}
+              />
+            )}
 
             {/* Toggle Sign In/Sign Up */}
             <View className="flex-row justify-center items-center mt-6">

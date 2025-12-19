@@ -7,13 +7,17 @@ import {
 } from "firebase/auth";
 import { create } from "zustand";
 import { auth } from "../config/firebase";
+import { signInWithGoogle as googleSignIn, signInWithApple as appleSignIn } from "../services/authService";
+import { createOrUpdateUser, getUserDocument } from "../services/userService";
 
 // Generic User type that can be extended
 export interface User {
   uid: string;
-  email: string | null;
+  email?: string | null;
   displayName?: string | null;
   photoURL?: string | null;
+  createdAt?: Date;
+  defaultKitchenId?: string;
   // Add additional user properties as needed
   [key: string]: any;
 }
@@ -24,6 +28,8 @@ interface AuthState {
   initialized: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
@@ -35,9 +41,12 @@ const mapFirebaseUser = (firebaseUser: FirebaseUser | null): User | null => {
 
   return {
     uid: firebaseUser.uid,
-    email: firebaseUser.email,
-    displayName: firebaseUser.displayName,
-    photoURL: firebaseUser.photoURL,
+    email: firebaseUser.email || undefined,
+    displayName: firebaseUser.displayName || undefined,
+    photoURL: firebaseUser.photoURL || undefined,
+    createdAt: firebaseUser.metadata.creationTime
+      ? new Date(firebaseUser.metadata.creationTime)
+      : undefined,
   };
 };
 
@@ -45,12 +54,44 @@ export const useAuthStore = create<AuthState>((set) => {
   // Initialize auth state listener with error handling
   const unsubscribe = onAuthStateChanged(
     auth,
-    (firebaseUser) => {
-      set({
-        user: mapFirebaseUser(firebaseUser),
-        loading: false,
-        initialized: true,
-      });
+    async (firebaseUser) => {
+      if (firebaseUser) {
+        // Map Firebase user to our User type
+        const mappedUser = mapFirebaseUser(firebaseUser);
+        
+        // Sync user data to Firestore
+        try {
+          // Get existing user document to preserve defaultKitchenId if it exists
+          const existingUserDoc = await getUserDocument(firebaseUser.uid);
+          if (existingUserDoc?.defaultKitchenId) {
+            mappedUser!.defaultKitchenId = existingUserDoc.defaultKitchenId;
+          }
+          
+          // Create or update user document in Firestore
+          await createOrUpdateUser(mappedUser!);
+          
+          // Fetch updated user document to get defaultKitchenId
+          const updatedUserDoc = await getUserDocument(firebaseUser.uid);
+          if (updatedUserDoc) {
+            mappedUser!.defaultKitchenId = updatedUserDoc.defaultKitchenId;
+          }
+        } catch (error) {
+          console.error("Error syncing user to Firestore:", error);
+          // Continue even if Firestore sync fails
+        }
+        
+        set({
+          user: mappedUser,
+          loading: false,
+          initialized: true,
+        });
+      } else {
+        set({
+          user: null,
+          loading: false,
+          initialized: true,
+        });
+      }
     },
     (error) => {
       // Handle auth state change errors silently
@@ -84,6 +125,34 @@ export const useAuthStore = create<AuthState>((set) => {
         await createUserWithEmailAndPassword(auth, email, password);
       } catch (error) {
         set({ loading: false });
+        throw error;
+      }
+    },
+
+    signInWithGoogle: async () => {
+      set({ loading: true });
+      try {
+        await googleSignIn();
+      } catch (error: any) {
+        set({ loading: false });
+        // Don't throw if user cancelled
+        if (error.code === "ERR_CANCELED" || error.message?.includes("cancelled")) {
+          return;
+        }
+        throw error;
+      }
+    },
+
+    signInWithApple: async () => {
+      set({ loading: true });
+      try {
+        await appleSignIn();
+      } catch (error: any) {
+        set({ loading: false });
+        // Don't throw if user cancelled
+        if (error.code === "ERR_CANCELED" || error.message?.includes("cancelled")) {
+          return;
+        }
         throw error;
       }
     },
