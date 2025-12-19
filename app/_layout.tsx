@@ -53,6 +53,18 @@ export default function RootLayout() {
             options={{ headerShown: false, presentation: "card" }}
           />
           <Stack.Screen
+            name="account"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="feedback"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="coming-soon"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
             name="modal"
             options={{ presentation: "modal", title: "Modal" }}
           />

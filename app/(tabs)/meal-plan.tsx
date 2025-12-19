@@ -6,6 +6,7 @@ import {
 } from "@/src/store/useMealPlanStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { Plus, Search, Trash2, User, X } from "lucide-react-native";
 import { useMemo, useRef, useState } from "react";
 import {
@@ -191,7 +192,11 @@ export default function MealPlanScreen() {
         {/* Header */}
         <View className="flex-row items-center justify-between px-6 pt-4 pb-3">
           <Text className="text-3xl font-bold text-charcoal">Meal Plan</Text>
-          <TouchableOpacity className="w-10 h-10 rounded-full bg-warm-sand items-center justify-center">
+          <TouchableOpacity
+            onPress={() => router.push("/account")}
+            className="w-10 h-10 rounded-full bg-warm-sand items-center justify-center"
+            activeOpacity={0.7}
+          >
             <User size={20} color="#3E3E3E" />
           </TouchableOpacity>
         </View>

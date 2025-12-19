@@ -576,6 +576,7 @@ export default function RecipeFeed() {
             What are we making?
           </Text>
           <TouchableOpacity
+            onPress={() => router.push("/account")}
             className="bg-redwood rounded-full w-10 h-10 items-center justify-center"
             activeOpacity={0.7}
             style={{ minWidth: 44, minHeight: 44 }}
