@@ -1,5 +1,4 @@
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import {
   GoogleAuthProvider,
@@ -21,47 +20,14 @@ WebBrowser.maybeCompleteAuthSession();
  * not the iOS/Android client IDs. The redirect URI must also be added
  * to the Web OAuth client's authorized redirect URIs in Google Cloud Console.
  */
-export async function signInWithGoogle(): Promise<void> {
-  if (Platform.OS === "web") {
-    throw new Error(
-      "Google sign-in on web requires popup/redirect implementation"
-    );
+export async function signInWithGoogleCredential(
+  idToken: string
+): Promise<void> {
+  if (!idToken) {
+    throw new Error("Missing Google ID token");
   }
 
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: undefined,
-    useProxy: true,
-  });
-
-  const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-  if (!webClientId) {
-    throw new Error("Missing EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID");
-  }
-
-  const discovery = {
-    authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
-    tokenEndpoint: "https://oauth2.googleapis.com/token",
-    revocationEndpoint: "https://oauth2.googleapis.com/revoke",
-  };
-
-  const request = new AuthSession.AuthRequest({
-    clientId: webClientId,
-    scopes: ["openid", "profile", "email"],
-    responseType: AuthSession.ResponseType.Code,
-    redirectUri,
-    usePKCE: true,
-  });
-
-  const result = await request.promptAsync(discovery, {
-    useProxy: true,
-  });
-
-  if (result.type !== "success" || !result.params.code) {
-    throw new Error("Google sign-in failed or cancelled");
-  }
-
-  // 🔑 Firebase handles code exchange internally
-  const credential = GoogleAuthProvider.credential(null, result.params.code);
+  const credential = GoogleAuthProvider.credential(idToken);
   await signInWithCredential(auth, credential);
 }
 

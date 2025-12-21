@@ -1,5 +1,5 @@
-import { RecipeCard } from "@/components/RecipeCard";
 import { FilterModal, FilterState } from "@/components/FilterModal";
+import { RecipeCard } from "@/components/RecipeCard";
 import "@/nativewind-setup";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useProgressStore } from "@/src/store/useProgressStore";
@@ -13,7 +13,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
@@ -403,13 +402,25 @@ export default function RecipeFeed() {
         const matchesSourceType = filters.sourceTypes.some((sourceType) => {
           switch (sourceType) {
             case "tiktok":
-              return sourceUrl.includes("tiktok.com") || sourceUrl.includes("vm.tiktok");
+              return (
+                sourceUrl.includes("tiktok.com") ||
+                sourceUrl.includes("vm.tiktok")
+              );
             case "instagram":
-              return sourceUrl.includes("instagram.com") || sourceUrl.includes("instagr.am");
+              return (
+                sourceUrl.includes("instagram.com") ||
+                sourceUrl.includes("instagr.am")
+              );
             case "pinterest":
-              return sourceUrl.includes("pinterest.com") || sourceUrl.includes("pin.it");
+              return (
+                sourceUrl.includes("pinterest.com") ||
+                sourceUrl.includes("pin.it")
+              );
             case "youtube":
-              return sourceUrl.includes("youtube.com") || sourceUrl.includes("youtu.be");
+              return (
+                sourceUrl.includes("youtube.com") ||
+                sourceUrl.includes("youtu.be")
+              );
             case "blog":
               return (
                 sourceUrl.includes("blog") ||
@@ -418,7 +429,7 @@ export default function RecipeFeed() {
                 sourceUrl.includes("medium.com")
               );
             case "website":
-          return (
+              return (
                 !sourceUrl.includes("tiktok") &&
                 !sourceUrl.includes("instagram") &&
                 !sourceUrl.includes("pinterest") &&
@@ -451,7 +462,9 @@ export default function RecipeFeed() {
             case "low-sugar":
               return nutrition.sugar !== undefined && nutrition.sugar <= 5;
             case "low-calorie":
-              return nutrition.calories !== undefined && nutrition.calories <= 200;
+              return (
+                nutrition.calories !== undefined && nutrition.calories <= 200
+              );
             default:
               return false;
           }
@@ -760,14 +773,14 @@ export default function RecipeFeed() {
             <TouchableOpacity
               onPress={() => setShowFilterModal(true)}
               className={`rounded-xl items-center justify-center ${
-                (filters.mealTypes.length > 0 ||
-                  filters.cuisines.length > 0 ||
-                  filters.cookedBefore !== "all" ||
-                  filters.dietary.length > 0 ||
-                  filters.minRating !== null ||
-                  filters.sourceTypes.length > 0 ||
-                  filters.nutritional.length > 0 ||
-                  filters.customTags.length > 0)
+                filters.mealTypes.length > 0 ||
+                filters.cuisines.length > 0 ||
+                filters.cookedBefore !== "all" ||
+                filters.dietary.length > 0 ||
+                filters.minRating !== null ||
+                filters.sourceTypes.length > 0 ||
+                filters.nutritional.length > 0 ||
+                filters.customTags.length > 0
                   ? "bg-dark-sage"
                   : "bg-soft-beige"
               }`}

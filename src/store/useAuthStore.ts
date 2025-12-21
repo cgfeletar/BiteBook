@@ -7,7 +7,7 @@ import {
 } from "firebase/auth";
 import { create } from "zustand";
 import { auth } from "../config/firebase";
-import { signInWithGoogle as googleSignIn, signInWithApple as appleSignIn } from "../services/authService";
+import { signInWithApple as appleSignIn } from "../services/authService";
 import { createOrUpdateUser, getUserDocument } from "../services/userService";
 
 // Generic User type that can be extended
@@ -28,7 +28,6 @@ interface AuthState {
   initialized: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   logout: () => Promise<void>;
   setUser: (user: User | null) => void;
@@ -58,7 +57,7 @@ export const useAuthStore = create<AuthState>((set) => {
       if (firebaseUser) {
         // Map Firebase user to our User type
         const mappedUser = mapFirebaseUser(firebaseUser);
-        
+
         // Sync user data to Firestore
         try {
           // Get existing user document to preserve defaultKitchenId if it exists
@@ -66,10 +65,10 @@ export const useAuthStore = create<AuthState>((set) => {
           if (existingUserDoc?.defaultKitchenId) {
             mappedUser!.defaultKitchenId = existingUserDoc.defaultKitchenId;
           }
-          
+
           // Create or update user document in Firestore
           await createOrUpdateUser(mappedUser!);
-          
+
           // Fetch updated user document to get defaultKitchenId
           const updatedUserDoc = await getUserDocument(firebaseUser.uid);
           if (updatedUserDoc) {
@@ -79,7 +78,7 @@ export const useAuthStore = create<AuthState>((set) => {
           console.error("Error syncing user to Firestore:", error);
           // Continue even if Firestore sync fails
         }
-        
+
         set({
           user: mappedUser,
           loading: false,
@@ -129,20 +128,6 @@ export const useAuthStore = create<AuthState>((set) => {
       }
     },
 
-    signInWithGoogle: async () => {
-      set({ loading: true });
-      try {
-        await googleSignIn();
-      } catch (error: any) {
-        set({ loading: false });
-        // Don't throw if user cancelled
-        if (error.code === "ERR_CANCELED" || error.message?.includes("cancelled")) {
-          return;
-        }
-        throw error;
-      }
-    },
-
     signInWithApple: async () => {
       set({ loading: true });
       try {
@@ -150,7 +135,10 @@ export const useAuthStore = create<AuthState>((set) => {
       } catch (error: any) {
         set({ loading: false });
         // Don't throw if user cancelled
-        if (error.code === "ERR_CANCELED" || error.message?.includes("cancelled")) {
+        if (
+          error.code === "ERR_CANCELED" ||
+          error.message?.includes("cancelled")
+        ) {
           return;
         }
         throw error;

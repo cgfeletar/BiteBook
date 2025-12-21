@@ -1,6 +1,14 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { router } from "expo-router";
-import { ArrowLeft, Edit2, LogOut, Mail, Palette, User, Users } from "lucide-react-native";
+import {
+  ArrowLeft,
+  Edit2,
+  LogOut,
+  Mail,
+  Palette,
+  User,
+  Users,
+} from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
   Alert,
@@ -37,7 +45,8 @@ export default function AccountScreen() {
       Alert.alert("Success", "Your name has been updated.");
     } catch (error: any) {
       console.error("Error updating name:", error);
-      const errorMessage = error?.message || "Failed to update name. Please try again.";
+      const errorMessage =
+        error?.message || "Failed to update name. Please try again.";
       Alert.alert("Error", errorMessage);
     }
   };
@@ -48,35 +57,28 @@ export default function AccountScreen() {
   };
 
   const handleLogout = async () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+            router.replace("/(tabs)");
+          } catch (error) {
+            Alert.alert("Error", "Failed to sign out. Please try again.");
+          }
         },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await logout();
-              router.replace("/(auth)/login");
-            } catch (error) {
-              Alert.alert("Error", "Failed to sign out. Please try again.");
-            }
-          },
-        },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
-    <SafeAreaView
-      className="flex-1 bg-off-white"
-      edges={["top", "bottom"]}
-    >
+    <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
       {/* Header */}
       <View className="flex-row items-center justify-between px-6 pt-4 pb-4">
         <TouchableOpacity
@@ -102,7 +104,9 @@ export default function AccountScreen() {
             <View className="w-20 h-20 rounded-full bg-dark-sage items-center justify-center mb-4">
               {user?.photoURL ? (
                 <Text className="text-white text-2xl font-bold">
-                  {user.displayName?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || "U"}
+                  {user.displayName?.[0]?.toUpperCase() ||
+                    user.email?.[0]?.toUpperCase() ||
+                    "U"}
                 </Text>
               ) : (
                 <User size={40} color="#FAF9F7" />
@@ -127,18 +131,14 @@ export default function AccountScreen() {
               </TouchableOpacity>
             </View>
             {user?.email && (
-              <Text className="text-charcoal/70 text-sm">
-                {user.email}
-              </Text>
+              <Text className="text-charcoal/70 text-sm">{user.email}</Text>
             )}
           </View>
         </View>
 
         {/* Settings Section */}
         <View className="px-6 mb-6">
-          <Text
-            className="text-sm font-semibold text-charcoal/60 mb-3 uppercase tracking-wide"
-          >
+          <Text className="text-sm font-semibold text-charcoal/60 mb-3 uppercase tracking-wide">
             Settings
           </Text>
 
@@ -293,4 +293,3 @@ export default function AccountScreen() {
     </SafeAreaView>
   );
 }
-

@@ -1,5 +1,6 @@
+import { useAuth } from "@/src/services/authProvider";
 import { useAuthStore } from "@/src/store/useAuthStore";
-import { router } from "expo-router";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -12,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as AppleAuthentication from "expo-apple-authentication";
 
 interface AuthPromptModalProps {
   visible: boolean;
@@ -31,8 +31,8 @@ export function AuthPromptModal({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const { signIn, signUp, signInWithGoogle, signInWithApple, loading } =
-    useAuthStore();
+  const { signIn, signUp, signInWithApple, loading } = useAuthStore();
+  const { promptAsync, request } = useAuth();
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -60,18 +60,22 @@ export function AuthPromptModal({
       onSuccess?.();
       onClose();
     } catch (error: any) {
-      Alert.alert("Error", error.message || "An error occurred. Please try again.");
+      Alert.alert(
+        "Error",
+        error.message || "An error occurred. Please try again."
+      );
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
-      await signInWithGoogle();
+      await promptAsync();
+      // success is handled in AuthProvider's useEffect
       onSuccess?.();
       onClose();
     } catch (error: any) {
-      if (error.message && !error.message.includes("cancelled")) {
-        Alert.alert("Error", error.message || "Failed to sign in with Google");
+      if (!error?.message?.includes("cancelled")) {
+        Alert.alert("Error", "Failed to sign in with Google");
       }
     }
   };
@@ -120,7 +124,9 @@ export function AuthPromptModal({
               editable={!loading}
             />
 
-            <Text className="text-sm text-charcoal-gray mb-2 ml-1">Password</Text>
+            <Text className="text-sm text-charcoal-gray mb-2 ml-1">
+              Password
+            </Text>
             <TextInput
               className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
               placeholder="Enter your password"
@@ -192,7 +198,7 @@ export function AuthPromptModal({
           <TouchableOpacity
             className="bg-soft-beige rounded-2xl py-4 items-center justify-center border-2 border-warm-sand mb-4"
             onPress={handleGoogleSignIn}
-            disabled={loading}
+            disabled={!request || loading}
             activeOpacity={0.8}
           >
             <Text className="text-charcoal-gray text-base font-semibold">
@@ -203,8 +209,12 @@ export function AuthPromptModal({
           {/* Apple Sign In (iOS only) */}
           {Platform.OS === "ios" && (
             <AppleAuthentication.AppleAuthenticationButton
-              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              buttonType={
+                AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+              }
+              buttonStyle={
+                AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+              }
               cornerRadius={16}
               style={{ width: "100%", height: 50 }}
               onPress={handleAppleSignIn}
@@ -224,4 +234,3 @@ export function AuthPromptModal({
     </Modal>
   );
 }
-
