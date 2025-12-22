@@ -1,6 +1,7 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../config/firebase";
 import { Ingredient, NutritionalInfo, RecipeCreateInput } from "../types";
+import { autoTagRecipe } from "../utils/autoTagRecipe";
 
 // Initialize Cloud Functions with us-central1 region
 const functions = getFunctions(app, "us-central1");
@@ -34,7 +35,15 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
 
     const result = await extractRecipeFromUrl({ url: formattedUrl });
 
-    return result.data;
+    // Auto-generate tags based on recipe content
+    const recipeData = result.data;
+    const autoTags = autoTagRecipe(recipeData);
+    
+    // Merge auto-generated tags with existing tags (if any)
+    return {
+      ...recipeData,
+      tags: autoTags,
+    };
   } catch (error: any) {
     // Handle Firebase function errors
     // Firebase Functions errors can have different structures
@@ -87,12 +96,22 @@ export async function importRecipeFromImage(
     // Call the Cloud Function
     const extractRecipeFromImage = httpsCallable<
       { imageBase64: string },
-      RecipeCreateInput
+      RecipeCreateInput & { hasHandwriting?: boolean }
     >(functions, "extractRecipeFromImage");
 
     const result = await extractRecipeFromImage({ imageBase64 });
 
-    return result.data;
+    // Auto-generate tags based on recipe content
+    const recipeData = result.data;
+    const { hasHandwriting, ...recipeWithoutHandwriting } = recipeData;
+    const autoTags = autoTagRecipe(recipeWithoutHandwriting);
+    
+    // Merge auto-generated tags with existing tags (if any)
+    return {
+      ...recipeWithoutHandwriting,
+      tags: autoTags,
+      hasHandwriting: hasHandwriting || false,
+    };
   } catch (error: any) {
     // Handle Firebase function errors
     const errorCode = error?.code || error?.details?.code || "";

@@ -16,7 +16,9 @@ export default function TabLayout() {
         <Tabs.Screen name="meal-plan" />
         <Tabs.Screen name="shopping" />
       </Tabs>
-      <CustomTabBar />
+      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, pointerEvents: 'box-none' }}>
+        <CustomTabBar />
+      </View>
     </View>
   );
 }

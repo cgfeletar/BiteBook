@@ -165,7 +165,7 @@ export default function AccountScreen() {
 
           {/* Kitchen Members */}
           <TouchableOpacity
-            onPress={() => router.push("/coming-soon?title=Kitchen Members")}
+            onPress={() => router.push("/kitchen-members")}
             className="bg-white rounded-xl p-4 flex-row items-center justify-between mb-3"
             activeOpacity={0.7}
           >

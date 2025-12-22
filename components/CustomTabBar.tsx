@@ -99,8 +99,10 @@ export function CustomTabBar() {
         styles.tabBar,
         {
           bottom: insets.bottom,
+          zIndex: 1000,
         },
       ]}
+      pointerEvents="box-none"
     >
       {tabs.map((tab) => {
         const Icon = tab.icon;
@@ -113,6 +115,7 @@ export function CustomTabBar() {
             onPress={() => handlePress(tab.route)}
             activeOpacity={0.7}
             style={[styles.tabButton, isMiddle && styles.middleButton]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Icon
               size={isMiddle ? 28 : 24}
@@ -143,6 +146,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
+    zIndex: 1000,
     ...Platform.select({
       ios: {
         shadowOpacity: 0.15,

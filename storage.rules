@@ -20,3 +20,23 @@ service firebase.storage {
   }
 }
 
+match /kitchenInvites/{inviteId} {
+  // Allow anyone to read invites (needed for validation)
+  allow read: if true;
+
+  // Only authenticated users can create invites
+  allow create: if request.auth != null
+    && request.resource.data.createdBy == request.auth.uid
+    && request.resource.data.kitchenId is string
+    && request.resource.data.used == false;
+
+  // Only allow updates to mark invite as used (via backend/Cloud Function)
+  // For now, we allow updates from authenticated users
+  // You may want to restrict this further with Cloud Functions
+  allow update: if request.auth != null
+    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used'])
+    && request.resource.data.used == true;
+
+  // No deletes
+  allow delete: if false;
+}

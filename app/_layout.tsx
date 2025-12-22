@@ -45,31 +45,39 @@ export default function RootLayout() {
       <View style={styles.container} className="flex-1 bg-off-white">
         <ThemeProvider value={DefaultTheme}>
           <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="recipe-detail"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="book-detail"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="account"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="feedback"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="coming-soon"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="modal"
-              options={{ presentation: "modal", title: "Modal" }}
-            />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="recipe-detail"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="book-detail"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="account"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="feedback"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="kitchen-members"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="coming-soon"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="invite"
+            options={{ headerShown: false, presentation: "card" }}
+          />
+          <Stack.Screen
+            name="modal"
+            options={{ presentation: "modal", title: "Modal" }}
+          />
           </Stack>
           <StatusBar style="dark" />
         </ThemeProvider>
