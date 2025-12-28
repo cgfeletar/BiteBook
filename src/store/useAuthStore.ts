@@ -49,7 +49,7 @@ const mapFirebaseUser = (firebaseUser: FirebaseUser | null): User | null => {
   };
 };
 
-export const useAuthStore = create<AuthState>((set) => {
+export const useAuthStore = create<AuthState>((set, get) => {
   // Initialize auth state listener with error handling
   const unsubscribe = onAuthStateChanged(
     auth,
@@ -58,32 +58,58 @@ export const useAuthStore = create<AuthState>((set) => {
         // Map Firebase user to our User type
         const mappedUser = mapFirebaseUser(firebaseUser);
 
-        // Sync user data to Firestore
-        try {
-          // Get existing user document to preserve defaultKitchenId if it exists
-          const existingUserDoc = await getUserDocument(firebaseUser.uid);
-          if (existingUserDoc?.defaultKitchenId) {
-            mappedUser!.defaultKitchenId = existingUserDoc.defaultKitchenId;
-          }
-
-          // Create or update user document in Firestore
-          await createOrUpdateUser(mappedUser!);
-
-          // Fetch updated user document to get defaultKitchenId
-          const updatedUserDoc = await getUserDocument(firebaseUser.uid);
-          if (updatedUserDoc) {
-            mappedUser!.defaultKitchenId = updatedUserDoc.defaultKitchenId;
-          }
-        } catch (error) {
-          console.error("Error syncing user to Firestore:", error);
-          // Continue even if Firestore sync fails
-        }
-
+        // Set user immediately so auth works even if Firestore is offline
         set({
           user: mappedUser,
           loading: false,
           initialized: true,
         });
+
+        // Sync user data to Firestore (non-blocking, runs in background)
+        // This won't block auth initialization
+        (async () => {
+          try {
+            // Get existing user document to preserve defaultKitchenId if it exists
+            const existingUserDoc = await getUserDocument(firebaseUser.uid);
+            if (existingUserDoc?.defaultKitchenId) {
+              // Update local state with defaultKitchenId if found
+              set((state) => ({
+                user: state.user ? { ...state.user, defaultKitchenId: existingUserDoc.defaultKitchenId } : null,
+              }));
+            }
+
+            // Create or update user document in Firestore
+            await createOrUpdateUser({
+              ...mappedUser!,
+              defaultKitchenId: existingUserDoc?.defaultKitchenId || mappedUser!.defaultKitchenId,
+            });
+
+            // Fetch updated user document to get defaultKitchenId
+            const updatedUserDoc = await getUserDocument(firebaseUser.uid);
+            if (updatedUserDoc?.defaultKitchenId) {
+              // Update local state with defaultKitchenId
+              set((state) => ({
+                user: state.user ? { ...state.user, defaultKitchenId: updatedUserDoc.defaultKitchenId } : null,
+              }));
+            }
+          } catch (error: any) {
+            // Handle offline errors gracefully - don't log as error if just offline
+            const isOfflineError = 
+              error?.code === "unavailable" || 
+              error?.code === "failed-precondition" ||
+              error?.message?.toLowerCase().includes("offline") ||
+              error?.message?.toLowerCase().includes("network");
+            
+            if (isOfflineError) {
+              // Silently handle offline - Firestore will sync when back online
+              // User can still use the app, data will sync automatically
+            } else {
+              // Log other errors for debugging
+              console.error("Error syncing user to Firestore:", error);
+            }
+            // Continue - auth still works even if Firestore sync fails
+          }
+        })();
       } else {
         set({
           user: null,

@@ -35,7 +35,27 @@ export default function AddScreen() {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const addRecipe = useRecipeStore((state) => state.addRecipe);
   const user = useAuthStore((state) => state.user);
+  const authInitialized = useAuthStore((state) => state.initialized);
+  const authLoading = useAuthStore((state) => state.loading);
   const isMountedRef = useRef(true);
+
+  // Debug: Log auth state changes
+  useEffect(() => {
+    console.log("[Add Screen] Auth state:", {
+      initialized: authInitialized,
+      loading: authLoading,
+      hasUser: !!user,
+      userEmail: user?.email,
+    });
+  }, [authInitialized, authLoading, user]);
+
+  // Close auth prompt if user signs in
+  useEffect(() => {
+    if (user && showAuthPrompt) {
+      console.log("[Add Screen] User signed in, closing auth prompt");
+      setShowAuthPrompt(false);
+    }
+  }, [user, showAuthPrompt]);
 
   // Track if component is mounted to prevent state updates after unmount
   useEffect(() => {
@@ -149,11 +169,24 @@ export default function AddScreen() {
       return;
     }
 
-    // Check if user is authenticated
+    // Check if user is authenticated (wait for auth to initialize first)
+    if (authLoading || !authInitialized) {
+      // Wait for auth state to initialize before checking
+      console.log("[Add Recipe] Auth loading or not initialized yet, waiting...", {
+        loading: authLoading,
+        initialized: authInitialized,
+      });
+      return;
+    }
+    
+    // Only show auth prompt if we're certain user is not authenticated
     if (!user) {
+      console.log("[Add Recipe] User not authenticated, showing auth prompt");
       setShowAuthPrompt(true);
       return;
     }
+    
+    console.log("[Add Recipe] User authenticated:", user.email);
 
     if (!isMountedRef.current) return;
     setIsLoading(true);
@@ -353,11 +386,24 @@ export default function AddScreen() {
       return;
     }
 
-    // Check if user is authenticated
+    // Check if user is authenticated (wait for auth to initialize first)
+    if (authLoading || !authInitialized) {
+      // Wait for auth state to initialize before checking
+      console.log("[Add Recipe] Auth loading or not initialized yet, waiting...", {
+        loading: authLoading,
+        initialized: authInitialized,
+      });
+      return;
+    }
+    
+    // Only show auth prompt if we're certain user is not authenticated
     if (!user) {
+      console.log("[Add Recipe] User not authenticated, showing auth prompt");
       setShowAuthPrompt(true);
       return;
     }
+    
+    console.log("[Add Recipe] User authenticated:", user.email);
 
     if (!isMountedRef.current) return;
     setIsLoading(true);

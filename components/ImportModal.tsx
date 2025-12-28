@@ -30,6 +30,7 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const addRecipe = useRecipeStore((state) => state.addRecipe);
   const user = useAuthStore((state) => state.user);
+  const authInitialized = useAuthStore((state) => state.initialized);
 
   const handleAutoPaste = async () => {
     try {
@@ -58,7 +59,12 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
       return;
     }
 
-    // Check if user is authenticated
+    // Check if user is authenticated (wait for auth to initialize first)
+    if (!authInitialized) {
+      // Wait for auth state to initialize before checking
+      return;
+    }
+    
     if (!user) {
       setShowAuthPrompt(true);
       return;

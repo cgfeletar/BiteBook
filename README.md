@@ -91,3 +91,7 @@ If you need SHA-1 later
 Option 1: Generate debug keystore manually
 
 # Create the debug keystorekeytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"# Then get SHA-1keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA1
+
+GoDaddy Websites:
+https://dashboard.godaddy.com/venture?ventureId=a01dbd51-7cf3-4020-aa02-856ace53d452
+https://bitebookhq.app/

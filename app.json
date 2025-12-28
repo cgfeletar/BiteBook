@@ -1,22 +1,20 @@
 {
   "expo": {
-    "name": "Saute",
-    "slug": "saute",
+    "name": "BiteBook",
+    "slug": "bitebook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "saute",
+    "scheme": "bitebook",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.saute.app",
-      "associatedDomains": [
-        "applinks:saute.app"
-      ]
+      "bundleIdentifier": "com.cgfeletar.bitebook",
+      "associatedDomains": ["applinks:bitebookhq.app"]
     },
     "android": {
-      "package": "com.saute.app",
+      "package": "com.cgfeletar.bitebook",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -32,7 +30,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "saute.app",
+              "host": "bitebookhq.app",
               "pathPrefix": "/invite"
             }
           ],
