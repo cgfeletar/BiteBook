@@ -1,13 +1,13 @@
+import { AuthPromptModal } from "@/components/AuthPromptModal";
 import { generateNutritionalInfo } from "@/src/services/recipeService";
+import { useAuthStore } from "@/src/store/useAuthStore";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
-import { useAuthStore } from "@/src/store/useAuthStore";
-import { AuthPromptModal } from "@/components/AuthPromptModal";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
-import { formatQuantity } from "@/src/utils/fractionFormatter";
+import { formatQuantity, formatDecimal } from "@/src/utils/fractionFormatter";
 import { Image } from "expo-image";
 import * as Notifications from "expo-notifications";
 import { router, useLocalSearchParams } from "expo-router";
@@ -623,7 +623,8 @@ export default function RecipeDetailScreen() {
     } else {
       // Convert to cups
       if (fromUnit.toLowerCase().includes("g")) {
-        return (quantity / 200).toFixed(2); // 200g ≈ 1 cup
+        const converted = quantity / 200; // 200g ≈ 1 cup
+        return Number.isInteger(converted) ? converted : parseFloat(converted.toFixed(2));
       }
       return quantity; // Already in cups or unknown
     }
@@ -1140,7 +1141,7 @@ export default function RecipeDetailScreen() {
               }}
               activeOpacity={0.7}
             >
-              <ArrowLeft size={24} color="#3E3E3E" />
+              <ArrowLeft size={24} color="#3E3E3E" pointerEvents="none" />
             </RNTouchableOpacity>
             <Text
               className="text-lg font-bold text-charcoal-gray ml-4 flex-1"
@@ -1161,7 +1162,7 @@ export default function RecipeDetailScreen() {
               }}
               activeOpacity={0.7}
             >
-              <MoreVertical size={24} color="#3E3E3E" />
+              <MoreVertical size={24} color="#3E3E3E" pointerEvents="none" />
             </RNTouchableOpacity>
           </Animated.View>
         </SafeAreaView>
@@ -1235,7 +1236,11 @@ export default function RecipeDetailScreen() {
                       }}
                       activeOpacity={0.7}
                     >
-                      <ArrowLeft size={20} color="#3E3E3E" />
+                      <ArrowLeft
+                        size={20}
+                        color="#3E3E3E"
+                        pointerEvents="none"
+                      />
                     </RNTouchableOpacity>
 
                     <RNTouchableOpacity
@@ -1251,7 +1256,11 @@ export default function RecipeDetailScreen() {
                       }}
                       activeOpacity={0.7}
                     >
-                      <MoreVertical size={20} color="#3E3E3E" />
+                      <MoreVertical
+                        size={20}
+                        color="#3E3E3E"
+                        pointerEvents="none"
+                      />
                     </RNTouchableOpacity>
                   </View>
                 </SafeAreaView>
@@ -1299,7 +1308,7 @@ export default function RecipeDetailScreen() {
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                           activeOpacity={0.7}
                         >
-                          <X size={20} color="#5A6E6C" />
+                          <X size={20} color="#5A6E6C" pointerEvents="none" />
                         </RNTouchableOpacity>
                       </View>
                     ) : (
@@ -1329,7 +1338,11 @@ export default function RecipeDetailScreen() {
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             activeOpacity={0.7}
                           >
-                            <Pencil size={20} color="#5A6E6C" />
+                            <Pencil
+                              size={20}
+                              color="#5A6E6C"
+                              pointerEvents="none"
+                            />
                           </RNTouchableOpacity>
                         )}
                       </>
@@ -1583,9 +1596,17 @@ export default function RecipeDetailScreen() {
                           Kitchenware Needed
                         </Text>
                         {showKitchenware ? (
-                          <ChevronDown size={20} color="#3E3E3E" />
+                          <ChevronDown
+                            size={20}
+                            color="#3E3E3E"
+                            pointerEvents="none"
+                          />
                         ) : (
-                          <ChevronUp size={20} color="#3E3E3E" />
+                          <ChevronUp
+                            size={20}
+                            color="#3E3E3E"
+                            pointerEvents="none"
+                          />
                         )}
                       </RNTouchableOpacity>
                       {showKitchenware && (
@@ -1605,27 +1626,6 @@ export default function RecipeDetailScreen() {
                         </View>
                       )}
                     </View>
-                  )}
-
-                  {/* Add to Shopping List Button */}
-                  {ingredientsToBuy.length > 0 && (
-                    <RNTouchableOpacity
-                      onPress={() => {
-                        addItemsToShoppingList(ingredientsToBuy);
-                        Alert.alert(
-                          "Added to Shopping List",
-                          `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
-                        );
-                      }}
-                      className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
-                      activeOpacity={0.8}
-                      style={{ minHeight: 44 }}
-                    >
-                      <ShoppingBag size={20} color="#FAF9F7" />
-                      <Text className="text-off-white text-base font-semibold ml-2">
-                        Add All to Shopping List
-                      </Text>
-                    </RNTouchableOpacity>
                   )}
 
                   {/* Scale and Unit Dropdowns */}
@@ -1670,6 +1670,7 @@ export default function RecipeDetailScreen() {
                           <ChevronDown
                             size={18}
                             color="#3E3E3E"
+                            pointerEvents="none"
                             style={{
                               transform: [
                                 {
@@ -1733,6 +1734,7 @@ export default function RecipeDetailScreen() {
                           <ChevronDown
                             size={18}
                             color="#3E3E3E"
+                            pointerEvents="none"
                             style={{
                               transform: [
                                 {
@@ -1891,18 +1893,20 @@ export default function RecipeDetailScreen() {
                               handleIngredientCheck(ingredient.name, ingredient)
                             }
                           >
-                            {/* Checkbox */}
-                            <View
-                              className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
-                                checked || inPantry
-                                  ? "bg-dark-sage border-dark-sage"
-                                  : "border-charcoal-gray/30"
-                              }`}
-                            >
-                              {(checked || inPantry) && (
-                                <Check size={16} color="#FAF9F7" />
-                              )}
-                            </View>
+                            {/* Checkbox - only show for items in pantry */}
+                            {isInPantry && (
+                              <View
+                                className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
+                                  checked || inPantry
+                                    ? "bg-dark-sage border-dark-sage"
+                                    : "border-charcoal-gray/30"
+                                }`}
+                              >
+                                {(checked || inPantry) && (
+                                  <Check size={16} color="#FAF9F7" />
+                                )}
+                              </View>
+                            )}
                             <Text
                               className={`flex-1 text-base ${
                                 checked || inPantry
@@ -2011,18 +2015,20 @@ export default function RecipeDetailScreen() {
                             handleIngredientCheck(ingredient.name, ingredient)
                           }
                         >
-                          {/* Checkbox */}
-                          <View
-                            className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
-                              checked || inPantry
-                                ? "bg-dark-sage border-dark-sage"
-                                : "border-charcoal-gray/30"
-                            }`}
-                          >
-                            {(checked || inPantry) && (
-                              <Check size={16} color="#FAF9F7" />
-                            )}
-                          </View>
+                          {/* Checkbox - only show for items in pantry */}
+                          {isInPantry && (
+                            <View
+                              className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
+                                checked || inPantry
+                                  ? "bg-dark-sage border-dark-sage"
+                                  : "border-charcoal-gray/30"
+                              }`}
+                            >
+                              {(checked || inPantry) && (
+                                <Check size={16} color="#FAF9F7" />
+                              )}
+                            </View>
+                          )}
                           <Text
                             className={`flex-1 text-base ${
                               checked || inPantry
@@ -2120,7 +2126,7 @@ export default function RecipeDetailScreen() {
                                     value={
                                       ingredient.quantity === null
                                         ? ""
-                                        : ingredient.quantity.toString()
+                                        : formatDecimal(ingredient.quantity)
                                     }
                                     onChangeText={(text) => {
                                       if (text === "" || text === "to taste") {
@@ -2186,7 +2192,11 @@ export default function RecipeDetailScreen() {
                                   className="ml-2 p-2"
                                   activeOpacity={0.7}
                                 >
-                                  <X size={20} color="#D7B4B3" />
+                                  <X
+                                    size={20}
+                                    color="#D7B4B3"
+                                    pointerEvents="none"
+                                  />
                                 </RNTouchableOpacity>
                               </View>
                             ))}
@@ -2221,6 +2231,24 @@ export default function RecipeDetailScreen() {
                             {/* Need to Buy Section */}
                             {ingredientsToBuy.length > 0 && (
                               <View className="mb-6">
+                                {/* Add to Shopping List Button */}
+                                <RNTouchableOpacity
+                                  onPress={() => {
+                                    addItemsToShoppingList(ingredientsToBuy);
+                                    Alert.alert(
+                                      "Added to Shopping List",
+                                      `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
+                                    );
+                                  }}
+                                  className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
+                                  activeOpacity={0.8}
+                                  style={{ minHeight: 44 }}
+                                >
+                                  <ShoppingBag size={20} color="#FAF9F7" />
+                                  <Text className="text-off-white text-base font-semibold ml-2">
+                                    Add All to Shopping List
+                                  </Text>
+                                </RNTouchableOpacity>
                                 <View className="flex-row items-center justify-between mb-4">
                                   <Text className="text-xl font-bold text-charcoal-gray">
                                     Need to Buy
@@ -2344,11 +2372,11 @@ export default function RecipeDetailScreen() {
                                     </Text>
                                     <Text className="text-charcoal-gray font-semibold">
                                       {viewByServing
-                                        ? Math.round(
+                                        ? formatDecimal(
                                             recipeData.nutritionalInfo
                                               .calories / servings
                                           )
-                                        : recipeData.nutritionalInfo.calories}
+                                        : formatDecimal(recipeData.nutritionalInfo.calories)}
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
                                           {" "}
@@ -2385,11 +2413,11 @@ export default function RecipeDetailScreen() {
                                     </Text>
                                     <Text className="text-charcoal-gray font-semibold">
                                       {viewByServing
-                                        ? Math.round(
+                                        ? formatDecimal(
                                             recipeData.nutritionalInfo.protein /
                                               servings
                                           )
-                                        : recipeData.nutritionalInfo.protein}
+                                        : formatDecimal(recipeData.nutritionalInfo.protein)}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2427,12 +2455,14 @@ export default function RecipeDetailScreen() {
                                     </Text>
                                     <Text className="text-charcoal-gray font-semibold">
                                       {viewByServing
-                                        ? Math.round(
+                                        ? formatDecimal(
                                             recipeData.nutritionalInfo
                                               .carbohydrates / servings
                                           )
-                                        : recipeData.nutritionalInfo
-                                            .carbohydrates}
+                                        : formatDecimal(
+                                            recipeData.nutritionalInfo
+                                              .carbohydrates
+                                          )}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2470,11 +2500,11 @@ export default function RecipeDetailScreen() {
                                     </Text>
                                     <Text className="text-charcoal-gray font-semibold">
                                       {viewByServing
-                                        ? Math.round(
+                                        ? formatDecimal(
                                             recipeData.nutritionalInfo.fat /
                                               servings
                                           )
-                                        : recipeData.nutritionalInfo.fat}
+                                        : formatDecimal(recipeData.nutritionalInfo.fat)}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2511,11 +2541,11 @@ export default function RecipeDetailScreen() {
                                     </Text>
                                     <Text className="text-charcoal-gray font-semibold">
                                       {viewByServing
-                                        ? Math.round(
+                                        ? formatDecimal(
                                             (recipeData.nutritionalInfo.fiber ||
                                               0) / servings
                                           )
-                                        : recipeData.nutritionalInfo.fiber || 0}
+                                        : formatDecimal(recipeData.nutritionalInfo.fiber || 0)}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2687,7 +2717,11 @@ export default function RecipeDetailScreen() {
                               className="ml-2 p-2"
                               activeOpacity={0.7}
                             >
-                              <X size={20} color="#D7B4B3" />
+                              <X
+                                size={20}
+                                color="#D7B4B3"
+                                pointerEvents="none"
+                              />
                             </RNTouchableOpacity>
                           </View>
                         </View>
@@ -2863,6 +2897,7 @@ export default function RecipeDetailScreen() {
                                                     <Pause
                                                       size={14}
                                                       color="#3E3E3E"
+                                                      pointerEvents="none"
                                                     />
                                                   </RNTouchableOpacity>
                                                 ) : (
@@ -2996,6 +3031,7 @@ export default function RecipeDetailScreen() {
                                                     <Play
                                                       size={16}
                                                       color="#FAF9F7"
+                                                      pointerEvents="none"
                                                     />
                                                   </RNTouchableOpacity>
                                                 )}
@@ -3229,7 +3265,7 @@ export default function RecipeDetailScreen() {
                           <Text className="text-charcoal-gray text-sm mr-2">
                             {tag}
                           </Text>
-                          <X size={14} color="#3E3E3E" />
+                          <X size={14} color="#3E3E3E" pointerEvents="none" />
                         </RNTouchableOpacity>
                       ))}
                     </View>
@@ -3452,7 +3488,7 @@ export default function RecipeDetailScreen() {
                   onPress={() => setShowBookSelector(false)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <X size={24} color="#3E3E3E" />
+                  <X size={24} color="#3E3E3E" pointerEvents="none" />
                 </RNTouchableOpacity>
               </View>
 

@@ -121,6 +121,7 @@ export function CustomTabBar() {
               size={isMiddle ? 28 : 24}
               color={isMiddle ? "#FAF9F7" : active ? "#5A6E6C" : "#9CA3AF"}
               strokeWidth={active || isMiddle ? 2.5 : 2}
+              pointerEvents="none"
             />
           </TouchableOpacity>
         );

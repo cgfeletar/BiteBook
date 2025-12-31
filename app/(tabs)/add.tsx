@@ -172,20 +172,23 @@ export default function AddScreen() {
     // Check if user is authenticated (wait for auth to initialize first)
     if (authLoading || !authInitialized) {
       // Wait for auth state to initialize before checking
-      console.log("[Add Recipe] Auth loading or not initialized yet, waiting...", {
-        loading: authLoading,
-        initialized: authInitialized,
-      });
+      console.log(
+        "[Add Recipe] Auth loading or not initialized yet, waiting...",
+        {
+          loading: authLoading,
+          initialized: authInitialized,
+        }
+      );
       return;
     }
-    
+
     // Only show auth prompt if we're certain user is not authenticated
     if (!user) {
       console.log("[Add Recipe] User not authenticated, showing auth prompt");
       setShowAuthPrompt(true);
       return;
     }
-    
+
     console.log("[Add Recipe] User authenticated:", user.email);
 
     if (!isMountedRef.current) return;
@@ -389,20 +392,23 @@ export default function AddScreen() {
     // Check if user is authenticated (wait for auth to initialize first)
     if (authLoading || !authInitialized) {
       // Wait for auth state to initialize before checking
-      console.log("[Add Recipe] Auth loading or not initialized yet, waiting...", {
-        loading: authLoading,
-        initialized: authInitialized,
-      });
+      console.log(
+        "[Add Recipe] Auth loading or not initialized yet, waiting...",
+        {
+          loading: authLoading,
+          initialized: authInitialized,
+        }
+      );
       return;
     }
-    
+
     // Only show auth prompt if we're certain user is not authenticated
     if (!user) {
       console.log("[Add Recipe] User not authenticated, showing auth prompt");
       setShowAuthPrompt(true);
       return;
     }
-    
+
     console.log("[Add Recipe] User authenticated:", user.email);
 
     if (!isMountedRef.current) return;
@@ -666,11 +672,9 @@ export default function AddScreen() {
                   <View className="mt-4 bg-warm-sand/50 rounded-xl p-4 border border-warm-sand">
                     <Text className="text-sm text-charcoal-gray text-center leading-5">
                       <Text className="font-semibold">
-                        You're free to navigate away.
+                        You're free to navigate away while we add this recipe to
+                        your book.
                       </Text>
-                      {"\n"}
-                      Recipe upload may take up to 1 minute per recipe. Your
-                      recipe will be saved automatically.
                     </Text>
                   </View>
                 )}

@@ -1,4 +1,21 @@
 /**
+ * Formats a decimal number to at most 2 decimal places
+ * Examples:
+ * - 1.234 → "1.23"
+ * - 0.333 → "0.33"
+ * - 2.0 → "2"
+ * - 1.5 → "1.5"
+ */
+export function formatDecimal(value: number | string): string {
+  const num = typeof value === "string" ? parseFloat(value) : value;
+  if (isNaN(num)) return "0";
+  // If it's a whole number, return without decimals
+  if (Number.isInteger(num)) return num.toString();
+  // Otherwise, cap at 2 decimal places
+  return num.toFixed(2).replace(/\.?0+$/, "");
+}
+
+/**
  * Converts a decimal number to a mixed fraction string
  * Examples:
  * - 1.25 → "1 1/4"
@@ -129,8 +146,8 @@ export function formatQuantity(
       const rounded = Math.round(quantity);
       return rounded < 1 && quantity > 0 ? "1" : rounded.toString();
     }
-    // For other non-volume units, return as-is (no fraction formatting)
-    return Number.isInteger(quantity) ? quantity.toString() : quantity.toFixed(2);
+    // For other non-volume units, return formatted decimal (capped at 2 places)
+    return formatDecimal(quantity);
   }
 
   // Format as fraction for volume units

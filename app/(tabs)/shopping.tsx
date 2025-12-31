@@ -240,7 +240,7 @@ export default function ShoppingListScreen() {
           }}
           activeOpacity={0.7}
         >
-          <View className="bg-dark-sage/10 rounded-lg px-2 py-2 flex-row items-center">
+          <View className="bg-dark-sage/10 rounded-lg px-2 py-2 flex-row items-center" pointerEvents="none">
             {isPantryMode ? (
               <>
                 <ArrowRight size={14} color="#5A6E6C" />
@@ -279,7 +279,7 @@ export default function ShoppingListScreen() {
             justifyContent: "center",
           }}
         >
-          <X size={20} color="#9CA3AF" />
+          <X size={20} color="#9CA3AF" pointerEvents="none" />
         </TouchableOpacity>
       </View>
     );
