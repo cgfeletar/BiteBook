@@ -44,6 +44,7 @@ export default function ShoppingListScreen() {
     (state) => state.addShoppingItems
   );
   const clearShoppingList = useShoppingListStore((state) => state.clearAll);
+  const clearPurchased = useShoppingListStore((state) => state.clearPurchased);
 
   const pantryItems = usePantryStore((state) => state.items);
   const addPantryItem = usePantryStore((state) => state.addItem);
@@ -86,13 +87,18 @@ export default function ShoppingListScreen() {
   const currentItems = isPantryMode ? pantryItemsAsShopping : shoppingItems;
 
   // Group shopping items by aisle (only for shopping list, not pantry)
+  // Separate purchased items to show at the bottom
   const groupedByAisle = useMemo(() => {
     if (isPantryMode) return [];
 
-    // Group items by aisle
+    // Separate purchased and unpurchased items
+    const unpurchasedItems = shoppingItems.filter((item) => !item.isPurchased);
+    const purchasedItems = shoppingItems.filter((item) => item.isPurchased);
+
+    // Group unpurchased items by aisle
     const grouped: Record<string, ShoppingItem[]> = {};
 
-    shoppingItems.forEach((item) => {
+    unpurchasedItems.forEach((item) => {
       const aisle = item.aisle || getAisleForIngredient(item.name);
       if (!grouped[aisle]) {
         grouped[aisle] = [];
@@ -100,17 +106,12 @@ export default function ShoppingListScreen() {
       grouped[aisle].push({ ...item, aisle });
     });
 
-    // Sort items within each aisle (unpurchased first, then alphabetical)
+    // Sort items within each aisle alphabetically
     Object.keys(grouped).forEach((aisle) => {
-      grouped[aisle].sort((a, b) => {
-        if (a.isPurchased !== b.isPurchased) {
-          return a.isPurchased ? 1 : -1;
-        }
-        return a.name.localeCompare(b.name);
-      });
+      grouped[aisle].sort((a, b) => a.name.localeCompare(b.name));
     });
 
-    // Create sections in aisle order
+    // Create sections in aisle order (only for unpurchased items)
     const sections: Array<{ title: string; data: ShoppingItem[] }> =
       AISLE_ORDER.filter(
         (aisle) => grouped[aisle] && grouped[aisle].length > 0
@@ -128,6 +129,14 @@ export default function ShoppingListScreen() {
         });
       }
     });
+
+    // Add purchased items section at the bottom if there are any
+    if (purchasedItems.length > 0) {
+      sections.push({
+        title: "Purchased",
+        data: purchasedItems.sort((a, b) => a.name.localeCompare(b.name)),
+      });
+    }
 
     return sections;
   }, [shoppingItems, isPantryMode]);
@@ -487,13 +496,49 @@ export default function ShoppingListScreen() {
           <SectionList
             sections={groupedByAisle}
             renderItem={renderItem}
-            renderSectionHeader={({ section: { title } }) => (
-              <View className="px-4 py-3 bg-warm-sand/50">
-                <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
-                  {title}
-                </Text>
-              </View>
-            )}
+            renderSectionHeader={({ section: { title, data } }) => {
+              const isPurchasedSection = title === "Purchased";
+              const purchasedCount = isPurchasedSection ? data.length : 0;
+
+              return (
+                <View className="px-4 py-3 bg-warm-sand/50">
+                  <View className="flex-row items-center justify-between">
+                    <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
+                      {title}
+                    </Text>
+                    {isPurchasedSection && purchasedCount > 0 && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert(
+                            "Clear Purchased Items",
+                            `Are you sure you want to remove all ${purchasedCount} purchased item(s) from your shopping list?`,
+                            [
+                              {
+                                text: "Cancel",
+                                style: "cancel",
+                              },
+                              {
+                                text: "Clear",
+                                style: "destructive",
+                                onPress: () => {
+                                  clearPurchased();
+                                },
+                              },
+                            ]
+                          );
+                        }}
+                        className="bg-charcoal-gray/10 rounded-lg px-3 py-1.5"
+                        activeOpacity={0.7}
+                      >
+                        <Text className="text-charcoal-gray font-semibold text-xs">
+                          Clear All
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            }}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingBottom: 80 }}
             stickySectionHeadersEnabled={false}

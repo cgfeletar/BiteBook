@@ -1,6 +1,9 @@
 /**
  * Maps ingredient names to grocery store aisles
  */
+
+import Fuse from "fuse.js";
+
 export type Aisle =
   | "Produce"
   | "Dairy"
@@ -26,181 +29,144 @@ export const AISLE_ORDER: Aisle[] = [
   "Other",
 ];
 
+// Keywords per aisle with context for ambiguous items
+const AISLE_KEYWORDS: Record<Aisle, string[]> = {
+  Produce: [
+    "apple",
+    "banana",
+    "orange",
+    "lettuce",
+    "tomato",
+    "onion",
+    "garlic",
+    "bell pepper",
+    "red pepper",
+    "green pepper",
+    "yellow pepper",
+    "orange pepper",
+    "jalapeño",
+    "habanero",
+    "carrot",
+    "celery",
+    "potato",
+    "spinach",
+    "mushroom",
+    "herb",
+    "basil",
+    "parsley",
+    "cilantro",
+    "lemon",
+    "lime",
+    "avocado",
+    "cucumber",
+    "zucchini",
+    "broccoli",
+    "cauliflower",
+  ],
+  "Meat & Seafood": [
+    "chicken",
+    "beef",
+    "pork",
+    "turkey",
+    "lamb",
+    "fish",
+    "salmon",
+    "tuna",
+    "shrimp",
+    "crab",
+    "lobster",
+    "bacon",
+    "sausage",
+    "ham",
+  ],
+  Dairy: [
+    "milk",
+    "cheese",
+    "butter",
+    "cream",
+    "yogurt",
+    "sour cream",
+    "cottage cheese",
+    "egg",
+    "mozzarella",
+    "cheddar",
+    "parmesan",
+  ],
+  Bakery: ["bread", "bagel", "croissant", "roll", "bun", "tortilla", "pita"],
+  Frozen: ["frozen", "ice cream", "frozen vegetable", "frozen fruit"],
+  Baking: [
+    "flour",
+    "sugar",
+    "salt",
+    "peppercorn",
+    "pepper",
+    "chili powder",
+    "spice",
+    "oil",
+    "vinegar",
+    "seed",
+    "honey",
+    "syrup",
+    "baking",
+    "vanilla",
+    "cocoa",
+    "chocolate",
+    "chocolate chip",
+    "baking powder",
+    "baking soda",
+    "yeast",
+    "cinnamon",
+    "nutmeg",
+  ],
+  Pantry: [
+    "pasta",
+    "spaghetti",
+    "penne",
+    "macaroni",
+    "noodle",
+    "rice",
+    "quinoa",
+    "barley",
+    "oats",
+    "oatmeal",
+    "bean",
+    "lentil",
+    "chickpea",
+    "black bean",
+    "kidney bean",
+    "canned",
+    "broth",
+    "stock",
+    "marinara",
+    "pasta sauce",
+    "tomato sauce",
+    "crushed tomato",
+    "diced tomato",
+    "coconut milk",
+    "coconut cream",
+  ],
+  Beverages: ["juice", "soda", "water", "coffee", "tea", "wine", "beer"],
+  Snacks: ["chip", "cracker", "cookie", "pretzel", "popcorn"],
+  Other: [], // fallback
+};
+
+// Helper: fuzzy match ingredient against keywords
+function fuzzyMatch(name: string, keywords: string[]): boolean {
+  const fuse = new Fuse(keywords, { threshold: 0.3 });
+  return fuse.search(name).length > 0;
+}
+
 /**
- * Maps ingredient names to grocery store aisles based on common patterns
+ * Returns the aisle for a given ingredient
  */
 export function getAisleForIngredient(ingredientName: string): Aisle {
   const name = ingredientName.toLowerCase().trim();
 
-  // Produce
-  if (
-    name.includes("apple") ||
-    name.includes("banana") ||
-    name.includes("orange") ||
-    name.includes("lettuce") ||
-    name.includes("tomato") ||
-    name.includes("onion") ||
-    name.includes("garlic") ||
-    name.includes("pepper") ||
-    name.includes("carrot") ||
-    name.includes("celery") ||
-    name.includes("potato") ||
-    name.includes("spinach") ||
-    name.includes("mushroom") ||
-    name.includes("herb") ||
-    name.includes("basil") ||
-    name.includes("parsley") ||
-    name.includes("cilantro") ||
-    name.includes("lemon") ||
-    name.includes("lime") ||
-    name.includes("avocado") ||
-    name.includes("cucumber") ||
-    name.includes("zucchini") ||
-    name.includes("broccoli") ||
-    name.includes("cauliflower")
-  ) {
-    return "Produce";
-  }
-
-  // Meat & Seafood
-  if (
-    name.includes("chicken") ||
-    name.includes("beef") ||
-    name.includes("pork") ||
-    name.includes("turkey") ||
-    name.includes("lamb") ||
-    name.includes("fish") ||
-    name.includes("salmon") ||
-    name.includes("tuna") ||
-    name.includes("shrimp") ||
-    name.includes("crab") ||
-    name.includes("lobster") ||
-    name.includes("bacon") ||
-    name.includes("sausage") ||
-    name.includes("ham")
-  ) {
-    return "Meat & Seafood";
-  }
-
-  // Dairy
-  if (
-    name.includes("milk") ||
-    name.includes("cheese") ||
-    name.includes("butter") ||
-    name.includes("cream") ||
-    name.includes("yogurt") ||
-    name.includes("sour cream") ||
-    name.includes("cottage cheese") ||
-    name.includes("egg") ||
-    name.includes("mozzarella") ||
-    name.includes("cheddar") ||
-    name.includes("parmesan")
-  ) {
-    return "Dairy";
-  }
-
-  // Bakery
-  if (
-    name.includes("bread") ||
-    name.includes("bagel") ||
-    name.includes("croissant") ||
-    name.includes("roll") ||
-    name.includes("bun") ||
-    name.includes("tortilla") ||
-    name.includes("pita")
-  ) {
-    return "Bakery";
-  }
-
-  // Frozen
-  if (
-    name.includes("frozen") ||
-    name.includes("ice cream") ||
-    name.includes("frozen vegetable") ||
-    name.includes("frozen fruit")
-  ) {
-    return "Frozen";
-  }
-
-  // Baking (baking ingredients)
-  if (
-    name.includes("flour") ||
-    name.includes("sugar") ||
-    name.includes("salt") ||
-    name.includes("pepper") ||
-    name.includes("spice") ||
-    name.includes("oil") ||
-    name.includes("vinegar") ||
-    name.includes("seed") ||
-    name.includes("honey") ||
-    name.includes("syrup") ||
-    name.includes("baking") ||
-    name.includes("vanilla") ||
-    name.includes("cocoa") ||
-    name.includes("chocolate") ||
-    name.includes("chocolate chip") ||
-    name.includes("baking powder") ||
-    name.includes("baking soda") ||
-    name.includes("yeast") ||
-    name.includes("cinnamon") ||
-    name.includes("nutmeg")
-  ) {
-    return "Baking";
-  }
-
-  // Beverages
-  if (
-    name.includes("juice") ||
-    name.includes("soda") ||
-    name.includes("water") ||
-    name.includes("coffee") ||
-    name.includes("tea") ||
-    name.includes("wine") ||
-    name.includes("beer")
-  ) {
-    return "Beverages";
-  }
-
-  // Pantry (dry goods, grains, canned items)
-  if (
-    name.includes("pasta") ||
-    name.includes("spaghetti") ||
-    name.includes("penne") ||
-    name.includes("macaroni") ||
-    name.includes("noodle") ||
-    name.includes("rice") ||
-    name.includes("quinoa") ||
-    name.includes("barley") ||
-    name.includes("oats") ||
-    name.includes("oatmeal") ||
-    name.includes("bean") ||
-    name.includes("lentil") ||
-    name.includes("chickpea") ||
-    name.includes("black bean") ||
-    name.includes("kidney bean") ||
-    name.includes("canned") ||
-    name.includes("broth") ||
-    name.includes("stock") ||
-    name.includes("marinara") ||
-    name.includes("pasta sauce") ||
-    name.includes("tomato sauce") ||
-    name.includes("crushed tomato") ||
-    name.includes("diced tomato") ||
-    name.includes("coconut milk") ||
-    name.includes("coconut cream")
-  ) {
-    return "Pantry";
-  }
-
-  // Snacks
-  if (
-    name.includes("chip") ||
-    name.includes("cracker") ||
-    name.includes("cookie") ||
-    name.includes("pretzel") ||
-    name.includes("popcorn")
-  ) {
-    return "Snacks";
+  for (const aisle of AISLE_ORDER) {
+    const keywords = AISLE_KEYWORDS[aisle];
+    if (fuzzyMatch(name, keywords)) {
+      return aisle;
+    }
   }
 
   return "Other";

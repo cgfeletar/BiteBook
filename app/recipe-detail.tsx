@@ -377,6 +377,43 @@ export default function RecipeDetailScreen() {
     return Array.from(ingredientMap.values());
   }, [recipeData?.ingredients]);
 
+  // Get recipe ID for tracking shopping list items
+  const recipeId = useMemo((): string | undefined => {
+    if (
+      recipeData &&
+      "id" in recipeData &&
+      recipeData.id &&
+      typeof recipeData.id === "string"
+    ) {
+      return recipeData.id;
+    }
+    if (params.id && typeof params.id === "string") {
+      return params.id;
+    }
+    return undefined;
+  }, [recipeData, params.id]);
+
+  // Check if ingredients from this recipe are in shopping list
+  // Text should remain until items are deleted, checked off (purchased), or moved to pantry
+  const shoppingListStatus = useMemo(() => {
+    if (!recipeId) {
+      return { hasAdded: false };
+    }
+
+    // Find all shopping list items that came from this recipe
+    const recipeShoppingItems = shoppingItems.filter(
+      (item) => item.originalRecipeId === recipeId
+    );
+
+    // Check if any items are still unpurchased (not checked off)
+    // If all items are purchased, deleted, or moved to pantry, they won't be in the list
+    const hasUnpurchasedItems = recipeShoppingItems.some(
+      (item) => !item.isPurchased
+    );
+
+    return { hasAdded: recipeShoppingItems.length > 0 && hasUnpurchasedItems };
+  }, [recipeId, shoppingItems]);
+
   // Split ingredients into two groups (considering both pantry and checked items)
   const { ingredientsInPantry, ingredientsToBuy } = useMemo(() => {
     if (!combinedIngredients || combinedIngredients.length === 0) {
@@ -2292,24 +2329,55 @@ export default function RecipeDetailScreen() {
                             {/* Need to Buy Section */}
                             {ingredientsToBuy.length > 0 && (
                               <View className="mb-6">
-                                {/* Add to Shopping List Button */}
-                                <RNTouchableOpacity
-                                  onPress={() => {
-                                    addItemsToShoppingList(ingredientsToBuy);
-                                    Alert.alert(
-                                      "Added to Shopping List",
-                                      `${ingredientsToBuy.length} ingredient(s) added to your shopping list.`
-                                    );
-                                  }}
-                                  className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
-                                  activeOpacity={0.8}
-                                  style={{ minHeight: 44 }}
-                                >
-                                  <ShoppingBag size={20} color="#FAF9F7" />
-                                  <Text className="text-off-white text-base font-semibold ml-2">
-                                    Add All to Shopping List
-                                  </Text>
-                                </RNTouchableOpacity>
+                                {/* Add to Shopping List Button or Status Text */}
+                                {shoppingListStatus.hasAdded ? (
+                                  <View className="bg-soft-beige rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center">
+                                    <Check size={20} color="#5A6E6C" />
+                                    <Text className="text-dark-sage text-base font-semibold ml-2">
+                                      Ingredients added to shopping list
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <RNTouchableOpacity
+                                    onPress={() => {
+                                      // Use original recipe ingredients, not combined ones, to preserve exact quantities
+                                      const originalIngredientsToBuy =
+                                        recipeData?.ingredients?.filter(
+                                          (ing) => {
+                                            const normalizedName = ing.name
+                                              .toLowerCase()
+                                              .trim();
+                                            const isInPantry = pantryItems.some(
+                                              (item) =>
+                                                item.name
+                                                  .toLowerCase()
+                                                  .trim() === normalizedName
+                                            );
+                                            const isChecked = Array.from(
+                                              checkedIngredients
+                                            ).some(
+                                              (checked) =>
+                                                checked.toLowerCase().trim() ===
+                                                normalizedName
+                                            );
+                                            return !isInPantry && !isChecked;
+                                          }
+                                        ) || [];
+                                      addItemsToShoppingList(
+                                        originalIngredientsToBuy,
+                                        recipeId
+                                      );
+                                    }}
+                                    className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
+                                    activeOpacity={0.8}
+                                    style={{ minHeight: 44 }}
+                                  >
+                                    <ShoppingBag size={20} color="#FAF9F7" />
+                                    <Text className="text-off-white text-base font-semibold ml-2">
+                                      Add All to Shopping List
+                                    </Text>
+                                  </RNTouchableOpacity>
+                                )}
                                 <View className="flex-row items-center justify-between mb-4">
                                   <Text className="text-xl font-bold text-charcoal-gray">
                                     Need to Buy
