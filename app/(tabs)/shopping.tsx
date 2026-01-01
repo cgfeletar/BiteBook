@@ -229,11 +229,37 @@ export default function ShoppingListScreen() {
             {decodeHtmlEntities(item.name)}
           </Text>
           {!isPantryMode && (() => {
+            // Log the item data for debugging
+            console.log('🟢 Rendering shopping list item:', {
+              name: item.name,
+              quantity: item.quantity,
+              unit: item.unit,
+              quantityType: typeof item.quantity,
+              fullItem: item,
+            });
+            
+            // Only show quantity/unit if we have a valid quantity
+            if (item.quantity === null || item.quantity === undefined) return null;
+            
             const formattedQty = formatQuantity(item.quantity, item.unit);
+            console.log('🟡 Formatted quantity:', {
+              originalQuantity: item.quantity,
+              formattedQty: formattedQty,
+              unit: item.unit,
+            });
+            
             if (!formattedQty) return null;
+            
+            // Build the display string: "4 1/2 cups" (not "4 1/2" + " cups" separately)
+            const displayText = item.unit 
+              ? `${formattedQty} ${item.unit}`
+              : formattedQty;
+            
+            console.log('🟣 Final display text:', displayText);
+            
             return (
               <Text className="text-sm text-charcoal-gray/60">
-                {formattedQty}{item.unit ? ` ${item.unit}` : ''}
+                {displayText}
               </Text>
             );
           })()}
