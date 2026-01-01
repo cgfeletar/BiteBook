@@ -7,7 +7,8 @@ import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
-import { formatQuantity, formatDecimal } from "@/src/utils/fractionFormatter";
+import { formatDecimal, formatQuantity } from "@/src/utils/fractionFormatter";
+import { decodeHtmlEntities } from "@/src/utils/htmlDecoder";
 import { Image } from "expo-image";
 import * as Notifications from "expo-notifications";
 import { router, useLocalSearchParams } from "expo-router";
@@ -21,6 +22,7 @@ import {
   Clock,
   ExternalLink,
   MoreVertical,
+  Package,
   Pause,
   Pencil,
   Play,
@@ -59,6 +61,7 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -97,6 +100,7 @@ export default function RecipeDetailScreen() {
   const addRecipe = useRecipeBooksStore((state) => state.addRecipe);
   const pantryItems = usePantryStore((state) => state.items);
   const addPantryItem = usePantryStore((state) => state.addItem);
+  const deletePantryItem = usePantryStore((state) => state.deleteItem);
   const addCookingSession = useProgressStore(
     (state) => state.addCookingSession
   );
@@ -114,7 +118,34 @@ export default function RecipeDetailScreen() {
   const [isEditingInstructions, setIsEditingInstructions] = useState(false);
   const [editedIngredients, setEditedIngredients] = useState<Ingredient[]>([]);
   const [editedSteps, setEditedSteps] = useState<Step[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const isImported = params.isImported === "true";
+
+  // Toast animation shared values
+  const toastOpacity = useSharedValue(0);
+  const toastTranslateY = useSharedValue(100);
+
+  // Toast animation
+  useEffect(() => {
+    if (toastMessage) {
+      // Show toast
+      toastOpacity.value = withTiming(1, { duration: 300 });
+      toastTranslateY.value = withTiming(0, { duration: 300 });
+      // Hide toast after 2 seconds
+      setTimeout(() => {
+        toastOpacity.value = withTiming(0, { duration: 300 });
+        toastTranslateY.value = withTiming(100, { duration: 300 });
+        setTimeout(() => setToastMessage(null), 300);
+      }, 2000);
+    }
+  }, [toastMessage, toastOpacity, toastTranslateY]);
+
+  const toastAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: toastOpacity.value,
+      transform: [{ translateY: toastTranslateY.value }],
+    };
+  });
 
   // Timer states for each step
   const [timerStates, setTimerStates] = useState<
@@ -624,7 +655,9 @@ export default function RecipeDetailScreen() {
       // Convert to cups
       if (fromUnit.toLowerCase().includes("g")) {
         const converted = quantity / 200; // 200g ≈ 1 cup
-        return Number.isInteger(converted) ? converted : parseFloat(converted.toFixed(2));
+        return Number.isInteger(converted)
+          ? converted
+          : parseFloat(converted.toFixed(2));
       }
       return quantity; // Already in cups or unknown
     }
@@ -1874,6 +1907,38 @@ export default function RecipeDetailScreen() {
                       index: number,
                       isInPantry: boolean
                     ) => {
+                      // Handle moving ingredient to/from pantry
+                      const handleMoveIngredient = () => {
+                        if (isInPantry) {
+                          // Move from pantry back to "Need to Buy"
+                          const pantryItem = pantryItems.find(
+                            (item) =>
+                              item.name.toLowerCase().trim() ===
+                              ingredient.name.toLowerCase().trim()
+                          );
+                          if (pantryItem) {
+                            deletePantryItem(pantryItem.id);
+                          }
+                          // Also remove from checked ingredients if it's there
+                          setCheckedIngredients((prev) => {
+                            const newSet = new Set(prev);
+                            newSet.delete(ingredient.name);
+                            return newSet;
+                          });
+                          // Show toast
+                          setToastMessage("Moved to Need to Buy");
+                        } else {
+                          // Move from "Need to Buy" to pantry
+                          addPantryItem({
+                            name: ingredient.name,
+                            quantity: ingredient.quantity || 1,
+                            unit: ingredient.unit || "item",
+                          });
+                          // Show toast
+                          setToastMessage("Moved to Pantry");
+                        }
+                      };
+
                       // Handle "to taste" ingredients - don't scale or convert
                       if (ingredient.unit === "to taste") {
                         const checked = isIngredientChecked(ingredient.name);
@@ -1884,39 +1949,36 @@ export default function RecipeDetailScreen() {
                         );
 
                         return (
-                          <RNTouchableOpacity
+                          <View
                             key={`${ingredient.name}-${index}`}
                             className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
-                            activeOpacity={0.7}
                             style={{ minHeight: 44 }}
-                            onPress={() =>
-                              handleIngredientCheck(ingredient.name, ingredient)
-                            }
                           >
-                            {/* Checkbox - only show for items in pantry */}
-                            {isInPantry && (
-                              <View
-                                className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
-                                  checked || inPantry
-                                    ? "bg-dark-sage border-dark-sage"
-                                    : "border-charcoal-gray/30"
-                                }`}
-                              >
-                                {(checked || inPantry) && (
-                                  <Check size={16} color="#FAF9F7" />
-                                )}
-                              </View>
-                            )}
-                            <Text
-                              className={`flex-1 text-base ${
-                                checked || inPantry
-                                  ? "text-charcoal-gray/60 line-through"
-                                  : "text-charcoal-gray"
-                              }`}
-                            >
-                              {ingredient.name} to taste
+                            <Text className="flex-1 text-base text-charcoal-gray">
+                              {decodeHtmlEntities(ingredient.name)} to taste
                             </Text>
-                          </RNTouchableOpacity>
+                            {/* Move button */}
+                            <RNTouchableOpacity
+                              onPress={handleMoveIngredient}
+                              className="ml-3 p-2"
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              activeOpacity={0.7}
+                            >
+                              {isInPantry ? (
+                                <ShoppingBag
+                                  size={18}
+                                  color="#5A6E6C"
+                                  pointerEvents="none"
+                                />
+                              ) : (
+                                <Package
+                                  size={18}
+                                  color="#5A6E6C"
+                                  pointerEvents="none"
+                                />
+                              )}
+                            </RNTouchableOpacity>
+                          </View>
                         );
                       }
 
@@ -1990,7 +2052,9 @@ export default function RecipeDetailScreen() {
                       const quantityToFormat =
                         typeof displayQuantity === "number"
                           ? displayQuantity
-                          : parseFloat(displayQuantity.toString()) || 0;
+                          : typeof displayQuantity === "string"
+                          ? parseFloat(displayQuantity) || 0
+                          : 0;
 
                       // Only format and display quantity if it's greater than 0
                       const shouldShowQuantity = quantityToFormat > 0;
@@ -2006,36 +2070,12 @@ export default function RecipeDetailScreen() {
                       );
 
                       return (
-                        <RNTouchableOpacity
+                        <View
                           key={`${ingredient.name}-${index}`}
                           className="flex-row items-center mb-3 bg-soft-beige rounded-xl px-4 py-4"
-                          activeOpacity={0.7}
                           style={{ minHeight: 44 }}
-                          onPress={() =>
-                            handleIngredientCheck(ingredient.name, ingredient)
-                          }
                         >
-                          {/* Checkbox - only show for items in pantry */}
-                          {isInPantry && (
-                            <View
-                              className={`w-6 h-6 rounded border-2 mr-3 items-center justify-center ${
-                                checked || inPantry
-                                  ? "bg-dark-sage border-dark-sage"
-                                  : "border-charcoal-gray/30"
-                              }`}
-                            >
-                              {(checked || inPantry) && (
-                                <Check size={16} color="#FAF9F7" />
-                              )}
-                            </View>
-                          )}
-                          <Text
-                            className={`flex-1 text-base ${
-                              checked || inPantry
-                                ? "text-charcoal-gray/60 line-through"
-                                : "text-charcoal-gray"
-                            }`}
-                          >
+                          <Text className="flex-1 text-base text-charcoal-gray">
                             {shouldShowQuantity && (
                               <>
                                 <Text className="font-semibold">
@@ -2051,9 +2091,30 @@ export default function RecipeDetailScreen() {
                                 )}{" "}
                               </>
                             )}
-                            {ingredient.name}
+                            {decodeHtmlEntities(ingredient.name)}
                           </Text>
-                        </RNTouchableOpacity>
+                          {/* Move button */}
+                          <RNTouchableOpacity
+                            onPress={handleMoveIngredient}
+                            className="ml-3 p-2"
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            activeOpacity={0.7}
+                          >
+                            {isInPantry ? (
+                              <ShoppingBag
+                                size={18}
+                                color="#5A6E6C"
+                                pointerEvents="none"
+                              />
+                            ) : (
+                              <Package
+                                size={18}
+                                color="#5A6E6C"
+                                pointerEvents="none"
+                              />
+                            )}
+                          </RNTouchableOpacity>
+                        </View>
                       );
                     };
 
@@ -2174,7 +2235,7 @@ export default function RecipeDetailScreen() {
                                   />
                                   {/* Name Input */}
                                   <TextInput
-                                    value={ingredient.name}
+                                    value={decodeHtmlEntities(ingredient.name)}
                                     onChangeText={(text) =>
                                       handleUpdateIngredient(
                                         index,
@@ -2376,7 +2437,9 @@ export default function RecipeDetailScreen() {
                                             recipeData.nutritionalInfo
                                               .calories / servings
                                           )
-                                        : formatDecimal(recipeData.nutritionalInfo.calories)}
+                                        : formatDecimal(
+                                            recipeData.nutritionalInfo.calories
+                                          )}
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
                                           {" "}
@@ -2417,7 +2480,9 @@ export default function RecipeDetailScreen() {
                                             recipeData.nutritionalInfo.protein /
                                               servings
                                           )
-                                        : formatDecimal(recipeData.nutritionalInfo.protein)}
+                                        : formatDecimal(
+                                            recipeData.nutritionalInfo.protein
+                                          )}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2504,7 +2569,9 @@ export default function RecipeDetailScreen() {
                                             recipeData.nutritionalInfo.fat /
                                               servings
                                           )
-                                        : formatDecimal(recipeData.nutritionalInfo.fat)}
+                                        : formatDecimal(
+                                            recipeData.nutritionalInfo.fat
+                                          )}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -2545,7 +2612,10 @@ export default function RecipeDetailScreen() {
                                             (recipeData.nutritionalInfo.fiber ||
                                               0) / servings
                                           )
-                                        : formatDecimal(recipeData.nutritionalInfo.fiber || 0)}
+                                        : formatDecimal(
+                                            recipeData.nutritionalInfo.fiber ||
+                                              0
+                                          )}
                                       g
                                       {viewByServing && (
                                         <Text className="text-charcoal-gray/60 text-sm">
@@ -3509,7 +3579,7 @@ export default function RecipeDetailScreen() {
                     />
                     <View className="flex-1">
                       <Text className="text-charcoal-gray text-base font-semibold">
-                        {item.name}
+                        {decodeHtmlEntities(item.name)}
                       </Text>
                       {item.description && (
                         <Text className="text-charcoal-gray/60 text-sm mt-1">
@@ -3545,6 +3615,29 @@ export default function RecipeDetailScreen() {
         }}
         message="Please sign in to save recipes"
       />
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              bottom: 100,
+              left: 24,
+              right: 24,
+              zIndex: 9999,
+            },
+            toastAnimatedStyle,
+          ]}
+          pointerEvents="none"
+        >
+          <View className="bg-dark-sage rounded-xl px-6 py-4 shadow-lg">
+            <Text className="text-off-white text-base font-semibold text-center">
+              {toastMessage}
+            </Text>
+          </View>
+        </Animated.View>
+      )}
     </GestureHandlerRootView>
   );
 }

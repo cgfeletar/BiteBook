@@ -13,6 +13,7 @@ module.exports = {
         "warm-sand": "#E7D8C9",
         "sage-green": "#C7D2C0",
         "dark-sage": "#5A6E6C",
+        "light-gray": "#dbdbdb",
         mocha: "#A1806F",
         charcoal: "#3E3E3E",
         redwood: "#7A2E2A",

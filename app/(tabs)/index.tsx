@@ -5,7 +5,6 @@ import { usePantryStore } from "@/src/store/usePantryStore";
 import { useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Recipe } from "@/src/types";
-import { Image } from "expo-image";
 import { router } from "expo-router";
 import { Timestamp } from "firebase/firestore";
 import { ChevronDown, Filter, Search, User } from "lucide-react-native";
@@ -583,11 +582,6 @@ export default function RecipeFeed() {
       <View style={{ flex: 1 }} className="flex-1">
         {/* Header Row */}
         <View className="flex-row items-center justify-between px-6 pt-4 pb-4">
-          <Image
-            source={require("@/assets/images/BiteBookLogo.png")}
-            style={{ width: 40, height: 40, marginRight: 12 }}
-            contentFit="contain"
-          />
           <Text
             className="text-2xl font-bold text-charcoal"
             style={{ fontFamily: "Lora_700Bold" }}

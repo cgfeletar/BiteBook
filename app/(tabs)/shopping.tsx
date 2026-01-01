@@ -8,6 +8,7 @@ import {
   getAisleForIngredient,
 } from "@/src/utils/aisleMapper";
 import { formatQuantity } from "@/src/utils/fractionFormatter";
+import { decodeHtmlEntities } from "@/src/utils/htmlDecoder";
 import {
   ArrowRight,
   Check,
@@ -17,10 +18,13 @@ import {
   Trash2,
   X,
 } from "lucide-react-native";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   SectionList,
   Text,
   TextInput,
@@ -53,6 +57,22 @@ export default function ShoppingListScreen() {
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Listen to keyboard events to adjust form position
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   // Convert pantry items to shopping items format for display
   const pantryItemsAsShopping: ShoppingItem[] = pantryItems.map((item) => ({
@@ -206,13 +226,17 @@ export default function ShoppingListScreen() {
                 : "text-charcoal-gray font-semibold"
             }`}
           >
-            {item.name}
+            {decodeHtmlEntities(item.name)}
           </Text>
-          {!isPantryMode && (
-            <Text className="text-sm text-charcoal-gray/60">
-              {formatQuantity(item.quantity, item.unit)} {item.unit}
-            </Text>
-          )}
+          {!isPantryMode && (() => {
+            const formattedQty = formatQuantity(item.quantity, item.unit);
+            if (!formattedQty) return null;
+            return (
+              <Text className="text-sm text-charcoal-gray/60">
+                {formattedQty}{item.unit ? ` ${item.unit}` : ''}
+              </Text>
+            );
+          })()}
         </View>
 
         {/* Move Button */}
@@ -240,7 +264,10 @@ export default function ShoppingListScreen() {
           }}
           activeOpacity={0.7}
         >
-          <View className="bg-dark-sage/10 rounded-lg px-2 py-2 flex-row items-center" pointerEvents="none">
+          <View
+            className="bg-dark-sage/10 rounded-lg px-2 py-2 flex-row items-center"
+            pointerEvents="none"
+          >
             {isPantryMode ? (
               <>
                 <ArrowRight size={14} color="#5A6E6C" />
@@ -287,236 +314,248 @@ export default function ShoppingListScreen() {
 
   return (
     <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
-      {/* Header with Toggle */}
-      <View className="px-6 py-4 border-b border-soft-beige">
-        <View className="flex-row items-center justify-between mb-4">
-          <Text className="text-2xl font-bold text-charcoal-gray">
-            {isPantryMode ? "Pantry" : "Shopping List"}
-          </Text>
-          <View className="flex-row items-center gap-2">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        {/* Header with Toggle */}
+        <View className="px-6 py-4 border-b border-soft-beige">
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-2xl font-bold text-charcoal-gray">
+              {isPantryMode ? "Pantry" : "Shopping List"}
+            </Text>
+            <View className="flex-row items-center gap-2">
+              <TouchableOpacity
+                onPress={() => {
+                  if (showAddForm) {
+                    setShowAddForm(false);
+                    setNewItemName("");
+                    setNewItemQuantity("");
+                    setNewItemUnit("");
+                  } else {
+                    setShowAddForm(true);
+                  }
+                }}
+                className="flex-row items-center rounded-lg px-3 py-2 bg-warm-sand"
+                activeOpacity={0.7}
+              >
+                <Plus size={16} color="#5A6E6C" style={{ marginRight: 6 }} />
+                <Text
+                  className={`font-semibold text-sm ${
+                    showAddForm ? "text-charcoal-gray" : "text-dark-sage"
+                  }`}
+                >
+                  Add Item
+                </Text>
+              </TouchableOpacity>
+              {currentItems.length > 0 && !showAddForm && (
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      `Clear ${isPantryMode ? "Pantry" : "Shopping List"}`,
+                      `Are you sure you want to clear all items from your ${
+                        isPantryMode ? "pantry" : "shopping list"
+                      }? This action cannot be undone.`,
+                      [
+                        {
+                          text: "Cancel",
+                          style: "cancel",
+                        },
+                        {
+                          text: "Clear All",
+                          style: "destructive",
+                          onPress: () => {
+                            if (isPantryMode) {
+                              clearPantry();
+                            } else {
+                              clearShoppingList();
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                  className="flex-row items-center bg-charcoal-gray/10 rounded-lg px-3 py-2"
+                  activeOpacity={0.7}
+                >
+                  <Trash2
+                    size={16}
+                    color="#3E3E3E"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text className="text-charcoal-gray font-semibold text-sm">
+                    Clear All
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Toggle Button */}
+          <View className="flex-row bg-soft-beige rounded-xl p-1">
             <TouchableOpacity
-              onPress={() => {
-                if (showAddForm) {
+              onPress={() => setIsPantryMode(false)}
+              className={`flex-1 py-2 rounded-lg items-center flex-row justify-center ${
+                !isPantryMode ? "bg-dark-sage" : ""
+              }`}
+              activeOpacity={0.7}
+              style={{ minHeight: 44 }}
+            >
+              <ShoppingBag
+                size={18}
+                color={!isPantryMode ? "#FAF9F7" : "#3E3E3E"}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                className={`font-semibold ${
+                  !isPantryMode ? "text-off-white" : "text-charcoal-gray"
+                }`}
+              >
+                Shopping List
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setIsPantryMode(true)}
+              className={`flex-1 py-2 rounded-lg items-center flex-row justify-center ${
+                isPantryMode ? "bg-dark-sage" : ""
+              }`}
+              activeOpacity={0.7}
+              style={{ minHeight: 44 }}
+            >
+              <Package
+                size={18}
+                color={isPantryMode ? "#FAF9F7" : "#3E3E3E"}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                className={`font-semibold ${
+                  isPantryMode ? "text-off-white" : "text-charcoal-gray"
+                }`}
+              >
+                Pantry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* List */}
+        {isPantryMode ? (
+          <FlatList
+            data={currentItems}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingVertical: 12, paddingBottom: 80 }}
+            ListEmptyComponent={
+              <View className="items-center justify-center py-12 px-6">
+                <Text className="text-charcoal-gray/60 text-base text-center">
+                  Your pantry is empty
+                </Text>
+                <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
+                  Tap "Add Item" to add items
+                </Text>
+              </View>
+            }
+          />
+        ) : (
+          <SectionList
+            sections={groupedByAisle}
+            renderItem={renderItem}
+            renderSectionHeader={({ section: { title } }) => (
+              <View className="px-4 py-3 bg-warm-sand/50">
+                <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
+                  {title}
+                </Text>
+              </View>
+            )}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingBottom: 80 }}
+            stickySectionHeadersEnabled={false}
+            ListEmptyComponent={
+              <View className="items-center justify-center py-12 px-6">
+                <Text className="text-charcoal-gray/60 text-base text-center">
+                  Your shopping list is empty
+                </Text>
+                <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
+                  Tap "Add Item" to add items
+                </Text>
+              </View>
+            }
+          />
+        )}
+
+        {/* Add Item Form */}
+        {showAddForm && (
+          <View
+            className="bg-dark-sage border-t border-sage-green/30 px-6 py-4 absolute bottom-0 left-0 right-0"
+            style={{
+              paddingBottom:
+                Platform.OS === "ios" ? Math.max(80, keyboardHeight) : 80,
+              marginBottom: Platform.OS === "android" ? keyboardHeight : 0,
+            }}
+          >
+            <View className="mb-3">
+              <Text className="text-sm text-off-white mb-2 ml-1">
+                Item Name
+              </Text>
+              <TextInput
+                className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
+                placeholder="e.g., Sugar"
+                placeholderTextColor="#9CA3AF"
+                value={newItemName}
+                onChangeText={setNewItemName}
+                autoFocus
+              />
+            </View>
+            <View className="flex-row mb-3">
+              <View className="flex-1 mr-2">
+                <Text className="text-sm text-off-white mb-2 ml-1">
+                  Quantity
+                </Text>
+                <TextInput
+                  className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
+                  placeholder="1"
+                  placeholderTextColor="#9CA3AF"
+                  value={newItemQuantity}
+                  onChangeText={setNewItemQuantity}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <View className="flex-1 ml-2">
+                <Text className="text-sm text-off-white mb-2 ml-1">Unit</Text>
+                <TextInput
+                  className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
+                  placeholder="cup"
+                  placeholderTextColor="#9CA3AF"
+                  value={newItemUnit}
+                  onChangeText={setNewItemUnit}
+                />
+              </View>
+            </View>
+            <View className="flex-row">
+              <TouchableOpacity
+                onPress={() => {
                   setShowAddForm(false);
                   setNewItemName("");
                   setNewItemQuantity("");
                   setNewItemUnit("");
-                } else {
-                  setShowAddForm(true);
-                }
-              }}
-              className={`flex-row items-center rounded-lg px-3 py-2 ${
-                showAddForm ? "bg-charcoal-gray/10" : "bg-warm-sand"
-              }`}
-              activeOpacity={0.7}
-            >
-              <Plus size={16} color="#5A6E6C" style={{ marginRight: 6 }} />
-              <Text
-                className={`font-semibold text-sm ${
-                  showAddForm ? "text-charcoal-gray" : "text-dark-sage"
-                }`}
-              >
-                Add Item
-              </Text>
-            </TouchableOpacity>
-            {currentItems.length > 0 && !showAddForm && (
-              <TouchableOpacity
-                onPress={() => {
-                  Alert.alert(
-                    `Clear ${isPantryMode ? "Pantry" : "Shopping List"}`,
-                    `Are you sure you want to clear all items from your ${
-                      isPantryMode ? "pantry" : "shopping list"
-                    }? This action cannot be undone.`,
-                    [
-                      {
-                        text: "Cancel",
-                        style: "cancel",
-                      },
-                      {
-                        text: "Clear All",
-                        style: "destructive",
-                        onPress: () => {
-                          if (isPantryMode) {
-                            clearPantry();
-                          } else {
-                            clearShoppingList();
-                          }
-                        },
-                      },
-                    ]
-                  );
                 }}
-                className="flex-row items-center bg-charcoal-gray/10 rounded-lg px-3 py-2"
+                className="flex-1 bg-light-gray rounded-xl py-3 items-center justify-center mr-2 border border-off-white/30"
                 activeOpacity={0.7}
               >
-                <Trash2 size={16} color="#3E3E3E" style={{ marginRight: 6 }} />
-                <Text className="text-charcoal-gray font-semibold text-sm">
-                  Clear All
-                </Text>
+                <Text className="text-charcoal-gray font-semibold">Cancel</Text>
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
-        {/* Toggle Button */}
-        <View className="flex-row bg-soft-beige rounded-xl p-1">
-          <TouchableOpacity
-            onPress={() => setIsPantryMode(false)}
-            className={`flex-1 py-2 rounded-lg items-center flex-row justify-center ${
-              !isPantryMode ? "bg-dark-sage" : ""
-            }`}
-            activeOpacity={0.7}
-            style={{ minHeight: 44 }}
-          >
-            <ShoppingBag
-              size={18}
-              color={!isPantryMode ? "#FAF9F7" : "#3E3E3E"}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              className={`font-semibold ${
-                !isPantryMode ? "text-off-white" : "text-charcoal-gray"
-              }`}
-            >
-              Shopping List
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setIsPantryMode(true)}
-            className={`flex-1 py-2 rounded-lg items-center flex-row justify-center ${
-              isPantryMode ? "bg-dark-sage" : ""
-            }`}
-            activeOpacity={0.7}
-            style={{ minHeight: 44 }}
-          >
-            <Package
-              size={18}
-              color={isPantryMode ? "#FAF9F7" : "#3E3E3E"}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              className={`font-semibold ${
-                isPantryMode ? "text-off-white" : "text-charcoal-gray"
-              }`}
-            >
-              Pantry
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* List */}
-      {isPantryMode ? (
-        <FlatList
-          data={currentItems}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 80 }}
-          ListEmptyComponent={
-            <View className="items-center justify-center py-12 px-6">
-              <Text className="text-charcoal-gray/60 text-base text-center">
-                Your pantry is empty
-              </Text>
-              <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
-                Tap "Add Item" to add items
-              </Text>
-            </View>
-          }
-        />
-      ) : (
-        <SectionList
-          sections={groupedByAisle}
-          renderItem={renderItem}
-          renderSectionHeader={({ section: { title } }) => (
-            <View className="px-4 py-3 bg-warm-sand/50">
-              <Text className="text-charcoal-gray font-bold text-sm uppercase tracking-wide">
-                {title}
-              </Text>
-            </View>
-          )}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 80 }}
-          stickySectionHeadersEnabled={false}
-          ListEmptyComponent={
-            <View className="items-center justify-center py-12 px-6">
-              <Text className="text-charcoal-gray/60 text-base text-center">
-                Your shopping list is empty
-              </Text>
-              <Text className="text-charcoal-gray/40 text-sm text-center mt-2">
-                Tap "Add Item" to add items
-              </Text>
-            </View>
-          }
-        />
-      )}
-
-      {/* Add Item Form */}
-      {showAddForm && (
-        <View
-          className="bg-soft-beige border-t border-warm-sand px-6 py-4 absolute bottom-0 left-0 right-0"
-          style={{ paddingBottom: 80 }}
-        >
-          <View className="mb-3">
-            <Text className="text-sm text-charcoal-gray mb-2 ml-1">
-              Item Name
-            </Text>
-            <TextInput
-              className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
-              placeholder="e.g., Sugar"
-              placeholderTextColor="#9CA3AF"
-              value={newItemName}
-              onChangeText={setNewItemName}
-              autoFocus
-            />
-          </View>
-          <View className="flex-row mb-3">
-            <View className="flex-1 mr-2">
-              <Text className="text-sm text-charcoal-gray mb-2 ml-1">
-                Quantity
-              </Text>
-              <TextInput
-                className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
-                placeholder="1"
-                placeholderTextColor="#9CA3AF"
-                value={newItemQuantity}
-                onChangeText={setNewItemQuantity}
-                keyboardType="decimal-pad"
-              />
-            </View>
-            <View className="flex-1 ml-2">
-              <Text className="text-sm text-charcoal-gray mb-2 ml-1">Unit</Text>
-              <TextInput
-                className="bg-off-white rounded-xl px-4 py-3 text-charcoal-gray text-base"
-                placeholder="cup"
-                placeholderTextColor="#9CA3AF"
-                value={newItemUnit}
-                onChangeText={setNewItemUnit}
-              />
+              <TouchableOpacity
+                onPress={addItem}
+                className="flex-1 bg-warm-sand rounded-xl py-3 items-center justify-center ml-2"
+                activeOpacity={0.7}
+              >
+                <Text className="text-charcoal-gray font-semibold">Add</Text>
+              </TouchableOpacity>
             </View>
           </View>
-          <View className="flex-row">
-            <TouchableOpacity
-              onPress={() => {
-                setShowAddForm(false);
-                setNewItemName("");
-                setNewItemQuantity("");
-                setNewItemUnit("");
-              }}
-              className="flex-1 bg-warm-sand rounded-xl py-3 items-center justify-center mr-2"
-              activeOpacity={0.7}
-            >
-              <Text className="text-charcoal-gray font-semibold">Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={addItem}
-              className="flex-1 bg-dark-sage rounded-xl py-3 items-center justify-center ml-2"
-              activeOpacity={0.7}
-            >
-              <Text className="text-off-white font-semibold">Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

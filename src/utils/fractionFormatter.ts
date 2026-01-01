@@ -119,9 +119,14 @@ function calculateExactFraction(decimal: number, maxDenominator: number = 64): s
  * Leaves whole items (eggs, pieces, etc.) as-is
  */
 export function formatQuantity(
-  quantity: number,
+  quantity: number | null,
   unit: string | null
 ): string {
+  // Handle null quantity (for "to taste" ingredients)
+  if (quantity === null || quantity === undefined) {
+    return "";
+  }
+
   // Handle null unit (for "to taste" ingredients)
   if (!unit) {
     return quantity.toString();
