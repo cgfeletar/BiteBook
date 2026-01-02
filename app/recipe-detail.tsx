@@ -1822,14 +1822,14 @@ export default function RecipeDetailScreen() {
                         )}
                       </RNTouchableOpacity>
                       {showKitchenware && (
-                        <View className="flex-row flex-wrap mb-2">
+                        <View className="flex-row flex-wrap mt-2">
                           {kitchenware.map((item, index) => (
                             <View
                               key={index}
                               className="flex-row items-start mb-2"
                               style={{ width: "48%" }}
                             >
-                              <View className="w-2 h-2 rounded-full bg-dark-sage mr-3 mt-1.5 flex-shrink-0" />
+                              <View className="w-2 h-2 rounded-full bg-dark-sage mr-3 mt-2 flex-shrink-0" />
                               <Text className="text-base text-charcoal-gray flex-1 flex-wrap">
                                 {item}
                               </Text>
@@ -2536,6 +2536,19 @@ export default function RecipeDetailScreen() {
                                       </Text>
                                     </RNTouchableOpacity>
                                   )}
+                                </View>
+                                <View className="mb-3 items-end flex-row justify-end">
+                                  <Text className="text-xs text-charcoal-gray/50 text-right">
+                                    Tap{" "}
+                                  </Text>
+                                  <Package
+                                    size={12}
+                                    color="#9CA3AF"
+                                    style={{ marginHorizontal: 2 }}
+                                  />
+                                  <Text className="text-xs text-charcoal-gray/50 text-right">
+                                    to mark items you already have
+                                  </Text>
                                 </View>
                                 {ingredientsToBuy.map((ingredient, index) =>
                                   renderIngredient(ingredient, index, false)

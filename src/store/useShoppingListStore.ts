@@ -164,11 +164,6 @@ export const useShoppingListStore = create<ShoppingListState>()(
         originalRecipeId: recipeId,
         aisle: getAisleForIngredient(cleaned.name),
       };
-      console.log('🔵 Adding item to shopping list:', {
-        original: { name: ing.name, quantity: ing.quantity, unit: ing.unit },
-        cleaned: { name: cleaned.name, quantity: cleaned.quantity, unit: cleaned.unit },
-        fullItem: item,
-      });
       return item;
     });
 

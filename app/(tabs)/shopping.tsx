@@ -91,9 +91,21 @@ export default function ShoppingListScreen() {
   const groupedByAisle = useMemo(() => {
     if (isPantryMode) return [];
 
+    // Create a set of pantry item names (normalized) for quick lookup
+    const pantryNames = new Set(
+      pantryItems.map((item) => item.name.toLowerCase().trim())
+    );
+
+    // Filter out items that are in the pantry
     // Separate purchased and unpurchased items
-    const unpurchasedItems = shoppingItems.filter((item) => !item.isPurchased);
-    const purchasedItems = shoppingItems.filter((item) => item.isPurchased);
+    const unpurchasedItems = shoppingItems.filter(
+      (item) =>
+        !item.isPurchased && !pantryNames.has(item.name.toLowerCase().trim())
+    );
+    const purchasedItems = shoppingItems.filter(
+      (item) =>
+        item.isPurchased && !pantryNames.has(item.name.toLowerCase().trim())
+    );
 
     // Group unpurchased items by aisle
     const grouped: Record<string, ShoppingItem[]> = {};
@@ -139,7 +151,7 @@ export default function ShoppingListScreen() {
     }
 
     return sections;
-  }, [shoppingItems, isPantryMode]);
+  }, [shoppingItems, isPantryMode, pantryItems]);
 
   const addItem = () => {
     if (!newItemName.trim()) return;
@@ -235,43 +247,40 @@ export default function ShoppingListScreen() {
                 : "text-charcoal-gray font-semibold"
             }`}
           >
-            {decodeHtmlEntities(item.name)}
+            {(() => {
+              // Always display "eggs" (plural) for egg items, regardless of quantity
+              const normalizedName = item.name.toLowerCase().trim();
+              if (normalizedName === "egg") {
+                // Preserve capitalization style from original name
+                const isCapitalized =
+                  item.name.length > 0 &&
+                  item.name[0] === item.name[0].toUpperCase();
+                return decodeHtmlEntities(isCapitalized ? "Eggs" : "eggs");
+              }
+              return decodeHtmlEntities(item.name);
+            })()}
           </Text>
-          {!isPantryMode && (() => {
-            // Log the item data for debugging
-            console.log('🟢 Rendering shopping list item:', {
-              name: item.name,
-              quantity: item.quantity,
-              unit: item.unit,
-              quantityType: typeof item.quantity,
-              fullItem: item,
-            });
-            
-            // Only show quantity/unit if we have a valid quantity
-            if (item.quantity === null || item.quantity === undefined) return null;
-            
-            const formattedQty = formatQuantity(item.quantity, item.unit);
-            console.log('🟡 Formatted quantity:', {
-              originalQuantity: item.quantity,
-              formattedQty: formattedQty,
-              unit: item.unit,
-            });
-            
-            if (!formattedQty) return null;
-            
-            // Build the display string: "4 1/2 cups" (not "4 1/2" + " cups" separately)
-            const displayText = item.unit 
-              ? `${formattedQty} ${item.unit}`
-              : formattedQty;
-            
-            console.log('🟣 Final display text:', displayText);
-            
-            return (
-              <Text className="text-sm text-charcoal-gray/60">
-                {displayText}
-              </Text>
-            );
-          })()}
+          {!isPantryMode &&
+            (() => {
+              // Only show quantity/unit if we have a valid quantity
+              if (item.quantity === null || item.quantity === undefined)
+                return null;
+
+              const formattedQty = formatQuantity(item.quantity, item.unit);
+
+              if (!formattedQty) return null;
+
+              // Build the display string: "4 1/2 cups" (not "4 1/2" + " cups" separately)
+              const displayText = item.unit
+                ? `${formattedQty} ${item.unit}`
+                : formattedQty;
+
+              return (
+                <Text className="text-sm text-charcoal-gray/60">
+                  {displayText}
+                </Text>
+              );
+            })()}
         </View>
 
         {/* Move Button */}
@@ -473,6 +482,42 @@ export default function ShoppingListScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Helper Text for Shopping List */}
+        {!isPantryMode && groupedByAisle.length > 0 && (
+          <View className="px-6 py-2 flex-row justify-center items-center">
+            <Text className="text-xs text-charcoal-gray/50 text-center">
+              Tap{" "}
+            </Text>
+            <Package
+              size={12}
+              color="#9CA3AF"
+              style={{ marginHorizontal: 2 }}
+            />
+            <Text className="text-xs text-charcoal-gray/50 text-center">
+              {" "}
+              to mark items you already have
+            </Text>
+          </View>
+        )}
+
+        {/* Helper Text for Pantry */}
+        {isPantryMode && currentItems.length > 0 && (
+          <View className="px-6 pt-2 flex-row justify-center items-center">
+            <Text className="text-xs text-charcoal-gray/50 text-center">
+              Tap{" "}
+            </Text>
+            <ShoppingBag
+              size={12}
+              color="#9CA3AF"
+              style={{ marginHorizontal: 2 }}
+            />
+            <Text className="text-xs text-charcoal-gray/50 text-center">
+              {" "}
+              to add items to your shopping list
+            </Text>
+          </View>
+        )}
 
         {/* List */}
         {isPantryMode ? (

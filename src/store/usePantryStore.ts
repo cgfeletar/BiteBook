@@ -39,22 +39,52 @@ export const usePantryStore = create<PantryState>()(
       ],
 
       addItem: (itemData) => {
-        const newItem: PantryItem = {
-          ...itemData,
-          id: `pantry-${Date.now()}-${Math.random()}`,
-        };
-        set((state) => ({
-          items: [...state.items, newItem],
-        }));
+        set((state) => {
+          // Check if item already exists (normalized name comparison)
+          const normalizedNewName = itemData.name.toLowerCase().trim();
+          const existingItem = state.items.find(
+            (item) => item.name.toLowerCase().trim() === normalizedNewName
+          );
+
+          // If item already exists, don't add duplicate
+          if (existingItem) {
+            return state;
+          }
+
+          // Add new item
+          const newItem: PantryItem = {
+            ...itemData,
+            id: `pantry-${Date.now()}-${Math.random()}`,
+          };
+          return {
+            items: [...state.items, newItem],
+          };
+        });
       },
 
       addItems: (itemsData) => {
-        const newItems: PantryItem[] = itemsData.map((item) => ({
-          ...item,
-          id: `pantry-${Date.now()}-${Math.random()}`,
-        }));
-
         set((state) => {
+          // Create a set of existing pantry item names (normalized) for quick lookup
+          const existingNames = new Set(
+            state.items.map((item) => item.name.toLowerCase().trim())
+          );
+
+          // Filter out items that already exist in pantry
+          const itemsToAdd = itemsData.filter(
+            (item) => !existingNames.has(item.name.toLowerCase().trim())
+          );
+
+          // If no new items to add, return current state
+          if (itemsToAdd.length === 0) {
+            return state;
+          }
+
+          // Create new items with IDs
+          const newItems: PantryItem[] = itemsToAdd.map((item) => ({
+            ...item,
+            id: `pantry-${Date.now()}-${Math.random()}`,
+          }));
+
           // Merge with existing items using the same logic as shopping list
           const mergedItems = mergeIngredients(
             state.items.map((item) => ({

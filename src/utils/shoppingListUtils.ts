@@ -1,10 +1,91 @@
 import { ShoppingItem } from '../types';
 
 /**
- * Normalizes ingredient name for comparison (case-insensitive, trimmed)
+ * Normalizes ingredient name for comparison (case-insensitive, trimmed, handles plurals)
+ * Converts plural forms to singular for consistent matching
  */
 function normalizeName(name: string): string {
-  return name.toLowerCase().trim();
+  const normalized = name.toLowerCase().trim();
+  
+  // Handle empty strings
+  if (!normalized) return normalized;
+  
+  // Common irregular plurals that need special handling
+  const irregularPlurals: Record<string, string> = {
+    'eggs': 'egg',
+    'children': 'child',
+    'feet': 'foot',
+    'teeth': 'tooth',
+    'geese': 'goose',
+    'mice': 'mouse',
+    'leaves': 'leaf',
+    'knives': 'knife',
+    'lives': 'life',
+    'wives': 'wife',
+    'loaves': 'loaf',
+    'thieves': 'thief',
+    'shelves': 'shelf',
+    'wolves': 'wolf',
+    'calves': 'calf',
+    'halves': 'half',
+  };
+  
+  // Check for irregular plural first
+  if (irregularPlurals[normalized]) {
+    return irregularPlurals[normalized];
+  }
+  
+  // Handle regular plurals
+  // Words ending in 'ies' -> 'y' (e.g., "cherries" -> "cherry")
+  if (normalized.endsWith('ies') && normalized.length > 3) {
+    return normalized.slice(0, -3) + 'y';
+  }
+  
+  // Words ending in 'es' (but not 'ies') -> remove 'es' (e.g., "tomatoes" -> "tomato")
+  // Common patterns: words ending in s, x, z, ch, sh add 'es'
+  if (normalized.endsWith('es') && normalized.length > 2) {
+    const beforeEs = normalized.slice(0, -2);
+    const lastChar = beforeEs[beforeEs.length - 1];
+    // Only remove 'es' if it's a valid plural ending
+    if (['s', 'x', 'z', 'h'].includes(lastChar) || normalized.endsWith('ches') || normalized.endsWith('shes')) {
+      return beforeEs;
+    }
+  }
+  
+  // Words ending in 's' -> remove 's' (e.g., "eggs" -> "egg", "apples" -> "apple")
+  // But avoid removing 's' from words that end in 's' in singular form
+  if (normalized.endsWith('s') && normalized.length > 1) {
+    // Don't remove 's' from words that are typically singular but end in 's'
+    // These are mass nouns that don't have a plural form
+    const singularWordsEndingInS = ['rice', 'juice', 'sauce'];
+    if (!singularWordsEndingInS.includes(normalized)) {
+      return normalized.slice(0, -1);
+    }
+  }
+  
+  return normalized;
+}
+
+/**
+ * Gets the preferred (singular) form of an ingredient name
+ * Converts to singular while preserving original capitalization style
+ */
+function getPreferredName(name: string): string {
+  const normalized = normalizeName(name);
+  if (!normalized || normalized === name.toLowerCase().trim()) {
+    // No change needed, return original
+    return name.trim();
+  }
+  
+  // Preserve capitalization: if original was capitalized, capitalize the result
+  const original = name.trim();
+  const isCapitalized = original.length > 0 && original[0] === original[0].toUpperCase();
+  
+  if (isCapitalized && normalized.length > 0) {
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+  
+  return normalized;
 }
 
 /**
@@ -77,16 +158,27 @@ export function mergeIngredients(
     if (existingItem) {
       // Merge: add quantities and update the existing item
       existingItem.quantity += newItem.quantity;
+      // Update name to preferred (singular) form for consistency
+      // This ensures "egg" and "eggs" both become "egg"
+      // Since both names normalize to the same value, the map key doesn't change
+      const preferredName = getPreferredName(existingItem.name);
+      if (preferredName !== existingItem.name) {
+        existingItem.name = preferredName;
+      }
       // Preserve other properties from existing item (isPurchased, originalRecipeId, etc.)
     } else {
-      // New item: add to the list
+      // New item: add to the list with preferred (singular) name
+      const preferredName = getPreferredName(newItem.name);
       const itemToAdd: ShoppingItem = {
         ...newItem,
+        name: preferredName,
         // Ensure isPurchased is false for new items
         isPurchased: newItem.isPurchased || false,
       };
       mergedList.push(itemToAdd);
-      itemMap.set(key, itemToAdd);
+      // Use normalized name for the map key
+      const normalizedKey = `${normalizeName(preferredName)}|${normalizedUnit}`;
+      itemMap.set(normalizedKey, itemToAdd);
     }
   });
   
