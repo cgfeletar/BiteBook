@@ -153,23 +153,31 @@ export default function ShoppingListScreen() {
     return sections;
   }, [shoppingItems, isPantryMode, pantryItems]);
 
+  // Helper function to trim trailing punctuation
+  const trimTrailingPunctuation = (text: string): string => {
+    return text.replace(/[)\]}\.,;:!?\s]+$/, "").trim();
+  };
+
   const addItem = () => {
     if (!newItemName.trim()) return;
 
+    const cleanedName = trimTrailingPunctuation(newItemName.trim());
+    const cleanedUnit = trimTrailingPunctuation(newItemUnit.trim());
+
     if (isPantryMode) {
       addPantryItem({
-        name: newItemName.trim(),
+        name: cleanedName,
         quantity: parseFloat(newItemQuantity) || 1,
-        unit: newItemUnit.trim() || "item",
+        unit: cleanedUnit || "item",
       });
     } else {
       const newItem: ShoppingItem = {
         id: `shopping-${Date.now()}-${Math.random()}`,
-        name: newItemName.trim(),
+        name: cleanedName,
         quantity: parseFloat(newItemQuantity) || 1,
-        unit: newItemUnit.trim() || "item",
+        unit: cleanedUnit || "item",
         isPurchased: false,
-        aisle: getAisleForIngredient(newItemName.trim()),
+        aisle: getAisleForIngredient(cleanedName),
       };
       addShoppingItems([newItem]);
     }

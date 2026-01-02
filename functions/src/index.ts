@@ -39,7 +39,8 @@ interface NutritionalInfo {
   fiber?: number;
   sugar?: number;
   sodium?: number;
-  [key: string]: number | undefined;
+  isPerServing?: boolean;
+  [key: string]: number | boolean | undefined;
 }
 
 interface Recipe {
@@ -56,6 +57,7 @@ interface Recipe {
   prepTime?: number | null; // Prep time in minutes (active prep time)
   cookTime?: number | null; // Cook time in minutes
   totalTime?: number | null; // Total time in minutes (prep + cook)
+  servings?: number | null; // Number of servings the recipe makes
   createdAt: admin.firestore.Timestamp | Date;
 }
 
@@ -93,13 +95,15 @@ IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript in
     "fat": number | null (in grams),
     "fiber": number | null (in grams),
     "sugar": number | null (in grams),
-    "sodium": number | null (in milligrams)
+    "sodium": number | null (in milligrams),
+    "isPerServing": boolean | null (true if nutrition is per serving, false if for whole recipe, null if unknown)
   },
   "sourceUrl": string,
   "originalAuthor": string,
   "tags": string[],
   "categoryIds": string[] (empty array if unknown),
-  "prepTime": number | null (in minutes, optional - active prep time only)
+  "prepTime": number | null (in minutes, optional - active prep time only),
+  "servings": number | null (number of servings the recipe makes, e.g., 4, 6, 8)
 }
 
 EXTRACTION RULES:
@@ -172,6 +176,10 @@ EXTRACTION RULES:
    - Extract from nutrition facts tables, JSON-LD, or text
    - Look for patterns: "Calories: 250", "Protein 10g", etc.
    - Convert units: ensure protein/carbs/fat in grams, sodium in mg
+   - CRITICAL: Check if nutrition is labeled as "per serving", "per portion", "per slice", or similar
+   - If nutrition table/header says "per serving" or "Nutrition per serving" or similar, set isPerServing: true
+   - If nutrition is clearly for the whole recipe (e.g., "Total Nutrition", "Recipe Nutrition"), set isPerServing: false
+   - If unclear, check if values seem reasonable: very low calories (50-300) might indicate per serving, while high values (500+) might be whole recipe
    - If not found, set to null (not 0)
 
 6. SOURCE URL:
@@ -182,14 +190,17 @@ EXTRACTION RULES:
    - If not found, use "Unknown" or website name
 
 8. TAGS:
-   - Generate relevant tags from:
-     * Recipe type: "dessert", "main-course", "appetizer", "breakfast"
-     * Cuisine: "italian", "mexican", "asian", etc.
-     * Dietary: "vegetarian", "vegan", "gluten-free", "keto"
-     * Cooking method: "baked", "grilled", "slow-cooked"
-     * Special categories: "one pot meal" (if recipe is cooked entirely in one pot/pan/skillet - check title and instructions for "one pot", "one pan", "all in one", or instructions that indicate everything is cooked together in a single vessel)
+   - Generate relevant tags from BROAD CATEGORIES only:
+     * Recipe type/meal: "dessert", "appetizer", "breakfast", "lunch", "dinner", "snack", "brunch"
+     * Cuisine: "italian", "mexican", "japanese", "french", "thai", "indian", "greek", "chinese", "american", "mediterranean", "korean", "spanish", "vietnamese", "middle-eastern"
+     * Dietary: "vegetarian", "vegan", "gluten-free", "dairy-free", "keto", "paleo", "low-carb", "nut-free", "sugar-free"
+     * Cooking method: "baked", "grilled", "slow-cooked", "fried", "steamed", "roasted"
+     * Special categories: "one pot meal" (if recipe is cooked entirely in one pot/pan/skillet - check title and instructions for "one pot", "one pan", "all in one", or instructions that indicate everything is cooked together in a single vessel). Use "one pot meal" (not "one-pan" or "one pan") as the tag.
+     * IMPORTANT: Only tag as "sugar-free" if the recipe explicitly states it is sugar-free (e.g., "sugar-free", "no sugar", "without sugar"). Do NOT infer sugar-free from low sugar content alone.
+   - CRITICAL: Do NOT tag specific food items or dish names (e.g., "enchilada", "lasagna", "burger", "pizza", "sushi", "taco"). Only use broad category tags listed above.
    - Extract from meta keywords, categories, or infer from content
    - Minimum 2-3 tags, maximum 8 tags
+   - Do NOT add "low-sugar" tag if "sugar-free" tag is already present
 
 9. CATEGORY IDS:
    - Leave as empty array [] if categories are not clearly defined
@@ -1668,12 +1679,88 @@ export const extractRecipeFromUrl = functions
         extractedData.ingredients || []
       );
 
+      // Normalize nutrition: if it's per serving and we have servings, convert to whole recipe
+      let normalizedNutrition = extractedData.nutritionalInfo || {};
+      const servings = extractedData.servings;
+      const isPerServing = normalizedNutrition.isPerServing === true;
+
+      if (isPerServing && servings && servings > 0) {
+        // Convert per-serving nutrition to whole recipe
+        const multiplier = servings;
+        normalizedNutrition = {
+          ...normalizedNutrition,
+          calories: normalizedNutrition.calories
+            ? Math.round(normalizedNutrition.calories * multiplier)
+            : undefined,
+          protein: normalizedNutrition.protein
+            ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
+            : undefined,
+          carbohydrates: normalizedNutrition.carbohydrates
+            ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) /
+              10
+            : undefined,
+          fat: normalizedNutrition.fat
+            ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
+            : undefined,
+          fiber: normalizedNutrition.fiber
+            ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
+            : undefined,
+          sugar: normalizedNutrition.sugar
+            ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
+            : undefined,
+          sodium: normalizedNutrition.sodium
+            ? Math.round(normalizedNutrition.sodium * multiplier)
+            : undefined,
+          isPerServing: false, // Now normalized to whole recipe
+        };
+      } else if (isPerServing && (!servings || servings <= 0)) {
+        // If marked as per serving but no serving count, try to infer from typical values
+        // Very low calories (50-300) likely means per serving
+        if (
+          normalizedNutrition.calories &&
+          normalizedNutrition.calories < 300
+        ) {
+          // Assume 4 servings as default if not specified
+          const defaultServings = 4;
+          normalizedNutrition = {
+            ...normalizedNutrition,
+            calories: Math.round(
+              normalizedNutrition.calories * defaultServings
+            ),
+            protein: normalizedNutrition.protein
+              ? Math.round(normalizedNutrition.protein * defaultServings * 10) /
+                10
+              : undefined,
+            carbohydrates: normalizedNutrition.carbohydrates
+              ? Math.round(
+                  normalizedNutrition.carbohydrates * defaultServings * 10
+                ) / 10
+              : undefined,
+            fat: normalizedNutrition.fat
+              ? Math.round(normalizedNutrition.fat * defaultServings * 10) / 10
+              : undefined,
+            fiber: normalizedNutrition.fiber
+              ? Math.round(normalizedNutrition.fiber * defaultServings * 10) /
+                10
+              : undefined,
+            sugar: normalizedNutrition.sugar
+              ? Math.round(normalizedNutrition.sugar * defaultServings * 10) /
+                10
+              : undefined,
+            sodium: normalizedNutrition.sodium
+              ? Math.round(normalizedNutrition.sodium * defaultServings)
+              : undefined,
+            isPerServing: false,
+          };
+        }
+      }
+
       const recipe: Omit<Recipe, "id" | "createdAt"> = {
         title: extractedData.title || "Untitled Recipe",
         coverImage: extractedData.coverImage || "",
         ingredients: combinedIngredients,
         steps: extractedData.steps || [],
-        nutritionalInfo: extractedData.nutritionalInfo || {},
+        nutritionalInfo: normalizedNutrition,
         sourceUrl: actualRecipeUrl,
         originalAuthor: extractedData.originalAuthor || "Unknown",
         tags: extractedData.tags || [],
@@ -1685,6 +1772,7 @@ export const extractRecipeFromUrl = functions
         ...(extractedData.totalTime !== undefined && {
           totalTime: extractedData.totalTime,
         }),
+        ...(servings !== undefined && servings !== null && { servings }),
       };
 
       // Cache the result for future requests (if Firestore is available)
@@ -1954,13 +2042,15 @@ IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript in
     "fat": number | null (in grams),
     "fiber": number | null (in grams),
     "sugar": number | null (in grams),
-    "sodium": number | null (in milligrams)
+    "sodium": number | null (in milligrams),
+    "isPerServing": boolean | null (true if nutrition is per serving, false if for whole recipe, null if unknown)
   },
   "sourceUrl": string (empty string "" for image imports),
   "originalAuthor": string,
   "tags": string[],
   "categoryIds": [] (always empty array),
-  "prepTime": number | null (in minutes, optional - active prep time only)
+  "prepTime": number | null (in minutes, optional - active prep time only),
+  "servings": number | null (number of servings the recipe makes, e.g., 4, 6, 8)
 }
 
 EXTRACTION RULES:
@@ -2013,6 +2103,10 @@ EXTRACTION RULES:
    - Extract from nutrition facts tables or text if present
    - Look for patterns: "Calories: 250", "Protein 10g", etc.
    - Convert units: ensure protein/carbs/fat in grams, sodium in mg
+   - CRITICAL: Check if nutrition is labeled as "per serving", "per portion", "per slice", or similar
+   - If nutrition table/header says "per serving" or "Nutrition per serving" or similar, set isPerServing: true
+   - If nutrition is clearly for the whole recipe (e.g., "Total Nutrition", "Recipe Nutrition"), set isPerServing: false
+   - If unclear, check if values seem reasonable: very low calories (50-300) might indicate per serving, while high values (500+) might be whole recipe
    - If not found, set to null (not 0)
 
 6. SOURCE URL:
@@ -2214,6 +2308,73 @@ async function extractRecipeFromOCRText(
     // Validate and set defaults
     const hasHandwriting = recipeData.hasHandwriting === true;
 
+    // Normalize nutrition: if it's per serving and we have servings, convert to whole recipe
+    let normalizedNutrition = recipeData.nutritionalInfo || {};
+    const servings = recipeData.servings;
+    const isPerServing = normalizedNutrition.isPerServing === true;
+
+    if (isPerServing && servings && servings > 0) {
+      // Convert per-serving nutrition to whole recipe
+      const multiplier = servings;
+      normalizedNutrition = {
+        ...normalizedNutrition,
+        calories: normalizedNutrition.calories
+          ? Math.round(normalizedNutrition.calories * multiplier)
+          : undefined,
+        protein: normalizedNutrition.protein
+          ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
+          : undefined,
+        carbohydrates: normalizedNutrition.carbohydrates
+          ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) / 10
+          : undefined,
+        fat: normalizedNutrition.fat
+          ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
+          : undefined,
+        fiber: normalizedNutrition.fiber
+          ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
+          : undefined,
+        sugar: normalizedNutrition.sugar
+          ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
+          : undefined,
+        sodium: normalizedNutrition.sodium
+          ? Math.round(normalizedNutrition.sodium * multiplier)
+          : undefined,
+        isPerServing: false, // Now normalized to whole recipe
+      };
+    } else if (isPerServing && (!servings || servings <= 0)) {
+      // If marked as per serving but no serving count, try to infer from typical values
+      if (normalizedNutrition.calories && normalizedNutrition.calories < 300) {
+        // Assume 4 servings as default if not specified
+        const defaultServings = 4;
+        normalizedNutrition = {
+          ...normalizedNutrition,
+          calories: Math.round(normalizedNutrition.calories * defaultServings),
+          protein: normalizedNutrition.protein
+            ? Math.round(normalizedNutrition.protein * defaultServings * 10) /
+              10
+            : undefined,
+          carbohydrates: normalizedNutrition.carbohydrates
+            ? Math.round(
+                normalizedNutrition.carbohydrates * defaultServings * 10
+              ) / 10
+            : undefined,
+          fat: normalizedNutrition.fat
+            ? Math.round(normalizedNutrition.fat * defaultServings * 10) / 10
+            : undefined,
+          fiber: normalizedNutrition.fiber
+            ? Math.round(normalizedNutrition.fiber * defaultServings * 10) / 10
+            : undefined,
+          sugar: normalizedNutrition.sugar
+            ? Math.round(normalizedNutrition.sugar * defaultServings * 10) / 10
+            : undefined,
+          sodium: normalizedNutrition.sodium
+            ? Math.round(normalizedNutrition.sodium * defaultServings)
+            : undefined,
+          isPerServing: false,
+        };
+      }
+    }
+
     return {
       title: recipeData.title || "Imported Recipe",
       coverImage: recipeData.coverImage || "", // Preserve coverImage if provided, otherwise empty
@@ -2221,7 +2382,7 @@ async function extractRecipeFromOCRText(
         ? recipeData.ingredients
         : [],
       steps: Array.isArray(recipeData.steps) ? recipeData.steps : [],
-      nutritionalInfo: recipeData.nutritionalInfo || {},
+      nutritionalInfo: normalizedNutrition,
       sourceUrl: "", // Empty for image imports
       originalAuthor: recipeData.originalAuthor || "Imported from photo",
       tags: Array.isArray(recipeData.tags)
@@ -2231,6 +2392,7 @@ async function extractRecipeFromOCRText(
       prepTime: recipeData.prepTime || null,
       cookTime: recipeData.cookTime || null,
       totalTime: recipeData.totalTime || null,
+      ...(servings !== undefined && servings !== null && { servings }),
       hasHandwriting, // Include handwriting detection result
     };
   } catch (error: any) {

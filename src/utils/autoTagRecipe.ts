@@ -72,6 +72,7 @@ function detectSourceType(url: string): string | null {
 
 /**
  * Checks if text contains keywords for a meal type
+ * Uses word boundaries to avoid false matches (e.g., "sweet" in "sweet potato")
  */
 function matchesMealType(text: string, mealType: string): boolean {
   const lowerText = text.toLowerCase();
@@ -98,18 +99,71 @@ function matchesMealType(text: string, mealType: string): boolean {
     ],
     dessert: [
       "dessert",
-      "sweet",
+      "sweet treat",
+      "sweet dessert",
       "cake",
       "cookie",
       "pie",
       "ice cream",
       "pudding",
       "candy",
+      "chocolate",
+      "brownie",
+      "muffin",
+      "cupcake",
     ],
     brunch: ["brunch"],
   };
 
   const typeKeywords = keywords[mealType] || [];
+
+  // For dessert, be more careful - avoid matching "sweet" in ingredient names
+  if (mealType === "dessert") {
+    // Check for explicit dessert keywords first
+    const explicitKeywords = [
+      "dessert",
+      "cake",
+      "cookie",
+      "pie",
+      "ice cream",
+      "pudding",
+      "candy",
+      "chocolate",
+      "brownie",
+      "muffin",
+      "cupcake",
+    ];
+    if (explicitKeywords.some((keyword) => lowerText.includes(keyword))) {
+      return true;
+    }
+
+    // For "sweet", only match if it's used in a dessert context
+    // Avoid matching "sweet" when followed by common ingredient words
+    const sweetIngredientPatterns = [
+      /sweet\s+(potato|potatoes|onion|onions|pepper|peppers|corn|potato|potatoes)/i,
+      /sweet\s+(and\s+)?sour/i,
+      /sweet\s+(chili|chile|sauce)/i,
+    ];
+
+    // If "sweet" appears but matches ingredient patterns, don't tag as dessert
+    if (lowerText.includes("sweet")) {
+      const isIngredientContext = sweetIngredientPatterns.some((pattern) =>
+        pattern.test(text)
+      );
+      if (isIngredientContext) {
+        return false;
+      }
+      // Only match "sweet" if it appears in a dessert-like context
+      // Check if it's near dessert-related words
+      const dessertContextPattern =
+        /sweet\s+(treat|dessert|tooth|flavor|flavour|dish|recipe|dish)/i;
+      return dessertContextPattern.test(text);
+    }
+
+    return false;
+  }
+
+  // For other meal types, use simple includes check
   return typeKeywords.some((keyword) => lowerText.includes(keyword));
 }
 
@@ -218,6 +272,31 @@ function matchesCuisine(text: string, cuisine: string): boolean {
 }
 
 /**
+ * Checks if "sugar-free" is explicitly mentioned in the recipe
+ */
+function isSugarFreeExplicitlyMentioned(
+  title: string,
+  ingredients: string[],
+  steps: string[]
+): boolean {
+  const allText = `${title} ${ingredients.join(" ")} ${steps.join(
+    " "
+  )}`.toLowerCase();
+
+  // Check for explicit mentions of sugar-free
+  const explicitKeywords = [
+    "sugar-free",
+    "sugar free",
+    "no sugar",
+    "without sugar",
+    "sugarless",
+    "unsweetened",
+  ];
+
+  return explicitKeywords.some((keyword) => allText.includes(keyword));
+}
+
+/**
  * Checks if ingredients/steps indicate dietary restrictions
  */
 function matchesDietary(
@@ -291,6 +370,11 @@ function matchesDietary(
   };
 
   const restricted = restrictedKeywords[dietary] || [];
+
+  // For sugar-free, only tag if explicitly mentioned
+  if (dietary === "sugar-free") {
+    return false; // We'll handle this separately
+  }
 
   // For vegetarian/vegan/restriction-based diets, check if ingredients DON'T contain restricted items
   // If we find restricted keywords, the recipe doesn't match the dietary restriction
@@ -382,12 +466,20 @@ export function autoTagRecipe(recipe: RecipeCreateInput): string[] {
     }
   }
 
-  // Detect dietary restrictions
+  // Get ingredient names and step instructions for dietary checks
   const ingredientNames = recipe.ingredients?.map((ing) => ing.name) || [];
   const stepInstructions = recipe.steps?.map((step) => step.instruction) || [];
 
+  // Detect dietary restrictions (excluding sugar-free which needs explicit check)
   for (const dietary of DIETARY_OPTIONS) {
-    if (matchesDietary(ingredientNames, stepInstructions, dietary)) {
+    if (dietary === "sugar-free") {
+      // Only tag as sugar-free if explicitly mentioned
+      if (
+        isSugarFreeExplicitlyMentioned(title, ingredientNames, stepInstructions)
+      ) {
+        tags.add("sugar-free");
+      }
+    } else if (matchesDietary(ingredientNames, stepInstructions, dietary)) {
       tags.add(dietary);
     }
   }
@@ -400,10 +492,16 @@ export function autoTagRecipe(recipe: RecipeCreateInput): string[] {
     }
   }
 
-  // Add nutritional tags
+  // Add nutritional tags (but check for conflicts)
   if (recipe.nutritionalInfo) {
     const nutritionalTags = getNutritionalTags(recipe.nutritionalInfo);
-    nutritionalTags.forEach((tag) => tags.add(tag));
+    nutritionalTags.forEach((tag) => {
+      // Don't add "low-sugar" if already tagged as "sugar-free"
+      if (tag === "low-sugar" && tags.has("sugar-free")) {
+        return;
+      }
+      tags.add(tag);
+    });
   }
 
   // Detect one pot meals
@@ -411,5 +509,55 @@ export function autoTagRecipe(recipe: RecipeCreateInput): string[] {
     tags.add("one pot meal");
   }
 
-  return Array.from(tags);
+  // Normalize one pot/pan tags - combine variations into "one pot meal"
+  const onePotVariations = ["one-pan", "one pan", "one-pot", "one pot"];
+  onePotVariations.forEach((variation) => {
+    if (tags.has(variation)) {
+      tags.delete(variation);
+      tags.add("one pot meal");
+    }
+  });
+
+  // Filter out specific food item tags - only keep broad categories
+  const allowedTagCategories = new Set([
+    // Meal types
+    ...MEAL_TYPES,
+    // Cuisines
+    ...CUISINES,
+    // Dietary options
+    ...DIETARY_OPTIONS,
+    // Special categories
+    "one pot meal",
+    // Source types
+    "tiktok",
+    "instagram",
+    "pinterest",
+    "youtube",
+    "blog",
+    "website",
+    "video recipe",
+    // Nutritional tags
+    "low-fat",
+    "high-protein",
+    "high-fiber",
+    "low-sodium",
+    "low-sugar",
+    "low-calorie",
+    // Cooking methods (common ones)
+    "baked",
+    "grilled",
+    "slow-cooked",
+    "fried",
+    "steamed",
+    "roasted",
+  ]);
+
+  // Remove tags that aren't in our allowed categories
+  // This filters out specific food items like "enchilada", "lasagna", etc.
+  const filteredTags = Array.from(tags).filter((tag) => {
+    const normalizedTag = tag.toLowerCase();
+    return allowedTagCategories.has(normalizedTag);
+  });
+
+  return filteredTags;
 }

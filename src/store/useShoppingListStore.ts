@@ -6,6 +6,14 @@ import { mergeIngredients } from '../utils/shoppingListUtils';
 import { getAisleForIngredient } from '../utils/aisleMapper';
 
 /**
+ * Trims trailing punctuation from a string
+ */
+function trimTrailingPunctuation(text: string): string {
+  // Remove trailing punctuation: ), ], }, ., ,, ;, :, !, ?, etc.
+  return text.replace(/[)\]}\.,;:!?\s]+$/, '').trim();
+}
+
+/**
  * Clean ingredient name and re-parse if it contains quantity/unit information
  * Handles cases where name includes "½ cups (680g) King Arthur Gluten-Free Bread Flour"
  * Also combines existing quantity with fraction in name (e.g., quantity: 4, name: "½ cups" → 4.5)
@@ -127,9 +135,14 @@ function cleanAndParseIngredient(ing: Ingredient): { name: string; quantity: num
   // Remove parenthetical content like "(680g)"
   remaining = remaining.replace(/\([^)]*\)/g, '').trim();
 
+  // Trim trailing punctuation
+  remaining = trimTrailingPunctuation(remaining);
+
   // Use parsed values if we found them, otherwise use original
+  const finalName = remaining || trimTrailingPunctuation(ing.name.trim());
+  
   return {
-    name: remaining || ing.name.trim(),
+    name: finalName,
     quantity: parsedQuantity !== null ? parsedQuantity : ing.quantity,
     unit: parsedUnit || ing.unit,
   };

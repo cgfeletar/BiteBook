@@ -33,7 +33,8 @@ export interface NutritionalInfo {
   fiber?: number; // in grams
   sugar?: number; // in grams
   sodium?: number; // in milligrams
-  [key: string]: number | undefined; // Allow additional nutritional fields
+  isPerServing?: boolean; // true if nutrition values are per serving (not whole recipe)
+  [key: string]: number | boolean | undefined; // Allow additional nutritional fields
 }
 
 /**
@@ -54,6 +55,7 @@ export interface Recipe {
   prepTime?: number; // Prep time in minutes (active prep time)
   cookTime?: number; // Cook time in minutes
   totalTime?: number; // Total time in minutes (prep + cook)
+  servings?: number; // Number of servings the recipe makes
   createdAt: Timestamp | Date;
 }
 
