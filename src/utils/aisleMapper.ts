@@ -2,8 +2,6 @@
  * Maps ingredient names to grocery store aisles
  */
 
-import Fuse from "fuse.js";
-
 export type Aisle =
   | "Produce"
   | "Dairy"
@@ -20,9 +18,9 @@ export const AISLE_ORDER: Aisle[] = [
   "Produce",
   "Meat & Seafood",
   "Dairy",
+  "Baking",
   "Bakery",
   "Frozen",
-  "Baking",
   "Pantry",
   "Beverages",
   "Snacks",
@@ -150,12 +148,6 @@ const AISLE_KEYWORDS: Record<Aisle, string[]> = {
   Other: [], // fallback
 };
 
-// Helper: fuzzy match ingredient against keywords
-function fuzzyMatch(name: string, keywords: string[]): boolean {
-  const fuse = new Fuse(keywords, { threshold: 0.3 });
-  return fuse.search(name).length > 0;
-}
-
 /**
  * Returns the aisle for a given ingredient
  */
@@ -164,8 +156,11 @@ export function getAisleForIngredient(ingredientName: string): Aisle {
 
   for (const aisle of AISLE_ORDER) {
     const keywords = AISLE_KEYWORDS[aisle];
-    if (fuzzyMatch(name, keywords)) {
-      return aisle;
+    // Check if the ingredient name includes any of the keywords
+    for (const keyword of keywords) {
+      if (name.includes(keyword.toLowerCase())) {
+        return aisle;
+      }
     }
   }
 
