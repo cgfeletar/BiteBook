@@ -1,24 +1,18 @@
 import "@/nativewind-setup";
-import { useProgressStore } from "@/src/store/useProgressStore";
+import { CHEF_LEVELS, useProgressStore } from "@/src/store/useProgressStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import {
   Award,
   ChefHat,
   Clock,
+  Flame,
   Globe,
+  Plus,
   Target,
   X,
-  Plus,
-  Flame,
 } from "lucide-react-native";
-import { useMemo } from "react";
-import { CHEF_LEVELS } from "@/src/store/useProgressStore";
-import {
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Modal, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // Cuisine data with flag emojis
@@ -35,15 +29,76 @@ const CUISINES = [
   { name: "Mediterranean", flag: "🌊", tag: "mediterranean" },
 ];
 
+// Preset challenge templates
+const CHALLENGE_TEMPLATES = [
+  {
+    title: "Cook at Home Streak",
+    description: "Cook a recipe 5 days in a row",
+    target: 5,
+    type: "streak_days" as const,
+    metadata: { streakType: "consecutive" as const },
+  },
+  {
+    title: "Breakfast Master",
+    description: "Cook 10 breakfast recipes",
+    target: 10,
+    type: "tag_count" as const,
+    metadata: { tag: "breakfast" },
+  },
+  {
+    title: "Quick Cook",
+    description: "Cook 5 recipes under 30 minutes",
+    target: 5,
+    type: "quick_meals" as const,
+    metadata: { maxPrepTime: 30 },
+  },
+  {
+    title: "Vegetarian Week",
+    description: "Cook 7 vegetarian recipes",
+    target: 7,
+    type: "tag_count" as const,
+    metadata: { tag: "vegetarian" },
+  },
+  {
+    title: "World Traveler",
+    description: "Cook recipes from 10 different cuisines",
+    target: 10,
+    type: "cuisine_count" as const,
+  },
+  {
+    title: "Dessert Lover",
+    description: "Cook 5 dessert recipes",
+    target: 5,
+    type: "tag_count" as const,
+    metadata: { tag: "dessert" },
+  },
+  {
+    title: "One Pot Meal Master",
+    description: "Cook 5 one pot meal recipes",
+    target: 5,
+    type: "tag_count" as const,
+    metadata: { tag: "one pot meal" },
+  },
+];
+
 export default function ProgressScreen() {
   const recipes = useRecipeStore((state) => state.recipes);
   const cookingSessions = useProgressStore((state) => state.cookingSessions);
   const challenges = useProgressStore((state) => state.challenges);
   const removeChallenge = useProgressStore((state) => state.removeChallenge);
+  const addChallenge = useProgressStore((state) => state.addChallenge);
+  const updateChallengeProgress = useProgressStore(
+    (state) => state.updateChallengeProgress
+  );
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<number | null>(null);
 
   // Compute values with useMemo to avoid infinite loops
-  const recipesCooked = useMemo(() => cookingSessions.length, [cookingSessions.length]);
-  
+  const recipesCooked = useMemo(
+    () => cookingSessions.length,
+    [cookingSessions.length]
+  );
+
   const timeCooking = useMemo(() => {
     const totalMinutes = cookingSessions.reduce(
       (sum, session) => sum + session.timeSpent,
@@ -62,7 +117,10 @@ export default function ProgressScreen() {
         if (i < CHEF_LEVELS.length - 1) {
           nextLevel = CHEF_LEVELS[i + 1];
         } else {
-          nextLevel = { ...CHEF_LEVELS[i], threshold: CHEF_LEVELS[i].threshold + 50 };
+          nextLevel = {
+            ...CHEF_LEVELS[i],
+            threshold: CHEF_LEVELS[i].threshold + 50,
+          };
         }
         break;
       }
@@ -70,10 +128,7 @@ export default function ProgressScreen() {
 
     const progress = recipesCooked - currentLevel.threshold;
     const progressNeeded = nextLevel.threshold - currentLevel.threshold;
-    const progressPercentage = Math.min(
-      (progress / progressNeeded) * 100,
-      100
-    );
+    const progressPercentage = Math.min((progress / progressNeeded) * 100, 100);
 
     return {
       level: currentLevel.level,
@@ -86,7 +141,7 @@ export default function ProgressScreen() {
   // Calculate cuisine counts from recipe tags
   const cuisineCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    
+
     recipes.forEach((recipe) => {
       recipe.tags?.forEach((tag) => {
         const normalizedTag = tag.toLowerCase();
@@ -116,11 +171,27 @@ export default function ProgressScreen() {
   // Calculate recipes remaining to next level
   const recipesToNextLevel = chefLevel.nextLevel - recipesCooked;
 
+  // Update challenge progress when recipes or cooking sessions change
+  useEffect(() => {
+    updateChallengeProgress(recipes);
+  }, [recipes, cookingSessions, updateChallengeProgress]);
+
+  const handleAddChallenge = (templateIndex: number) => {
+    const template = CHALLENGE_TEMPLATES[templateIndex];
+    addChallenge({
+      title: template.title,
+      description: template.description,
+      target: template.target,
+      current: 0,
+      type: template.type,
+      metadata: template.metadata,
+    });
+    setShowAddModal(false);
+    setSelectedTemplate(null);
+  };
+
   return (
-    <SafeAreaView
-      className="flex-1 bg-off-white"
-      edges={["top", "bottom"]}
-    >
+    <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -167,7 +238,7 @@ export default function ProgressScreen() {
           </View>
 
           {/* Chef Level Section */}
-          <View 
+          <View
             className="rounded-2xl p-6 mb-6 overflow-hidden"
             style={{ backgroundColor: "#E7D8C9" }}
           >
@@ -200,7 +271,12 @@ export default function ProgressScreen() {
 
             <Text className="text-sm text-charcoal-gray/70">
               {recipesToNextLevel > 0
-                ? `${recipesToNextLevel} more recipe${recipesToNextLevel !== 1 ? "s" : ""} to reach ${CHEF_LEVELS.find((l) => l.threshold === chefLevel.nextLevel)?.title || "next level"}`
+                ? `${recipesToNextLevel} more recipe${
+                    recipesToNextLevel !== 1 ? "s" : ""
+                  } to reach ${
+                    CHEF_LEVELS.find((l) => l.threshold === chefLevel.nextLevel)
+                      ?.title || "next level"
+                  }`
                 : "Max level reached!"}
             </Text>
           </View>
@@ -215,7 +291,8 @@ export default function ProgressScreen() {
                 </Text>
               </View>
               <Text className="text-sm text-charcoal-gray/60">
-                {cuisineCounts.length} cuisine{cuisineCounts.length !== 1 ? "s" : ""}
+                {cuisineCounts.length} cuisine
+                {cuisineCounts.length !== 1 ? "s" : ""}
               </Text>
             </View>
 
@@ -241,7 +318,8 @@ export default function ProgressScreen() {
               </View>
             ) : (
               <Text className="text-sm text-charcoal-gray/60 text-center py-4">
-                Start cooking recipes from different cuisines to unlock your passport!
+                Start cooking recipes from different cuisines to unlock your
+                passport!
               </Text>
             )}
           </View>
@@ -258,6 +336,7 @@ export default function ProgressScreen() {
               <TouchableOpacity
                 className="w-8 h-8 bg-dark-sage rounded-full items-center justify-center"
                 activeOpacity={0.7}
+                onPress={() => setShowAddModal(true)}
               >
                 <Plus size={18} color="#FAF9F7" />
               </TouchableOpacity>
@@ -292,13 +371,26 @@ export default function ProgressScreen() {
                       </View>
                     </View>
 
-                    <View className="flex-row items-center justify-between">
-                      <Text className="text-sm text-charcoal-gray/60">
-                        Progress
-                      </Text>
-                      <Text className="text-sm font-semibold text-charcoal-gray">
-                        {challenge.current}/{challenge.target}
-                      </Text>
+                    <View className="mb-2">
+                      <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-sm text-charcoal-gray/60">
+                          Progress
+                        </Text>
+                        <Text className="text-sm font-semibold text-charcoal-gray">
+                          {challenge.current}/{challenge.target}
+                        </Text>
+                      </View>
+                      <View className="h-2 bg-white/50 rounded-full overflow-hidden">
+                        <View
+                          className="h-full bg-dark-sage rounded-full"
+                          style={{
+                            width: `${Math.min(
+                              (challenge.current / challenge.target) * 100,
+                              100
+                            )}%`,
+                          }}
+                        />
+                      </View>
                     </View>
                   </View>
                 ))}
@@ -321,8 +413,64 @@ export default function ProgressScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Add Challenge Modal */}
+      <Modal
+        visible={showAddModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowAddModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl p-6 max-h-[80%]">
+            <View className="flex-row items-center justify-between mb-6">
+              <Text className="text-2xl font-bold text-charcoal-gray">
+                Add Challenge
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowAddModal(false)}
+                className="w-8 h-8 items-center justify-center"
+              >
+                <X size={24} color="#3E3E3E" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text className="text-base text-charcoal-gray/70 mb-4">
+                Choose a challenge to get started:
+              </Text>
+
+              <View className="gap-3">
+                {CHALLENGE_TEMPLATES.map((template, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    className="bg-soft-beige rounded-xl p-4 border border-warm-sand/50"
+                    activeOpacity={0.7}
+                    onPress={() => handleAddChallenge(index)}
+                  >
+                    <Text className="text-base font-bold text-charcoal-gray mb-1">
+                      {template.title}
+                    </Text>
+                    <Text className="text-sm text-charcoal-gray/60 mb-2">
+                      {template.description}
+                    </Text>
+                    <View className="flex-row items-center">
+                      <Target
+                        size={14}
+                        color="#5A6E6C"
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text className="text-xs text-dark-sage font-semibold">
+                        Target: {template.target}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
-
-

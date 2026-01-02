@@ -187,6 +187,7 @@ EXTRACTION RULES:
      * Cuisine: "italian", "mexican", "asian", etc.
      * Dietary: "vegetarian", "vegan", "gluten-free", "keto"
      * Cooking method: "baked", "grilled", "slow-cooked"
+     * Special categories: "one pot meal" (if recipe is cooked entirely in one pot/pan/skillet - check title and instructions for "one pot", "one pan", "all in one", or instructions that indicate everything is cooked together in a single vessel)
    - Extract from meta keywords, categories, or infer from content
    - Minimum 2-3 tags, maximum 8 tags
 
