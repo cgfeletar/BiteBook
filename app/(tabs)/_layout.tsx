@@ -1,10 +1,12 @@
 import { Tabs } from 'expo-router';
 import { View } from 'react-native';
 import { CustomTabBar } from '@/components/CustomTabBar';
+import { KitchenDataSync } from '@/components/KitchenDataSync';
 
 export default function TabLayout() {
   return (
     <View style={{ flex: 1 }}>
+      <KitchenDataSync />
       <Tabs
         screenOptions={{
           headerShown: false,

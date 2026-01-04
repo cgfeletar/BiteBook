@@ -958,7 +958,7 @@ export default function RecipeDetailScreen() {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            deleteRecipe(recipeId as string);
+            deleteRecipe(recipeId as string, user?.defaultKitchenId);
             setShowMenu(false);
             router.back();
           },
@@ -1002,7 +1002,7 @@ export default function RecipeDetailScreen() {
     }
 
     // Update the recipe in the store
-    updateRecipe(recipeId, { title: trimmedTitle });
+    updateRecipe(recipeId, { title: trimmedTitle }, user?.defaultKitchenId);
 
     // Update local state
     setRecipeData({ ...recipeData, title: trimmedTitle });
@@ -1044,7 +1044,11 @@ export default function RecipeDetailScreen() {
       typeof recipeData.id === "string"
     ) {
       const recipeId = recipeData.id;
-      updateRecipe(recipeId, { ingredients: editedIngredients });
+      updateRecipe(
+        recipeId,
+        { ingredients: editedIngredients },
+        user?.defaultKitchenId
+      );
       setRecipeData({ ...recipeData, ingredients: editedIngredients });
       setIsEditingIngredients(false);
     }
@@ -1101,7 +1105,7 @@ export default function RecipeDetailScreen() {
       typeof recipeData.id === "string"
     ) {
       const recipeId = recipeData.id;
-      updateRecipe(recipeId, { steps: editedSteps });
+      updateRecipe(recipeId, { steps: editedSteps }, user?.defaultKitchenId);
       setRecipeData({ ...recipeData, steps: editedSteps });
       setIsEditingInstructions(false);
     }
@@ -1689,9 +1693,13 @@ export default function RecipeDetailScreen() {
                       ) {
                         const storedRecipe = getRecipe(recipeData.id);
                         if (storedRecipe) {
-                          updateRecipe(storedRecipe.id, {
-                            rating: newRating,
-                          });
+                          updateRecipe(
+                            storedRecipe.id,
+                            {
+                              rating: newRating,
+                            },
+                            user?.defaultKitchenId
+                          );
                         }
                       }
                     }}
@@ -2507,7 +2515,8 @@ export default function RecipeDetailScreen() {
                                         ) || [];
                                       addItemsToShoppingList(
                                         originalIngredientsToBuy,
-                                        recipeId
+                                        recipeId,
+                                        user?.defaultKitchenId
                                       );
                                     }}
                                     className="bg-dark-sage rounded-xl py-3 px-4 mb-4 flex-row items-center justify-center"
@@ -3657,9 +3666,13 @@ export default function RecipeDetailScreen() {
                               recipeData.id &&
                               typeof recipeData.id === "string"
                             ) {
-                              updateRecipe(recipeData.id, {
-                                tags: updatedTags,
-                              });
+                              updateRecipe(
+                                recipeData.id,
+                                {
+                                  tags: updatedTags,
+                                },
+                                user?.defaultKitchenId
+                              );
                             }
                           }}
                           className="bg-warm-sand rounded-full px-4 py-2 mr-2 mb-2 flex-row items-center"
@@ -3710,9 +3723,13 @@ export default function RecipeDetailScreen() {
                               recipeData.id &&
                               typeof recipeData.id === "string"
                             ) {
-                              updateRecipe(recipeData.id, {
-                                tags: updatedTags,
-                              });
+                              updateRecipe(
+                                recipeData.id,
+                                {
+                                  tags: updatedTags,
+                                },
+                                user?.defaultKitchenId
+                              );
                             }
                           } else {
                             setNewTag("");
@@ -3746,9 +3763,13 @@ export default function RecipeDetailScreen() {
                               recipeData.id &&
                               typeof recipeData.id === "string"
                             ) {
-                              updateRecipe(recipeData.id, {
-                                tags: updatedTags,
-                              });
+                              updateRecipe(
+                                recipeData.id,
+                                {
+                                  tags: updatedTags,
+                                },
+                                user?.defaultKitchenId
+                              );
                             }
                           } else {
                             setNewTag("");

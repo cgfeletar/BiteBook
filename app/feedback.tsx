@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 
 // Support email - update this with your Google Console support email
-const SUPPORT_EMAIL = "support@saute.app"; // TODO: Replace with your actual support email
+const SUPPORT_EMAIL = "support@bitebookhq.app"; // TODO: Replace with your actual support email
 
 export default function FeedbackScreen() {
   const { user } = useAuthStore();

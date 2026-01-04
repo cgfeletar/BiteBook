@@ -1,4 +1,5 @@
 import "@/nativewind-setup";
+import { useAuthStore } from "@/src/store/useAuthStore";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { PantryItem, ShoppingItem } from "@/src/types";
@@ -35,6 +36,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ShoppingListScreen() {
   const [isPantryMode, setIsPantryMode] = useState(false);
+  const { user } = useAuthStore();
   const shoppingItems = useShoppingListStore((state) => state.items);
   const togglePurchased = useShoppingListStore(
     (state) => state.togglePurchased
@@ -179,7 +181,7 @@ export default function ShoppingListScreen() {
         isPurchased: false,
         aisle: getAisleForIngredient(cleanedName),
       };
-      addShoppingItems([newItem]);
+      addShoppingItems([newItem], user?.defaultKitchenId);
     }
 
     setNewItemName("");
@@ -190,7 +192,7 @@ export default function ShoppingListScreen() {
 
   const moveToPantry = (shoppingItem: ShoppingItem) => {
     moveFromShoppingList(shoppingItem);
-    deleteShoppingItem(shoppingItem.id);
+    deleteShoppingItem(shoppingItem.id, user?.defaultKitchenId);
   };
 
   const moveToShoppingList = (pantryItem: PantryItem) => {
@@ -202,7 +204,7 @@ export default function ShoppingListScreen() {
       isPurchased: false,
       aisle: getAisleForIngredient(pantryItem.name),
     };
-    addShoppingItems([shoppingItem]);
+    addShoppingItems([shoppingItem], user?.defaultKitchenId);
     deletePantryItem(pantryItem.id);
   };
 
@@ -225,7 +227,7 @@ export default function ShoppingListScreen() {
       >
         {!isPantryMode && (
           <TouchableOpacity
-            onPress={() => togglePurchased(item.id)}
+            onPress={() => togglePurchased(item.id, user?.defaultKitchenId)}
             className="mr-3"
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={{
@@ -347,7 +349,7 @@ export default function ShoppingListScreen() {
                 deletePantryItem(pantryItem.id);
               }
             } else {
-              deleteShoppingItem(item.id);
+              deleteShoppingItem(item.id, user?.defaultKitchenId);
             }
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -421,7 +423,7 @@ export default function ShoppingListScreen() {
                             if (isPantryMode) {
                               clearPantry();
                             } else {
-                              clearShoppingList();
+                              clearShoppingList(user?.defaultKitchenId);
                             }
                           },
                         },
@@ -574,7 +576,7 @@ export default function ShoppingListScreen() {
                                 text: "Clear",
                                 style: "destructive",
                                 onPress: () => {
-                                  clearPurchased();
+                                  clearPurchased(user?.defaultKitchenId);
                                 },
                               },
                             ]

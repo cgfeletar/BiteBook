@@ -79,12 +79,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
             }
 
             // Create or update user document in Firestore
+            // This will automatically create a kitchen if the user doesn't have one
             await createOrUpdateUser({
               ...mappedUser!,
               defaultKitchenId: existingUserDoc?.defaultKitchenId || mappedUser!.defaultKitchenId,
             });
 
-            // Fetch updated user document to get defaultKitchenId
+            // Fetch updated user document to get defaultKitchenId (which may have been created)
             const updatedUserDoc = await getUserDocument(firebaseUser.uid);
             if (updatedUserDoc?.defaultKitchenId) {
               // Update local state with defaultKitchenId

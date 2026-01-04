@@ -4,6 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ShoppingItem, Ingredient } from '../types';
 import { mergeIngredients } from '../utils/shoppingListUtils';
 import { getAisleForIngredient } from '../utils/aisleMapper';
+import {
+  updateKitchenShoppingList,
+  addShoppingListItem,
+  updateShoppingListItem,
+  deleteShoppingListItem,
+  subscribeToKitchenShoppingList,
+  getKitchenShoppingList,
+} from '../services/shoppingListFirestoreService';
+import { Unsubscribe } from 'firebase/firestore';
 
 /**
  * Trims trailing punctuation from a string
@@ -150,20 +159,30 @@ function cleanAndParseIngredient(ing: Ingredient): { name: string; quantity: num
 
 interface ShoppingListState {
   items: ShoppingItem[];
-  addItems: (ingredients: Ingredient[], recipeId?: string) => void;
-  addShoppingItems: (items: ShoppingItem[]) => void;
-  togglePurchased: (id: string) => void;
-  deleteItem: (id: string) => void;
-  clearPurchased: () => void;
-  clearAll: () => void;
+  loading: boolean;
+  synced: boolean;
+  unsubscribe: Unsubscribe | null;
+  addItems: (ingredients: Ingredient[], recipeId?: string, kitchenId?: string) => Promise<void>;
+  addShoppingItems: (items: ShoppingItem[], kitchenId?: string) => Promise<void>;
+  togglePurchased: (id: string, kitchenId?: string) => Promise<void>;
+  deleteItem: (id: string, kitchenId?: string) => Promise<void>;
+  clearPurchased: (kitchenId?: string) => Promise<void>;
+  clearAll: (kitchenId?: string) => Promise<void>;
+  loadShoppingListFromFirestore: (kitchenId: string) => Promise<void>;
+  subscribeToShoppingList: (kitchenId: string) => void;
+  unsubscribeFromShoppingList: () => void;
+  syncToFirestore: (kitchenId: string) => Promise<void>;
 }
 
 export const useShoppingListStore = create<ShoppingListState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       items: [],
+      loading: false,
+      synced: false,
+      unsubscribe: null,
   
-  addItems: (ingredients: Ingredient[], recipeId?: string) => {
+  addItems: async (ingredients: Ingredient[], recipeId?: string, kitchenId?: string) => {
     const shoppingItems: ShoppingItem[] = ingredients.map((ing) => {
       // Clean and parse the ingredient to extract correct name, quantity, and unit
       const cleaned = cleanAndParseIngredient(ing);
@@ -180,40 +199,159 @@ export const useShoppingListStore = create<ShoppingListState>()(
       return item;
     });
 
-    set((state) => ({
-      items: mergeIngredients(state.items, shoppingItems),
-    }));
+    // Update local state immediately
+    const newItems = mergeIngredients(get().items, shoppingItems);
+    set({ items: newItems });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        await updateKitchenShoppingList(kitchenId, newItems);
+        console.log("Shopping list synced to Firestore");
+      } catch (error) {
+        console.error("Failed to sync shopping list to Firestore:", error);
+      }
+    }
   },
 
-  addShoppingItems: (newItems: ShoppingItem[]) => {
-    set((state) => ({
-      items: mergeIngredients(state.items, newItems),
-    }));
+  addShoppingItems: async (newItems: ShoppingItem[], kitchenId?: string) => {
+    // Update local state immediately
+    const mergedItems = mergeIngredients(get().items, newItems);
+    set({ items: mergedItems });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        await updateKitchenShoppingList(kitchenId, mergedItems);
+        console.log("Shopping list synced to Firestore");
+      } catch (error) {
+        console.error("Failed to sync shopping list to Firestore:", error);
+      }
+    }
   },
 
-  togglePurchased: (id: string) => {
-    set((state) => ({
-      items: state.items.map((item) =>
-        item.id === id ? { ...item, isPurchased: !item.isPurchased } : item
-      ),
-    }));
+  togglePurchased: async (id: string, kitchenId?: string) => {
+    // Update local state immediately
+    const updatedItems = get().items.map((item) =>
+      item.id === id ? { ...item, isPurchased: !item.isPurchased } : item
+    );
+    set({ items: updatedItems });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        const item = get().items.find((i) => i.id === id);
+        if (item) {
+          await updateShoppingListItem(kitchenId, id, { isPurchased: !item.isPurchased });
+          console.log("Shopping list item update synced to Firestore");
+        }
+      } catch (error) {
+        console.error("Failed to sync shopping list item update to Firestore:", error);
+      }
+    }
   },
 
-  deleteItem: (id: string) => {
-    set((state) => ({
-      items: state.items.filter((item) => item.id !== id),
-    }));
+  deleteItem: async (id: string, kitchenId?: string) => {
+    // Update local state immediately
+    const updatedItems = get().items.filter((item) => item.id !== id);
+    set({ items: updatedItems });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        await deleteShoppingListItem(kitchenId, id);
+        console.log("Shopping list item deletion synced to Firestore");
+      } catch (error) {
+        console.error("Failed to sync shopping list item deletion to Firestore:", error);
+      }
+    }
   },
 
-  clearPurchased: () => {
-    set((state) => ({
-      items: state.items.filter((item) => !item.isPurchased),
-    }));
+  clearPurchased: async (kitchenId?: string) => {
+    // Update local state immediately
+    const updatedItems = get().items.filter((item) => !item.isPurchased);
+    set({ items: updatedItems });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        await updateKitchenShoppingList(kitchenId, updatedItems);
+        console.log("Shopping list cleared items synced to Firestore");
+      } catch (error) {
+        console.error("Failed to sync shopping list clear to Firestore:", error);
+      }
+    }
   },
 
-      clearAll: () => {
-        set({ items: [] });
-      },
+  clearAll: async (kitchenId?: string) => {
+    // Update local state immediately
+    set({ items: [] });
+
+    // Sync to Firestore if kitchenId is provided
+    if (kitchenId) {
+      try {
+        await updateKitchenShoppingList(kitchenId, []);
+        console.log("Shopping list cleared synced to Firestore");
+      } catch (error) {
+        console.error("Failed to sync shopping list clear to Firestore:", error);
+      }
+    }
+  },
+
+  loadShoppingListFromFirestore: async (kitchenId: string) => {
+    if (!kitchenId) return;
+
+    set({ loading: true });
+    try {
+      const items = await getKitchenShoppingList(kitchenId);
+      set({ items, synced: true, loading: false });
+      console.log(`Loaded ${items.length} shopping list items from Firestore`);
+    } catch (error) {
+      console.error("Failed to load shopping list from Firestore:", error);
+      set({ loading: false });
+    }
+  },
+
+  subscribeToShoppingList: (kitchenId: string) => {
+    if (!kitchenId) return;
+
+    // Unsubscribe from previous subscription if exists
+    const currentUnsubscribe = get().unsubscribe;
+    if (currentUnsubscribe) {
+      currentUnsubscribe();
+    }
+
+    try {
+      const unsubscribe = subscribeToKitchenShoppingList(kitchenId, (items) => {
+        set({ items, synced: true });
+        console.log(`Received ${items.length} shopping list items from Firestore subscription`);
+      });
+
+      set({ unsubscribe });
+    } catch (error) {
+      console.error("Failed to subscribe to shopping list:", error);
+    }
+  },
+
+  unsubscribeFromShoppingList: () => {
+    const unsubscribe = get().unsubscribe;
+    if (unsubscribe) {
+      unsubscribe();
+      set({ unsubscribe: null });
+    }
+  },
+
+  syncToFirestore: async (kitchenId: string) => {
+    if (!kitchenId) return;
+
+    try {
+      await updateKitchenShoppingList(kitchenId, get().items);
+      set({ synced: true });
+      console.log("Shopping list synced to Firestore");
+    } catch (error) {
+      console.error("Failed to sync shopping list to Firestore:", error);
+    }
+  },
     }),
     {
       name: "shopping-list-storage",

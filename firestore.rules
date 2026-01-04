@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is a member of a kitchen
+    function isKitchenMember(kitchenId) {
+      return exists(/databases/$(database)/documents/kitchens/$(kitchenId)/members/$(request.auth.uid));
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Kitchens collection
+    match /kitchens/{kitchenId} {
+      // Kitchen document - only members can read
+      allow read: if request.auth != null && isKitchenMember(kitchenId);
+      allow create: if request.auth != null && request.resource.data.createdBy == request.auth.uid;
+      allow update: if request.auth != null && isKitchenMember(kitchenId);
+      allow delete: if false; // Prevent kitchen deletion for now
+
+      // Kitchen members subcollection
+      match /members/{memberId} {
+        allow read: if request.auth != null && isKitchenMember(kitchenId);
+        allow create: if request.auth != null && (
+          // User can add themselves (when creating kitchen or accepting invite)
+          memberId == request.auth.uid ||
+          // Or if they're already a member (for adding others)
+          isKitchenMember(kitchenId) ||
+          // Or if they're the kitchen creator (for initial member creation)
+          get(/databases/$(database)/documents/kitchens/$(kitchenId)).data.createdBy == request.auth.uid
+        );
+        allow update: if request.auth != null && isKitchenMember(kitchenId);
+        allow delete: if request.auth != null && (
+          // User can remove themselves
+          memberId == request.auth.uid ||
+          // Or owner can remove others
+          get(/databases/$(database)/documents/kitchens/$(kitchenId)/members/$(request.auth.uid)).data.role == 'owner'
+        );
+      }
+
+      // Recipes subcollection
+      match /recipes/{recipeId} {
+        allow read: if request.auth != null && isKitchenMember(kitchenId);
+        allow create: if request.auth != null && isKitchenMember(kitchenId);
+        allow update: if request.auth != null && isKitchenMember(kitchenId);
+        allow delete: if request.auth != null && isKitchenMember(kitchenId);
+      }
+
+      // Shopping list subcollection
+      match /shoppingList/{itemId} {
+        allow read: if request.auth != null && isKitchenMember(kitchenId);
+        allow create: if request.auth != null && isKitchenMember(kitchenId);
+        allow update: if request.auth != null && isKitchenMember(kitchenId);
+        allow delete: if request.auth != null && isKitchenMember(kitchenId);
+      }
+    }
+
+    // Kitchen invites collection
+    match /kitchenInvites/{inviteId} {
+      allow read: if true; // Public read for validation
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.kitchenId is string
+        && request.resource.data.used == false;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used'])
+        && request.resource.data.used == true;
+      allow delete: if false;
+    }
+  }
+}
+

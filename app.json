@@ -8,6 +8,12 @@
     "scheme": "bitebook",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "linking": {
+      "prefixes": [
+        "bitebook://",
+        "https://bitebookhq.app"
+      ]
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.cgfeletar.bitebook",

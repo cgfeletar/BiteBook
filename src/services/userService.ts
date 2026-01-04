@@ -1,6 +1,7 @@
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { User } from "../store/useAuthStore";
+import { createKitchen } from "./kitchenService";
 
 export interface UserDocument {
   uid: string;
@@ -30,18 +31,33 @@ export async function createOrUpdateUser(user: User): Promise<void> {
   };
 
   if (!userSnap.exists()) {
-    // New user - create document with createdAt
+    // New user - create kitchen first, then user document
+    const kitchenId = user.defaultKitchenId || generateUniqueId();
+    await createKitchen(user.uid, kitchenId);
+    
+    // Create document with createdAt and kitchenId
     await setDoc(userRef, {
       ...userData,
+      defaultKitchenId: kitchenId,
       createdAt: serverTimestamp(),
     });
   } else {
-    // Existing user - update only changed fields
+    // Existing user - check if they have a kitchen, create one if not
     const existingData = userSnap.data();
+    let kitchenId = existingData?.defaultKitchenId || user.defaultKitchenId;
+    
+    // If no kitchen exists, create one
+    if (!kitchenId) {
+      kitchenId = generateUniqueId();
+      await createKitchen(user.uid, kitchenId);
+    }
+    
+    // Update user document with kitchenId
     await setDoc(
       userRef,
       {
         ...userData,
+        defaultKitchenId: kitchenId,
         // Preserve createdAt for existing users
         createdAt: existingData.createdAt || serverTimestamp(),
       },

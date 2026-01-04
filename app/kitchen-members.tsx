@@ -1,5 +1,7 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { createKitchenInvite } from "@/src/services/kitchenInviteService";
+import { getKitchenMembers, KitchenMember, createKitchen } from "@/src/services/kitchenService";
+import { getUserDocument, createOrUpdateUser } from "@/src/services/userService";
 import { buildInviteLink, buildWebInviteLink } from "@/src/utils/buildInviteLink";
 import { router } from "expo-router";
 import {
@@ -7,21 +9,32 @@ import {
   Copy,
   Share2,
   Users,
+  Crown,
 } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Share,
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
 
+interface MemberWithDetails extends KitchenMember {
+  displayName?: string;
+  email?: string;
+  photoURL?: string;
+}
+
 export default function KitchenMembersScreen() {
-  const { user } = useAuthStore();
+  const { user, setUser } = useAuthStore();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [members, setMembers] = useState<MemberWithDetails[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
 
   const handleInvite = async () => {
     if (!user) {
@@ -29,23 +42,66 @@ export default function KitchenMembersScreen() {
       return;
     }
 
-    const kitchenId = user.defaultKitchenId;
-    if (!kitchenId) {
-      Alert.alert("Error", "No kitchen found. Please contact support.");
-      return;
-    }
-
     setIsGenerating(true);
     try {
+      // Ensure user has a kitchen - create one if they don't
+      let kitchenId = user.defaultKitchenId;
+      
+      if (!kitchenId) {
+        console.log("No kitchen found, creating one...");
+        // Create a new kitchen for the user
+        kitchenId = `kitchen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        console.log("Creating kitchen with ID:", kitchenId);
+        
+        try {
+          await createKitchen(user.uid, kitchenId);
+          console.log("Kitchen created successfully");
+        } catch (kitchenError: any) {
+          console.error("Error creating kitchen:", kitchenError);
+          throw new Error(`Failed to create kitchen: ${kitchenError?.message || kitchenError}`);
+        }
+        
+        // Update user document with the new kitchen ID
+        try {
+          await createOrUpdateUser({
+            ...user,
+            defaultKitchenId: kitchenId,
+          });
+          console.log("User document updated with kitchen ID");
+        } catch (userError: any) {
+          console.error("Error updating user:", userError);
+          throw new Error(`Failed to update user: ${userError?.message || userError}`);
+        }
+        
+        // Update local state
+        setUser({
+          ...user,
+          defaultKitchenId: kitchenId,
+        });
+      } else {
+        console.log("Using existing kitchen ID:", kitchenId);
+      }
+
+      console.log("Creating invite for kitchen:", kitchenId);
       const inviteId = await createKitchenInvite(kitchenId, user.uid);
+      console.log("Invite created with ID:", inviteId);
+      
       const inviteLink = buildWebInviteLink(inviteId); // Use web link for sharing
+      console.log("Invite link:", inviteLink);
 
       await Share.share({
         message: `Join my kitchen on Saute 🍳\n\n${inviteLink}`,
         title: "Invite to Kitchen",
       });
+      
+      console.log("Share dialog opened");
     } catch (error: any) {
       console.error("Error creating invite:", error);
+      console.error("Error details:", {
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack,
+      });
       Alert.alert("Error", error?.message || "Could not create invite");
     } finally {
       setIsGenerating(false);
@@ -58,24 +114,100 @@ export default function KitchenMembersScreen() {
       return;
     }
 
-    const kitchenId = user.defaultKitchenId;
-    if (!kitchenId) {
-      Alert.alert("Error", "No kitchen found. Please contact support.");
-      return;
-    }
-
     setIsGenerating(true);
     try {
+      // Ensure user has a kitchen - create one if they don't
+      let kitchenId = user.defaultKitchenId;
+      
+      if (!kitchenId) {
+        console.log("No kitchen found, creating one...");
+        // Create a new kitchen for the user
+        kitchenId = `kitchen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        console.log("Creating kitchen with ID:", kitchenId);
+        
+        try {
+          await createKitchen(user.uid, kitchenId);
+          console.log("Kitchen created successfully");
+        } catch (kitchenError: any) {
+          console.error("Error creating kitchen:", kitchenError);
+          throw new Error(`Failed to create kitchen: ${kitchenError?.message || kitchenError}`);
+        }
+        
+        // Update user document with the new kitchen ID
+        try {
+          await createOrUpdateUser({
+            ...user,
+            defaultKitchenId: kitchenId,
+          });
+          console.log("User document updated with kitchen ID");
+        } catch (userError: any) {
+          console.error("Error updating user:", userError);
+          throw new Error(`Failed to update user: ${userError?.message || userError}`);
+        }
+        
+        // Update local state
+        setUser({
+          ...user,
+          defaultKitchenId: kitchenId,
+        });
+      } else {
+        console.log("Using existing kitchen ID:", kitchenId);
+      }
+
+      console.log("Creating invite for kitchen:", kitchenId);
       const inviteId = await createKitchenInvite(kitchenId, user.uid);
+      console.log("Invite created with ID:", inviteId);
+      
       const link = buildWebInviteLink(inviteId); // Use web link for copying
+      console.log("Invite link:", link);
 
       await Clipboard.setStringAsync(link);
       Alert.alert("Copied", "Invite link copied to clipboard");
     } catch (error: any) {
       console.error("Error creating invite:", error);
+      console.error("Error details:", {
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack,
+      });
       Alert.alert("Error", error?.message || "Could not create invite");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    loadMembers();
+  }, [user]);
+
+  const loadMembers = async () => {
+    if (!user?.defaultKitchenId) {
+      setLoadingMembers(false);
+      return;
+    }
+
+    setLoadingMembers(true);
+    try {
+      const kitchenMembers = await getKitchenMembers(user.defaultKitchenId);
+      
+      // Fetch user details for each member
+      const membersWithDetails = await Promise.all(
+        kitchenMembers.map(async (member) => {
+          const userDoc = await getUserDocument(member.userId);
+          return {
+            ...member,
+            displayName: userDoc?.displayName || undefined,
+            email: userDoc?.email || undefined,
+          };
+        })
+      );
+
+      setMembers(membersWithDetails);
+    } catch (error: any) {
+      console.error("Error loading members:", error);
+      Alert.alert("Error", "Failed to load kitchen members");
+    } finally {
+      setLoadingMembers(false);
     }
   };
 
@@ -102,7 +234,7 @@ export default function KitchenMembersScreen() {
         <View className="w-10" />
       </View>
 
-      <View className="flex-1 px-6">
+      <ScrollView className="flex-1" contentContainerStyle={{ paddingHorizontal: 24 }}>
         {/* Info Section */}
         <View className="bg-soft-beige rounded-xl p-4 mb-6">
           <View className="flex-row items-start">
@@ -147,7 +279,7 @@ export default function KitchenMembersScreen() {
         <TouchableOpacity
           onPress={handleCopyInvite}
           disabled={isGenerating}
-          className={`rounded-xl p-4 flex-row items-center justify-center border-2 ${
+          className={`rounded-xl p-4 flex-row items-center justify-center border-2 mb-8 ${
             isGenerating
               ? "border-warm-sand/30 bg-warm-sand/20"
               : "border-dark-sage bg-white"
@@ -167,20 +299,67 @@ export default function KitchenMembersScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Members List Placeholder */}
-        <View className="mt-8">
+        {/* Members List */}
+        <View className="mb-8">
           <Text
             className="text-sm font-semibold text-charcoal/60 mb-3 uppercase tracking-wide"
           >
-            Members
+            Members ({members.length})
           </Text>
-          <View className="bg-white rounded-xl p-4">
-            <Text className="text-charcoal/70 text-sm text-center">
-              Kitchen members will appear here
-            </Text>
-          </View>
+          
+          {loadingMembers ? (
+            <View className="bg-white rounded-xl p-8 items-center justify-center">
+              <ActivityIndicator size="small" color="#5A6E6C" />
+              <Text className="text-charcoal/70 text-sm mt-2">Loading members...</Text>
+            </View>
+          ) : members.length === 0 ? (
+            <View className="bg-white rounded-xl p-4">
+              <Text className="text-charcoal/70 text-sm text-center">
+                No members yet. Invite someone to get started!
+              </Text>
+            </View>
+          ) : (
+            <View className="bg-white rounded-xl overflow-hidden">
+              {members.map((member, index) => (
+                <View
+                  key={member.userId}
+                  className={`flex-row items-center p-4 ${
+                    index < members.length - 1 ? "border-b border-warm-sand/30" : ""
+                  }`}
+                >
+                  <View className="w-10 h-10 rounded-full bg-dark-sage/20 items-center justify-center mr-3">
+                    <Text className="text-dark-sage font-semibold text-sm">
+                      {member.displayName?.[0]?.toUpperCase() || member.email?.[0]?.toUpperCase() || "?"}
+                    </Text>
+                  </View>
+                  <View className="flex-1">
+                    <View className="flex-row items-center">
+                      <Text className="text-charcoal font-semibold text-base mr-2">
+                        {member.displayName || member.email || "Unknown User"}
+                      </Text>
+                      {member.role === "owner" && (
+                        <Crown size={16} color="#5A6E6C" />
+                      )}
+                    </View>
+                    {member.displayName && member.email && (
+                      <Text className="text-charcoal/60 text-sm mt-0.5">
+                        {member.email}
+                      </Text>
+                    )}
+                  </View>
+                  {member.role === "owner" && (
+                    <View className="bg-dark-sage/10 rounded-full px-3 py-1">
+                      <Text className="text-dark-sage text-xs font-semibold">
+                        Owner
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

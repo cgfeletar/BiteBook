@@ -4,7 +4,7 @@ import { extractInviteIdFromUrl } from "@/src/utils/buildInviteLink";
 import { router, useLocalSearchParams } from "expo-router";
 import * as Linking from "expo-linking";
 import { CheckCircle, XCircle } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Text, TouchableOpacity, View, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getUserDocument, createOrUpdateUser } from "@/src/services/userService";
@@ -15,24 +15,62 @@ export default function InviteScreen() {
   const { user, setUser } = useAuthStore();
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const hasProcessedRef = useRef(false);
 
   useEffect(() => {
-    // Get invite ID from params or URL
+    console.log("[InviteScreen] Mounted, params:", params);
+    
+    // Get invite ID from params (Expo Router should parse this from the URL)
     const paramInviteId = params.inviteId as string;
     
     if (paramInviteId) {
+      console.log("[InviteScreen] Found invite ID in params:", paramInviteId);
       setInviteId(paramInviteId);
-    } else {
-      // Try to get from deep link URL
-      Linking.getInitialURL().then((url) => {
+      return;
+    }
+
+    // Fallback: Try to get from URL if not in params
+    const getInviteIdFromUrl = async () => {
+      try {
+        const url = await Linking.getInitialURL();
+        console.log("[InviteScreen] Initial URL:", url);
         if (url) {
           const extractedId = extractInviteIdFromUrl(url);
+          console.log("[InviteScreen] Extracted invite ID:", extractedId);
           if (extractedId) {
             setInviteId(extractedId);
+            return;
           }
         }
-      });
-    }
+      } catch (error) {
+        console.error("[InviteScreen] Error getting initial URL:", error);
+      }
+
+      // If still no invite ID after a delay, show error
+      setTimeout(() => {
+        if (!inviteId) {
+          console.warn("[InviteScreen] No invite ID found");
+          setStatus("error");
+          setErrorMessage("Invalid invite link. No invite ID found.");
+        }
+      }, 2000);
+    };
+
+    getInviteIdFromUrl();
+
+    // Listen for URL changes (when app is already running)
+    const subscription = Linking.addEventListener("url", (event) => {
+      console.log("[InviteScreen] URL event:", event.url);
+      const extractedId = extractInviteIdFromUrl(event.url);
+      if (extractedId) {
+        console.log("[InviteScreen] Extracted invite ID from URL event:", extractedId);
+        setInviteId(extractedId);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, [params.inviteId]);
 
   useEffect(() => {
