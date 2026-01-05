@@ -15,6 +15,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
   BookOpen,
+  Calendar,
   Check,
   ChefHat,
   ChevronDown,
@@ -761,12 +762,27 @@ export default function RecipeDetailScreen() {
   const enrichInstructionWithAmounts = (instruction: string): string => {
     if (!recipeData || !recipeData.ingredients) return instruction;
 
+    console.log(
+      "[enrichInstructionWithAmounts] Original instruction:",
+      instruction
+    );
+
     let enrichedText = instruction;
 
     // Sort ingredients by name length (longest first) to match longer names first
     const ingredients = [...recipeData.ingredients].sort(
       (a, b) => b.name.length - a.name.length
     );
+
+    console.log(
+      "[enrichInstructionWithAmounts] Total ingredients to check:",
+      ingredients.length
+    );
+    ingredients.forEach((ing) => {
+      console.log(
+        `[enrichInstructionWithAmounts] Ingredient: "${ing.name}", quantity: ${ing.quantity}, unit: "${ing.unit}"`
+      );
+    });
 
     // Collect all matches with their positions first
     const replacements: Array<{
@@ -779,17 +795,32 @@ export default function RecipeDetailScreen() {
       const ingredientName = ing.name;
       const normalizedName = ingredientName.toLowerCase().trim();
 
+      // Extract the main part of the ingredient name (before comma, parentheses, etc.)
+      // This handles cases like "Rolled oats, traditional" -> "Rolled oats"
+      const mainPart = ingredientName.split(/[,\(]/)[0].trim();
+      const normalizedMainPart = mainPart.toLowerCase().trim();
+
       // Escape special regex characters in the ingredient name
       const escapedName = ingredientName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const escapedNormalizedName = normalizedName.replace(
         /[.*+?^${}()|[\]\\]/g,
         "\\$&"
       );
+      const escapedMainPart = mainPart.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escapedNormalizedMainPart = normalizedMainPart.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
 
-      // Create pattern to match the ingredient name as a whole word
+      // Create pattern to match the ingredient name - try both full name and main part
+      // This handles cases where instruction says "rolled oats" but ingredient is "Rolled oats, traditional"
       const pattern = new RegExp(
-        `\\b(${escapedName}|${escapedNormalizedName})\\b`,
+        `\\b(${escapedName}|${escapedNormalizedName}|${escapedMainPart}|${escapedNormalizedMainPart})\\b`,
         "gi"
+      );
+
+      console.log(
+        `[enrichInstructionWithAmounts] Trying to match ingredient "${ingredientName}" (main part: "${mainPart}")`
       );
 
       let match;
@@ -797,61 +828,121 @@ export default function RecipeDetailScreen() {
         const offset = match.index;
         const matchText = match[0];
 
-        // Check if there's already a quantity mentioned near this ingredient
-        const contextStart = Math.max(0, offset - 30);
-        const contextEnd = Math.min(
-          instruction.length,
-          offset + matchText.length + 30
+        console.log(
+          `[enrichInstructionWithAmounts] Found ingredient "${ingredientName}" in instruction at position ${offset}, matched text: "${matchText}"`
         );
-        const context = instruction.substring(contextStart, contextEnd);
 
-        // Check if quantity already exists in the context
+        // Use the matched text (what's actually in the instruction) for replacement
+        // This preserves the capitalization/style from the instruction
+        const ingredientTextToUse = matchText;
+
+        // Check if there's already a quantity mentioned before this ingredient
+        // Look backwards from the ingredient name to find any existing quantity
+        const lookbackStart = Math.max(0, offset - 50);
+        const lookbackText = instruction.substring(lookbackStart, offset);
+
+        // Pattern to match quantities with units (more comprehensive)
         const quantityPattern =
-          /\d+\s*(cup|tbsp|tsp|g|gram|oz|lb|ml|l|stick|piece|whole|clove|head|bunch|can|package|container|of)/i;
-        const hasQuantityNearby = quantityPattern.test(context);
+          /(\d+\s*\/\s*\d+|\d+\s+\.\s*\d+|\d+\.\d+|\d+)\s*(cup|cups|tbsp|tablespoon|tablespoons|tsp|teaspoon|teaspoons|g|gram|grams|oz|ounce|ounces|lb|pound|pounds|ml|milliliter|milliliters|l|liter|liters|stick|sticks|piece|pieces|whole|clove|cloves|head|heads|bunch|bunches|can|cans|package|packages|container|containers|of|egg|eggs|large|medium|small)\s*/i;
+
+        const quantityMatch = lookbackText.match(quantityPattern);
+        const hasQuantityBefore = quantityMatch !== null;
+
+        console.log(
+          `[enrichInstructionWithAmounts] Has quantity before: ${hasQuantityBefore}`,
+          hasQuantityBefore ? `(found: "${quantityMatch?.[0]}")` : ""
+        );
 
         // Handle "to taste" ingredients
         if (ing.unit === "to taste" && ing.quantity === null) {
           // Check if "to taste" is already mentioned nearby
+          const contextStart = Math.max(0, offset - 30);
+          const contextEnd = Math.min(
+            instruction.length,
+            offset + matchText.length + 30
+          );
+          const context = instruction.substring(contextStart, contextEnd);
           const toTastePattern = /to\s+taste/i;
           const hasToTasteNearby = toTastePattern.test(context);
 
           if (!hasToTasteNearby) {
-            // Replace ingredient name with "{ingredient} to taste"
+            // Replace ingredient name with "{ingredient} to taste" using matched text
+            const replacement = `${ingredientTextToUse} to taste`;
+            console.log(
+              `[enrichInstructionWithAmounts] Adding "to taste" replacement: "${replacement}"`
+            );
             replacements.push({
               start: offset,
               end: offset + matchText.length,
-              replacement: `${ingredientName} to taste`,
+              replacement,
             });
+          } else {
+            console.log(
+              `[enrichInstructionWithAmounts] "to taste" already mentioned nearby, skipping`
+            );
           }
-        } else if (
-          !hasQuantityNearby &&
-          ing.quantity !== null &&
-          ing.quantity > 0
-        ) {
+        } else if (ing.quantity !== null && ing.quantity > 0) {
           // Format the quantity nicely using fractions when appropriate
           const quantityStr = formatQuantity(ing.quantity, ing.unit);
 
           // Only include unit if it's not null
           const unitStr = ing.unit ? ` ${ing.unit}` : "";
 
-          replacements.push({
-            start: offset,
-            end: offset + matchText.length,
-            replacement: `${quantityStr}${unitStr} ${ingredientName}`,
-          });
+          if (hasQuantityBefore && quantityMatch) {
+            // Replace the existing quantity + ingredient with the formatted version
+            const quantityStart = lookbackStart + (quantityMatch.index || 0);
+            // Use the matched text from instruction to preserve capitalization
+            const replacement = `${quantityStr}${unitStr} ${ingredientTextToUse}`;
+            console.log(
+              `[enrichInstructionWithAmounts] Replacing existing quantity with: "${replacement}" (from position ${quantityStart} to ${
+                offset + matchText.length
+              })`
+            );
+            replacements.push({
+              start: quantityStart,
+              end: offset + matchText.length,
+              replacement,
+            });
+          } else {
+            // Add quantity before ingredient name, using matched text from instruction
+            const replacement = `${quantityStr}${unitStr} ${ingredientTextToUse}`;
+            console.log(
+              `[enrichInstructionWithAmounts] Adding quantity: "${replacement}" (at position ${offset})`
+            );
+            replacements.push({
+              start: offset,
+              end: offset + matchText.length,
+              replacement,
+            });
+          }
+        } else {
+          console.log(
+            `[enrichInstructionWithAmounts] Skipping ingredient "${ingredientName}" - quantity is null or 0`
+          );
         }
       }
     });
 
+    console.log(
+      `[enrichInstructionWithAmounts] Total replacements to apply: ${replacements.length}`
+    );
+
     // Apply replacements in reverse order to maintain correct indices
     replacements.sort((a, b) => b.start - a.start);
     replacements.forEach(({ start, end, replacement }) => {
+      console.log(
+        `[enrichInstructionWithAmounts] Applying replacement: "${replacement}" at positions ${start}-${end}`
+      );
       enrichedText =
         enrichedText.substring(0, start) +
         replacement +
         enrichedText.substring(end);
     });
+
+    console.log(
+      "[enrichInstructionWithAmounts] Final enriched instruction:",
+      enrichedText
+    );
 
     return enrichedText;
   };
@@ -3861,18 +3952,24 @@ export default function RecipeDetailScreen() {
               <RNTouchableOpacity
                 onPress={() => {
                   setShowMenu(false);
-                  setShowBookSelector(true);
+                  // Pass the recipe ID as a parameter when navigating
+                  const recipeId = params.id as string;
+                  if (recipeId) {
+                    router.push(`/(tabs)/meal-plan?recipeId=${recipeId}`);
+                  } else {
+                    router.push("/(tabs)/meal-plan");
+                  }
                 }}
                 className="flex-row items-center py-4 border-b border-soft-beige"
                 activeOpacity={0.7}
               >
-                <BookOpen
+                <Calendar
                   size={20}
                   color="#5A6E6C"
                   style={{ marginRight: 12 }}
                 />
                 <Text className="text-charcoal-gray text-base font-semibold">
-                  Add to Book
+                  Add to Calendar
                 </Text>
               </RNTouchableOpacity>
 

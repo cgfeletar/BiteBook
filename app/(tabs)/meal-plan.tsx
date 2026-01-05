@@ -6,9 +6,9 @@ import {
 } from "@/src/store/useMealPlanStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Plus, Search, Trash2, User, X } from "lucide-react-native";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -29,6 +29,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 type WeekView = "thisWeek" | "nextWeek" | "custom";
 
 export default function MealPlanScreen() {
+  const params = useLocalSearchParams();
   const swipeableRefs = useRef<Record<string, Swipeable | null>>({});
   const [selectedWeek, setSelectedWeek] = useState<WeekView>("thisWeek");
   const [showAddMealModal, setShowAddMealModal] = useState(false);
@@ -36,9 +37,19 @@ export default function MealPlanScreen() {
   const [customMealName, setCustomMealName] = useState("");
   const [showRecipePicker, setShowRecipePicker] = useState(false);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState("");
+  const [pendingRecipeId, setPendingRecipeId] = useState<string | null>(null);
 
   const { mealPlans, addMeal, removeMeal } = useMealPlanStore();
   const { recipes } = useRecipeStore();
+
+  // Handle recipe ID from navigation - store it for when user clicks "Add meal"
+  useEffect(() => {
+    if (params.recipeId && typeof params.recipeId === "string") {
+      setPendingRecipeId(params.recipeId);
+      // Clear the param from URL to avoid re-triggering
+      router.setParams({ recipeId: undefined });
+    }
+  }, [params.recipeId]);
 
   // Get the start date for the selected week
   const getWeekStartDate = (): Date => {
@@ -94,6 +105,23 @@ export default function MealPlanScreen() {
     const normalizedDate = date.split("T")[0];
     setSelectedDate(normalizedDate);
     setShowAddMealModal(true);
+    
+    // If there's a pending recipe ID, automatically open recipe picker and select it
+    if (pendingRecipeId) {
+      setShowRecipePicker(true);
+      // Find the recipe and add it automatically
+      const recipe = recipes.find((r) => r.id === pendingRecipeId);
+      if (recipe) {
+        // Small delay to ensure modal is open
+        setTimeout(() => {
+          handleAddRecipe(recipe.id);
+          setPendingRecipeId(null);
+        }, 100);
+      } else {
+        // Recipe not found, just show the picker
+        setPendingRecipeId(null);
+      }
+    }
   };
 
   const handleSaveMeal = () => {
@@ -364,6 +392,7 @@ export default function MealPlanScreen() {
             setShowRecipePicker(false);
             setCustomMealName("");
             setRecipeSearchQuery("");
+            setPendingRecipeId(null);
           }}
         >
           <KeyboardAvoidingView
@@ -377,6 +406,7 @@ export default function MealPlanScreen() {
                 setShowRecipePicker(false);
                 setCustomMealName("");
                 setRecipeSearchQuery("");
+                setPendingRecipeId(null);
               }}
             >
               <Pressable
@@ -393,7 +423,10 @@ export default function MealPlanScreen() {
                       setShowRecipePicker(false);
                       setCustomMealName("");
                       setRecipeSearchQuery("");
+                      setPendingRecipeId(null);
                     }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    activeOpacity={0.7}
                   >
                     <X size={24} color="#3E3E3E" />
                   </TouchableOpacity>
