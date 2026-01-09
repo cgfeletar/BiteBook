@@ -10,6 +10,7 @@
     "rules": "storage.rules"
   },
   "hosting": {
+    "target": "bitebookhq",
     "public": "public",
     "rewrites": [
       {
@@ -29,7 +30,10 @@
       {
         "source": "/invite/**",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
         ]
       }
     ],

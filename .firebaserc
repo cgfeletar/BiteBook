@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "savorboard-5d4cc"
-  }
+  },
+  "targets": {
+    "savorboard-5d4cc": {
+      "hosting": {
+        "bitebookhq": [
+          "bitebookhq"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

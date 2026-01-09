@@ -1,179 +1,103 @@
 import { AuthProvider } from "@/src/services/authProvider";
-import { useAuthStore } from "@/src/store/useAuthStore";
-import { Lora_400Regular, Lora_700Bold } from "@expo-google-fonts/lora";
 import { DefaultTheme, ThemeProvider } from "@react-navigation/native";
-import { useFonts } from "expo-font";
 import * as Linking from "expo-linking";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { verifyInstallation } from "nativewind";
-import { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import "react-native-reanimated";
 import "../global.css";
 import "../nativewind-setup";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete
-SplashScreen.preventAutoHideAsync();
-
-// Verify NativeWind installation
-if (__DEV__) {
-  verifyInstallation();
-}
-
-// Removed unstable_settings as it can interfere with deep linking
-// Expo Router will handle universal links automatically
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({
-    Lora_400Regular,
-    Lora_700Bold,
-  });
   const router = useRouter();
-  const segments = useSegments();
+  const splashHidden = useRef(false);
 
+  // Never allow an infinite splash hang
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
+    const t = setTimeout(() => {
+      if (!splashHidden.current) {
+        SplashScreen.hideAsync().catch(() => {});
+        splashHidden.current = true;
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, []);
 
-  // Expo Router should handle universal links automatically
-  // But we'll add a fallback handler for cases where it doesn't work
+  // Hide splash immediately (you can reintroduce fonts later once stable)
   useEffect(() => {
-    if (!fontsLoaded && !fontError) return;
+    SplashScreen.hideAsync()
+      .catch(() => {})
+      .finally(() => {
+        splashHidden.current = true;
+      });
+  }, []);
 
-    // Listen for URL events (when app is already running)
-    const subscription = Linking.addEventListener("url", (event) => {
-      console.log("[RootLayout] URL event received:", event.url);
-      const url = event.url;
+  // Invite deep link handler (only acts on /invite/<id>)
+  useEffect(() => {
+    let subscription: any;
 
-      // Extract invite ID - support both formats
-      let inviteId: string | null = null;
-      const deepLinkMatch = url.match(/bitebook:\/\/invite\/([a-zA-Z0-9]+)/);
-      const universalLinkMatch = url.match(/\/invite\/([a-zA-Z0-9]+)/);
+    // Delay navigation until router is mounted
+    const timeoutId = setTimeout(() => {
+      const handleUrl = (url: string) => {
+        if (!url) return;
 
-      if (deepLinkMatch) {
-        inviteId = deepLinkMatch[1];
-      } else if (universalLinkMatch) {
-        inviteId = universalLinkMatch[1];
-      }
+        // ignore bare scheme launches that map to "/"
+        if (url === "bitebook:///" || url === "bitebook://") return;
 
-      if (inviteId) {
-        console.log("[RootLayout] Extracted invite ID:", inviteId);
-        // Wait a bit for router to be ready, then navigate
-        setTimeout(() => {
-          router.push(`/invite?inviteId=${inviteId}`);
-        }, 300);
-      }
-    });
-
-    // Handle initial URL (when app opens from closed state)
-    const handleInitialURL = async () => {
-      try {
-        const url = await Linking.getInitialURL();
-        console.log("[RootLayout] Initial URL:", url);
-
-        if (url) {
-          let inviteId: string | null = null;
-          const deepLinkMatch = url.match(
-            /bitebook:\/\/invite\/([a-zA-Z0-9]+)/
-          );
-          const universalLinkMatch = url.match(/\/invite\/([a-zA-Z0-9]+)/);
-
-          if (deepLinkMatch) {
-            inviteId = deepLinkMatch[1];
-          } else if (universalLinkMatch) {
-            inviteId = universalLinkMatch[1];
-          }
-
-          if (inviteId) {
-            console.log(
-              "[RootLayout] Found invite ID from initial URL:",
-              inviteId
-            );
-            // Wait for auth and router to be ready
-            const navigateWhenReady = () => {
-              const { initialized } = useAuthStore.getState();
-              if (initialized) {
-                console.log("[RootLayout] Auth ready, navigating to invite");
-                setTimeout(() => {
-                  router.push(`/invite?inviteId=${inviteId}`);
-                }, 500);
-              } else {
-                console.log("[RootLayout] Waiting for auth...");
-                setTimeout(navigateWhenReady, 200);
-              }
-            };
-            setTimeout(navigateWhenReady, 500);
-          }
+        const inviteMatch = url.match(/\/invite\/([a-zA-Z0-9]+)/);
+        if (inviteMatch?.[1]) {
+          router.replace(`/invite/${inviteMatch[1]}`);
         }
-      } catch (error) {
-        console.error("[RootLayout] Error handling initial URL:", error);
-      }
-    };
+      };
 
-    handleInitialURL();
+      Linking.getInitialURL().then((url) => {
+        if (url) handleUrl(url);
+      });
+
+      subscription = Linking.addEventListener("url", ({ url }) =>
+        handleUrl(url)
+      );
+    }, 100); // Small delay to ensure router is mounted
 
     return () => {
-      subscription.remove();
+      clearTimeout(timeoutId);
+      if (subscription) {
+        subscription.remove();
+      }
     };
-  }, [router, fontsLoaded, fontError]);
-
-  if (!fontsLoaded && !fontError) {
-    return null;
-  }
+  }, [router]);
 
   return (
     <AuthProvider>
-      <View style={styles.container} className="flex-1 bg-off-white">
+      <View style={styles.container}>
         <ThemeProvider value={DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="recipe-detail"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="book-detail"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="account"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="feedback"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="kitchen-members"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="coming-soon"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="invite"
-              options={{ headerShown: false, presentation: "card" }}
-            />
-            <Stack.Screen
-              name="modal"
-              options={{ presentation: "modal", title: "Modal" }}
-            />
-          </Stack>
+          <Stack screenOptions={{ headerShown: false }} />
           <StatusBar style="dark" />
         </ThemeProvider>
+
+        {/* Tiny visible marker so you can tell JS is running */}
+        <View style={styles.debugPill}>
+          <Text style={styles.debugText}>JS running</Text>
+        </View>
       </View>
     </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FAF9F7", // off-white fallback
+  container: { flex: 1, backgroundColor: "#FAF9F7" },
+  debugPill: {
+    position: "absolute",
+    bottom: 20,
+    alignSelf: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.6)",
   },
+  debugText: { color: "white", fontSize: 12 },
 });
