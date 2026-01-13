@@ -6,6 +6,7 @@ import {
   query,
   addDoc,
   updateDoc,
+  setDoc,
   deleteDoc,
   where,
   orderBy,
@@ -39,6 +40,7 @@ export async function addRecipeToFirestore(
 
 /**
  * Update a recipe in Firestore
+ * If the document doesn't exist, it will be created with the updates
  */
 export async function updateRecipeInFirestore(
   kitchenId: string,
@@ -50,7 +52,21 @@ export async function updateRecipeInFirestore(
   }
 
   const recipeRef = doc(db, "kitchens", kitchenId, "recipes", recipeId);
-  await updateDoc(recipeRef, updates);
+  
+  // Check if document exists
+  const recipeSnap = await getDoc(recipeRef);
+  
+  if (recipeSnap.exists()) {
+    // Document exists, update it
+    await updateDoc(recipeRef, updates);
+  } else {
+    // Document doesn't exist, create it with the updates
+    // This handles the case where a recipe exists locally but hasn't been synced yet
+    await setDoc(recipeRef, {
+      ...updates,
+      createdAt: updates.createdAt || serverTimestamp(),
+    }, { merge: true });
+  }
 }
 
 /**

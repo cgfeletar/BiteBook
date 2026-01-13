@@ -5,7 +5,7 @@ import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import "react-native-reanimated";
 import "../global.css";
 import "../nativewind-setup";
@@ -78,11 +78,6 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }} />
           <StatusBar style="dark" />
         </ThemeProvider>
-
-        {/* Tiny visible marker so you can tell JS is running */}
-        <View style={styles.debugPill}>
-          <Text style={styles.debugText}>JS running</Text>
-        </View>
       </View>
     </AuthProvider>
   );
@@ -90,14 +85,4 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FAF9F7" },
-  debugPill: {
-    position: "absolute",
-    bottom: 20,
-    alignSelf: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  debugText: { color: "white", fontSize: 12 },
 });

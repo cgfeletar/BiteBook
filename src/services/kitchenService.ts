@@ -12,7 +12,7 @@ import {
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore";
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 
 export interface Kitchen {
   id: string;
@@ -76,17 +76,34 @@ export async function createKitchen(
  * Get a kitchen by ID
  */
 export async function getKitchen(kitchenId: string): Promise<Kitchen | null> {
-  const kitchenRef = doc(db, "kitchens", kitchenId);
-  const kitchenSnap = await getDoc(kitchenRef);
+  const path = `kitchens/${kitchenId}`;
+  console.log(`[getKitchen] Operation: getDoc, Path: ${path}`);
+  console.log(`[getKitchen] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
+  
+  try {
+    const kitchenRef = doc(db, "kitchens", kitchenId);
+    const kitchenSnap = await getDoc(kitchenRef);
 
-  if (!kitchenSnap.exists()) {
-    return null;
+    if (!kitchenSnap.exists()) {
+      console.log(`[getKitchen] Kitchen not found at path: ${path}`);
+      return null;
+    }
+
+    const data = {
+      id: kitchenSnap.id,
+      ...kitchenSnap.data(),
+    } as Kitchen;
+    console.log(`[getKitchen] Successfully read kitchen:`, { id: data.id, createdBy: data.createdBy });
+    return data;
+  } catch (error: any) {
+    console.error(`[getKitchen] FAILED - Operation: getDoc, Path: ${path}`, {
+      code: error?.code,
+      message: error?.message,
+      authUid: auth.currentUser?.uid,
+      authEmail: auth.currentUser?.email,
+    });
+    throw error;
   }
-
-  return {
-    id: kitchenSnap.id,
-    ...kitchenSnap.data(),
-  } as Kitchen;
 }
 
 /**
@@ -104,6 +121,11 @@ export async function addKitchenMember(
     throw new Error("kitchenId and userId are required");
   }
 
+  const path = `kitchens/${kitchenId}/members/${userId}`;
+  console.log(`[addKitchenMember] Operation: setDoc, Path: ${path}`);
+  console.log(`[addKitchenMember] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
+  console.log(`[addKitchenMember] userId: ${userId}, role: ${role}, uidMatch: ${auth.currentUser?.uid === userId}`);
+
   const memberRef = doc(db, "kitchens", kitchenId, "members", userId);
   
   try {
@@ -112,14 +134,17 @@ export async function addKitchenMember(
       joinedAt: serverTimestamp(),
       role,
     });
-    console.log(`Successfully added member ${userId} to kitchen ${kitchenId} with role ${role}`);
+    console.log(`[addKitchenMember] SUCCESS - Member added at path: ${path}`);
   } catch (error: any) {
-    console.error(`Error adding member to kitchen:`, {
+    console.error(`[addKitchenMember] FAILED - Operation: setDoc, Path: ${path}`, {
       kitchenId,
       userId,
       role,
-      error: error?.message,
       code: error?.code,
+      message: error?.message,
+      authUid: auth.currentUser?.uid,
+      authEmail: auth.currentUser?.email,
+      uidMatch: auth.currentUser?.uid === userId,
     });
     throw error;
   }
@@ -204,9 +229,24 @@ export async function isKitchenMember(
     return false;
   }
 
-  const memberRef = doc(db, "kitchens", kitchenId, "members", userId);
-  const memberSnap = await getDoc(memberRef);
+  const path = `kitchens/${kitchenId}/members/${userId}`;
+  console.log(`[isKitchenMember] Operation: getDoc, Path: ${path}`);
+  console.log(`[isKitchenMember] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
   
-  return memberSnap.exists();
+  try {
+    const memberRef = doc(db, "kitchens", kitchenId, "members", userId);
+    const memberSnap = await getDoc(memberRef);
+    const exists = memberSnap.exists();
+    console.log(`[isKitchenMember] SUCCESS - Member exists: ${exists} at path: ${path}`);
+    return exists;
+  } catch (error: any) {
+    console.error(`[isKitchenMember] FAILED - Operation: getDoc, Path: ${path}`, {
+      code: error?.code,
+      message: error?.message,
+      authUid: auth.currentUser?.uid,
+      authEmail: auth.currentUser?.email,
+    });
+    throw error;
+  }
 }
 

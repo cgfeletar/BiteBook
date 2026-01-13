@@ -2,6 +2,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { app } from "../config/firebase";
 import { Ingredient, NutritionalInfo, RecipeCreateInput } from "../types";
 import { autoTagRecipe } from "../utils/autoTagRecipe";
+import { normalizeNutrition, isNutritionIncomplete, mergeNutrition } from "../utils/normalizeNutrition";
 
 // Initialize Cloud Functions with us-central1 region
 const functions = getFunctions(app, "us-central1");
@@ -39,9 +40,15 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
     const recipeData = result.data;
     const autoTags = autoTagRecipe(recipeData);
     
+    // Normalize nutrition to ensure required fields are present
+    // Nutrition generation for incomplete values will happen in the detail screen
+    // (non-blocking, with loading state) so users can see the recipe immediately
+    const normalizedNutrition = normalizeNutrition(recipeData.nutritionalInfo);
+    
     // Merge auto-generated tags with existing tags (if any)
     return {
       ...recipeData,
+      nutritionalInfo: normalizedNutrition,
       tags: autoTags,
     };
   } catch (error: any) {
@@ -106,9 +113,15 @@ export async function importRecipeFromImage(
     const { hasHandwriting, ...recipeWithoutHandwriting } = recipeData;
     const autoTags = autoTagRecipe(recipeWithoutHandwriting);
     
+    // Normalize nutrition to ensure required fields are present
+    // Nutrition generation for incomplete values will happen in the detail screen
+    // (non-blocking, with loading state) so users can see the recipe immediately
+    const normalizedNutrition = normalizeNutrition(recipeWithoutHandwriting.nutritionalInfo);
+    
     // Merge auto-generated tags with existing tags (if any)
     return {
       ...recipeWithoutHandwriting,
+      nutritionalInfo: normalizedNutrition,
       tags: autoTags,
       hasHandwriting: hasHandwriting || false,
     };

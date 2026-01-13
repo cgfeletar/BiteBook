@@ -7,7 +7,7 @@ import {
   updateDoc,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "../config/firebase";
+import { db, auth } from "../config/firebase";
 import { addKitchenMember, getKitchen, createKitchen, isKitchenMember } from "./kitchenService";
 
 export interface KitchenInvite {
@@ -55,17 +55,34 @@ export async function createKitchenInvite(
 export async function getKitchenInvite(
   inviteId: string
 ): Promise<KitchenInvite | null> {
-  const inviteRef = doc(db, "kitchenInvites", inviteId);
-  const inviteSnap = await getDoc(inviteRef);
+  const path = `kitchenInvites/${inviteId}`;
+  console.log(`[getKitchenInvite] Operation: getDoc, Path: ${path}`);
+  console.log(`[getKitchenInvite] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
+  
+  try {
+    const inviteRef = doc(db, "kitchenInvites", inviteId);
+    const inviteSnap = await getDoc(inviteRef);
 
-  if (!inviteSnap.exists()) {
-    return null;
+    if (!inviteSnap.exists()) {
+      console.log(`[getKitchenInvite] Invite not found at path: ${path}`);
+      return null;
+    }
+
+    const data = {
+      id: inviteSnap.id,
+      ...inviteSnap.data(),
+    } as KitchenInvite;
+    console.log(`[getKitchenInvite] Successfully read invite:`, { id: data.id, kitchenId: data.kitchenId, used: data.used });
+    return data;
+  } catch (error: any) {
+    console.error(`[getKitchenInvite] FAILED - Operation: getDoc, Path: ${path}`, {
+      code: error?.code,
+      message: error?.message,
+      authUid: auth.currentUser?.uid,
+      authEmail: auth.currentUser?.email,
+    });
+    throw error;
   }
-
-  return {
-    id: inviteSnap.id,
-    ...inviteSnap.data(),
-  } as KitchenInvite;
 }
 
 /**
@@ -78,10 +95,34 @@ export async function acceptKitchenInvite(
   inviteId: string,
   userId: string
 ): Promise<string> {
-  const invite = await getKitchenInvite(inviteId);
+  console.log(`[acceptKitchenInvite] START - inviteId: ${inviteId}, userId: ${userId}`);
+  console.log(`[acceptKitchenInvite] Auth state:`, {
+    uid: auth.currentUser?.uid,
+    email: auth.currentUser?.email,
+    isAuthenticated: !!auth.currentUser,
+  });
 
-  if (!invite) {
-    throw new Error("Invite not found");
+  // Step 1: Get invite document
+  const path1 = `kitchenInvites/${inviteId}`;
+  console.log(`[acceptKitchenInvite] Step 1: Reading invite document at path: ${path1}`);
+  let invite: KitchenInvite | null;
+  try {
+    invite = await getKitchenInvite(inviteId);
+    if (!invite) {
+      throw new Error("Invite not found");
+    }
+    console.log(`[acceptKitchenInvite] Step 1 SUCCESS - Invite found:`, {
+      id: invite.id,
+      kitchenId: invite.kitchenId,
+      createdBy: invite.createdBy,
+      used: invite.used,
+    });
+  } catch (error: any) {
+    console.error(`[acceptKitchenInvite] Step 1 FAILED - Operation: getDoc, Path: ${path1}`, {
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
   }
 
   if (invite.used) {
@@ -99,26 +140,87 @@ export async function acceptKitchenInvite(
     throw new Error("Invite has expired");
   }
 
-  // Check if kitchen exists, create if it doesn't (for backward compatibility)
-  let kitchen = await getKitchen(invite.kitchenId);
+  // Step 2: Check if kitchen exists
+  const path2 = `kitchens/${invite.kitchenId}`;
+  console.log(`[acceptKitchenInvite] Step 2: Reading kitchen document at path: ${path2}`);
+  let kitchen;
+  try {
+    kitchen = await getKitchen(invite.kitchenId);
+    console.log(`[acceptKitchenInvite] Step 2 SUCCESS - Kitchen exists:`, !!kitchen);
+  } catch (error: any) {
+    console.error(`[acceptKitchenInvite] Step 2 FAILED - Operation: getDoc, Path: ${path2}`, {
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
+
+  // Step 3: Create kitchen if it doesn't exist
   if (!kitchen) {
-    // Kitchen doesn't exist, create it with the inviter as owner
-    await createKitchen(invite.createdBy, invite.kitchenId);
+    console.log(`[acceptKitchenInvite] Step 3: Creating kitchen at path: ${path2}`);
+    try {
+      await createKitchen(invite.createdBy, invite.kitchenId);
+      console.log(`[acceptKitchenInvite] Step 3 SUCCESS - Kitchen created`);
+    } catch (error: any) {
+      console.error(`[acceptKitchenInvite] Step 3 FAILED - Operation: createKitchen, Path: ${path2}`, {
+        code: error?.code,
+        message: error?.message,
+      });
+      throw error;
+    }
   }
 
-  // Check if user is already a member
-  const alreadyMember = await isKitchenMember(invite.kitchenId, userId);
+  // Step 4: Check if user is already a member
+  const path4 = `kitchens/${invite.kitchenId}/members/${userId}`;
+  console.log(`[acceptKitchenInvite] Step 4: Checking membership at path: ${path4}`);
+  let alreadyMember: boolean;
+  try {
+    alreadyMember = await isKitchenMember(invite.kitchenId, userId);
+    console.log(`[acceptKitchenInvite] Step 4 SUCCESS - Already member: ${alreadyMember}`);
+  } catch (error: any) {
+    console.error(`[acceptKitchenInvite] Step 4 FAILED - Operation: isKitchenMember (getDoc), Path: ${path4}`, {
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
+
+  // Step 5: Add user to kitchen members
   if (!alreadyMember) {
-    // Add user to kitchen members
-    await addKitchenMember(invite.kitchenId, userId, "member");
+    console.log(`[acceptKitchenInvite] Step 5: Adding member at path: ${path4}`);
+    try {
+      await addKitchenMember(invite.kitchenId, userId, "member");
+      console.log(`[acceptKitchenInvite] Step 5 SUCCESS - Member added`);
+    } catch (error: any) {
+      console.error(`[acceptKitchenInvite] Step 5 FAILED - Operation: setDoc (addKitchenMember), Path: ${path4}`, {
+        code: error?.code,
+        message: error?.message,
+        authUid: auth.currentUser?.uid,
+        userId: userId,
+        match: auth.currentUser?.uid === userId,
+      });
+      throw error;
+    }
   }
 
-  // Mark invite as used
-  const inviteRef = doc(db, "kitchenInvites", inviteId);
-  await updateDoc(inviteRef, {
-    used: true,
-  });
+  // Step 6: Mark invite as used
+  const path6 = `kitchenInvites/${inviteId}`;
+  console.log(`[acceptKitchenInvite] Step 6: Updating invite at path: ${path6}`);
+  try {
+    const inviteRef = doc(db, "kitchenInvites", inviteId);
+    await updateDoc(inviteRef, {
+      used: true,
+    });
+    console.log(`[acceptKitchenInvite] Step 6 SUCCESS - Invite marked as used`);
+  } catch (error: any) {
+    console.error(`[acceptKitchenInvite] Step 6 FAILED - Operation: updateDoc, Path: ${path6}`, {
+      code: error?.code,
+      message: error?.message,
+    });
+    throw error;
+  }
 
+  console.log(`[acceptKitchenInvite] COMPLETE - Successfully accepted invite, kitchenId: ${invite.kitchenId}`);
   return invite.kitchenId;
 }
 

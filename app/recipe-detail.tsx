@@ -1,5 +1,6 @@
 import { AuthPromptModal } from "@/components/AuthPromptModal";
 import { generateNutritionalInfo } from "@/src/services/recipeService";
+import { isNutritionIncomplete, mergeNutrition, normalizeNutrition } from "@/src/utils/normalizeNutrition";
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { usePantryStore } from "@/src/store/usePantryStore";
 import { useProgressStore } from "@/src/store/useProgressStore";
@@ -473,6 +474,7 @@ export default function RecipeDetailScreen() {
     protein: 50, // grams
     carbohydrates: 300, // grams
     fat: 65, // grams
+    sugar: 50, // grams
     fiber: 25, // grams
   };
   const scrollY = useSharedValue(0);
@@ -554,22 +556,16 @@ export default function RecipeDetailScreen() {
     }
   }, [params.importedData, params.recipeData, getRecipe]);
 
-  // Check and generate nutritional info if missing
+  // Check and generate nutritional info if missing or incomplete
   useEffect(() => {
     const checkAndGenerateNutrition = async () => {
       if (!recipeData) return;
 
-      // Check if nutritional info is missing or incomplete
-      const hasNutrition =
-        recipeData.nutritionalInfo &&
-        Object.keys(recipeData.nutritionalInfo).length > 0 &&
-        (recipeData.nutritionalInfo.calories ||
-          recipeData.nutritionalInfo.protein ||
-          recipeData.nutritionalInfo.carbohydrates ||
-          recipeData.nutritionalInfo.fat);
+      // Check if nutritional info is incomplete (has some but not all required values)
+      const nutritionIncomplete = isNutritionIncomplete(recipeData.nutritionalInfo);
 
       if (
-        !hasNutrition &&
+        nutritionIncomplete &&
         recipeData.ingredients &&
         recipeData.ingredients.length > 0
       ) {
@@ -581,42 +577,18 @@ export default function RecipeDetailScreen() {
           );
 
           // Merge with existing (if any) - prefer source data, fill in missing with generated
+          const mergedNutrition = mergeNutrition(
+            recipeData.nutritionalInfo,
+            generatedNutrition
+          );
+          // Normalize to ensure all required fields are present
+          const finalNutrition = normalizeNutrition(mergedNutrition);
+
           setRecipeData((prev) => {
             if (!prev) return prev;
             return {
               ...prev,
-              nutritionalInfo: {
-                ...prev.nutritionalInfo,
-                // Only use generated values if source doesn't have them
-                calories:
-                  prev.nutritionalInfo?.calories ||
-                  generatedNutrition.calories ||
-                  undefined,
-                protein:
-                  prev.nutritionalInfo?.protein ||
-                  generatedNutrition.protein ||
-                  undefined,
-                carbohydrates:
-                  prev.nutritionalInfo?.carbohydrates ||
-                  generatedNutrition.carbohydrates ||
-                  undefined,
-                fat:
-                  prev.nutritionalInfo?.fat ||
-                  generatedNutrition.fat ||
-                  undefined,
-                fiber:
-                  prev.nutritionalInfo?.fiber ||
-                  generatedNutrition.fiber ||
-                  undefined,
-                sugar:
-                  prev.nutritionalInfo?.sugar ||
-                  generatedNutrition.sugar ||
-                  undefined,
-                sodium:
-                  prev.nutritionalInfo?.sodium ||
-                  generatedNutrition.sodium ||
-                  undefined,
-              },
+              nutritionalInfo: finalNutrition,
             };
           });
         } catch (error) {
@@ -2748,180 +2720,209 @@ export default function RecipeDetailScreen() {
                             </View>
                           ) : (
                             <>
-                              {recipeData.nutritionalInfo.calories && (
-                                <View className="mb-4">
-                                  <View className="flex-row items-center justify-between mb-1">
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      Calories
-                                    </Text>
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      {viewByServing
-                                        ? formatDecimal(
-                                            recipeData.nutritionalInfo
-                                              .calories / servings
-                                          )
-                                        : formatDecimal(
-                                            recipeData.nutritionalInfo.calories
-                                          )}
-                                      {viewByServing && (
-                                        <Text className="text-charcoal-gray/60 text-sm">
-                                          {" "}
-                                          / {dailyValues.calories}
-                                        </Text>
-                                      )}
-                                    </Text>
-                                  </View>
-                                  {viewByServing && (
-                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                      <View
-                                        className="h-full bg-dark-sage rounded-full"
-                                        style={{
-                                          width: `${Math.min(
-                                            100,
-                                            (recipeData.nutritionalInfo
-                                              .calories /
-                                              servings /
-                                              dailyValues.calories) *
-                                              100
-                                          )}%`,
-                                        }}
-                                      />
-                                    </View>
-                                  )}
+                              {/* Calories - Always show */}
+                              <View className="mb-4">
+                                <View className="flex-row items-center justify-between mb-1">
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    Calories
+                                  </Text>
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    {viewByServing
+                                      ? formatDecimal(
+                                          (recipeData.nutritionalInfo.calories || 0) / servings
+                                        )
+                                      : formatDecimal(
+                                          recipeData.nutritionalInfo.calories || 0
+                                        )}
+                                    {viewByServing && (
+                                      <Text className="text-charcoal-gray/60 text-sm">
+                                        {" "}
+                                        / {dailyValues.calories}
+                                      </Text>
+                                    )}
+                                  </Text>
                                 </View>
-                              )}
+                                {viewByServing && (
+                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                    <View
+                                      className="h-full bg-dark-sage rounded-full"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((recipeData.nutritionalInfo.calories || 0) /
+                                            servings /
+                                            dailyValues.calories) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                              </View>
 
-                              {recipeData.nutritionalInfo.protein && (
-                                <View className="mb-4">
-                                  <View className="flex-row items-center justify-between mb-1">
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      Protein
-                                    </Text>
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      {viewByServing
-                                        ? formatDecimal(
-                                            recipeData.nutritionalInfo.protein /
-                                              servings
-                                          )
-                                        : formatDecimal(
-                                            recipeData.nutritionalInfo.protein
-                                          )}
-                                      g
-                                      {viewByServing && (
-                                        <Text className="text-charcoal-gray/60 text-sm">
-                                          {" "}
-                                          / {dailyValues.protein}g
-                                        </Text>
-                                      )}
-                                    </Text>
-                                  </View>
-                                  {viewByServing && (
-                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                      <View
-                                        className="h-full bg-dark-sage rounded-full"
-                                        style={{
-                                          width: `${Math.min(
-                                            100,
-                                            (recipeData.nutritionalInfo
-                                              .protein /
-                                              servings /
-                                              dailyValues.protein) *
-                                              100
-                                          )}%`,
-                                        }}
-                                      />
-                                    </View>
-                                  )}
+                              {/* Protein - Always show */}
+                              <View className="mb-4">
+                                <View className="flex-row items-center justify-between mb-1">
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    Protein
+                                  </Text>
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    {viewByServing
+                                      ? formatDecimal(
+                                          (recipeData.nutritionalInfo.protein || 0) / servings
+                                        )
+                                      : formatDecimal(
+                                          recipeData.nutritionalInfo.protein || 0
+                                        )}
+                                    g
+                                    {viewByServing && (
+                                      <Text className="text-charcoal-gray/60 text-sm">
+                                        {" "}
+                                        / {dailyValues.protein}g
+                                      </Text>
+                                    )}
+                                  </Text>
                                 </View>
-                              )}
+                                {viewByServing && (
+                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                    <View
+                                      className="h-full bg-dark-sage rounded-full"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((recipeData.nutritionalInfo.protein || 0) /
+                                            servings /
+                                            dailyValues.protein) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                              </View>
 
-                              {recipeData.nutritionalInfo.carbohydrates && (
-                                <View className="mb-4">
-                                  <View className="flex-row items-center justify-between mb-1">
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      Carbs
-                                    </Text>
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      {viewByServing
-                                        ? formatDecimal(
-                                            recipeData.nutritionalInfo
-                                              .carbohydrates / servings
-                                          )
-                                        : formatDecimal(
-                                            recipeData.nutritionalInfo
-                                              .carbohydrates
-                                          )}
-                                      g
-                                      {viewByServing && (
-                                        <Text className="text-charcoal-gray/60 text-sm">
-                                          {" "}
-                                          / {dailyValues.carbohydrates}g
-                                        </Text>
-                                      )}
-                                    </Text>
-                                  </View>
-                                  {viewByServing && (
-                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                      <View
-                                        className="h-full bg-dark-sage rounded-full"
-                                        style={{
-                                          width: `${Math.min(
-                                            100,
-                                            (recipeData.nutritionalInfo
-                                              .carbohydrates /
-                                              servings /
-                                              dailyValues.carbohydrates) *
-                                              100
-                                          )}%`,
-                                        }}
-                                      />
-                                    </View>
-                                  )}
+                              {/* Carbs - Always show */}
+                              <View className="mb-4">
+                                <View className="flex-row items-center justify-between mb-1">
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    Carbs
+                                  </Text>
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    {viewByServing
+                                      ? formatDecimal(
+                                          (recipeData.nutritionalInfo.carbohydrates || 0) / servings
+                                        )
+                                      : formatDecimal(
+                                          recipeData.nutritionalInfo.carbohydrates || 0
+                                        )}
+                                    g
+                                    {viewByServing && (
+                                      <Text className="text-charcoal-gray/60 text-sm">
+                                        {" "}
+                                        / {dailyValues.carbohydrates}g
+                                      </Text>
+                                    )}
+                                  </Text>
                                 </View>
-                              )}
+                                {viewByServing && (
+                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                    <View
+                                      className="h-full bg-dark-sage rounded-full"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((recipeData.nutritionalInfo.carbohydrates || 0) /
+                                            servings /
+                                            dailyValues.carbohydrates) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                              </View>
 
-                              {recipeData.nutritionalInfo.fat && (
-                                <View className="mb-4">
-                                  <View className="flex-row items-center justify-between mb-1">
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      Fat
-                                    </Text>
-                                    <Text className="text-charcoal-gray font-semibold">
-                                      {viewByServing
-                                        ? formatDecimal(
-                                            recipeData.nutritionalInfo.fat /
-                                              servings
-                                          )
-                                        : formatDecimal(
-                                            recipeData.nutritionalInfo.fat
-                                          )}
-                                      g
-                                      {viewByServing && (
-                                        <Text className="text-charcoal-gray/60 text-sm">
-                                          {" "}
-                                          / {dailyValues.fat}g
-                                        </Text>
-                                      )}
-                                    </Text>
-                                  </View>
-                                  {viewByServing && (
-                                    <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
-                                      <View
-                                        className="h-full bg-dark-sage rounded-full"
-                                        style={{
-                                          width: `${Math.min(
-                                            100,
-                                            (recipeData.nutritionalInfo.fat /
-                                              servings /
-                                              dailyValues.fat) *
-                                              100
-                                          )}%`,
-                                        }}
-                                      />
-                                    </View>
-                                  )}
+                              {/* Sugar - Always show */}
+                              <View className="mb-4">
+                                <View className="flex-row items-center justify-between mb-1">
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    Sugar
+                                  </Text>
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    {viewByServing
+                                      ? formatDecimal(
+                                          (recipeData.nutritionalInfo.sugar || 0) / servings
+                                        )
+                                      : formatDecimal(
+                                          recipeData.nutritionalInfo.sugar || 0
+                                        )}
+                                    g
+                                    {viewByServing && (
+                                      <Text className="text-charcoal-gray/60 text-sm">
+                                        {" "}
+                                        / {dailyValues.sugar}g
+                                      </Text>
+                                    )}
+                                  </Text>
                                 </View>
-                              )}
+                                {viewByServing && (
+                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                    <View
+                                      className="h-full bg-dark-sage rounded-full"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((recipeData.nutritionalInfo.sugar || 0) /
+                                            servings /
+                                            dailyValues.sugar) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* Fat - Always show */}
+                              <View className="mb-4">
+                                <View className="flex-row items-center justify-between mb-1">
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    Fat
+                                  </Text>
+                                  <Text className="text-charcoal-gray font-semibold">
+                                    {viewByServing
+                                      ? formatDecimal(
+                                          (recipeData.nutritionalInfo.fat || 0) / servings
+                                        )
+                                      : formatDecimal(
+                                          recipeData.nutritionalInfo.fat || 0
+                                        )}
+                                    g
+                                    {viewByServing && (
+                                      <Text className="text-charcoal-gray/60 text-sm">
+                                        {" "}
+                                        / {dailyValues.fat}g
+                                      </Text>
+                                    )}
+                                  </Text>
+                                </View>
+                                {viewByServing && (
+                                  <View className="h-2 bg-warm-sand rounded-full overflow-hidden mt-1">
+                                    <View
+                                      className="h-full bg-dark-sage rounded-full"
+                                      style={{
+                                        width: `${Math.min(
+                                          100,
+                                          ((recipeData.nutritionalInfo.fat || 0) /
+                                            servings /
+                                            dailyValues.fat) *
+                                            100
+                                        )}%`,
+                                      }}
+                                    />
+                                  </View>
+                                )}
+                              </View>
 
                               {recipeData.nutritionalInfo.fiber && (
                                 <View>

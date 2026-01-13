@@ -11,10 +11,11 @@ type Status = "loading" | "success" | "error";
 
 export default function InviteScreen() {
   const { inviteId } = useLocalSearchParams<{ inviteId: string }>();
-  const { user, setUser } = useAuthStore();
+  const { user, setUser, loading: authLoading, initialized } = useAuthStore();
   const [status, setStatus] = useState<Status>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const hasProcessedRef = useRef(false);
+  const hasRedirectedRef = useRef(false);
 
   useEffect(() => {
     // If router didn't give us an inviteId, this link is invalid.
@@ -24,9 +25,15 @@ export default function InviteScreen() {
       return;
     }
 
+    // Wait for auth to initialize before checking user state
+    if (!initialized || authLoading) {
+      return;
+    }
+
     // If user is not signed in, route to login and come back here.
-    // Delay navigation to ensure router is mounted
-    if (!user) {
+    // Only redirect once to prevent infinite loops
+    if (!user && !hasRedirectedRef.current) {
+      hasRedirectedRef.current = true;
       const timeoutId = setTimeout(() => {
         router.replace({
           pathname: "/(auth)/login" as any,
@@ -37,7 +44,7 @@ export default function InviteScreen() {
     }
 
     // Prevent double-processing on auth hydration / re-renders
-    if (hasProcessedRef.current) return;
+    if (hasProcessedRef.current || !user) return;
     hasProcessedRef.current = true;
 
     (async () => {
@@ -46,11 +53,12 @@ export default function InviteScreen() {
 
         const kitchenId = await acceptKitchenInvite(inviteId, user.uid);
 
-        // Update user doc with only the field you need
+        // Update user doc with kitchenId (createOrUpdateUser will use auth.currentUser for email/displayName)
+        console.log(`[InviteScreen] Updating user document with kitchenId: ${kitchenId}`);
         await createOrUpdateUser({
-          uid: user.uid,
+          ...user,
           defaultKitchenId: kitchenId,
-        } as any);
+        });
 
         // Update local state
         setUser({ ...user, defaultKitchenId: kitchenId });
@@ -66,7 +74,7 @@ export default function InviteScreen() {
         );
       }
     })();
-  }, [inviteId, user]);
+  }, [inviteId, user, initialized, authLoading]);
 
   const handleGoHome = () => router.replace("/(tabs)");
 

@@ -23,8 +23,25 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const { signIn, signUp, signInWithApple, loading } = useAuthStore();
+  const { signIn, signUp, signInWithApple, loading, user, initialized } = useAuthStore();
   const { promptAsync, request } = useAuth();
+
+  // Redirect after successful authentication
+  useEffect(() => {
+    if (initialized && user && redirectTo && !loading) {
+      // Small delay to ensure navigation is ready and auth state is fully propagated
+      const timeoutId = setTimeout(() => {
+        router.replace(redirectTo as any);
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    } else if (initialized && user && !redirectTo && !loading) {
+      // If no redirect, go to home
+      const timeoutId = setTimeout(() => {
+        router.replace("/(tabs)");
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [user, initialized, redirectTo, loading]);
 
   const handleEmailAuth = async () => {
     if (!email || !password) {
@@ -49,12 +66,8 @@ export default function LoginScreen() {
       } else {
         await signIn(email, password);
       }
-      // Navigate to redirect path or home
-      if (redirectTo) {
-        router.replace(redirectTo as any);
-      } else {
-        router.replace("/(tabs)");
-      }
+      // Navigation will be handled by useEffect when user state updates
+      // Don't navigate immediately - wait for auth state to propagate
     } catch (error: any) {
       Alert.alert(
         "Error",
@@ -66,13 +79,7 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     try {
       await promptAsync();
-      // success is handled in AuthProvider's useEffect
-      // Navigate after successful sign in
-      if (redirectTo) {
-        router.replace(redirectTo as any);
-      } else {
-        router.replace("/(tabs)");
-      }
+      // Navigation will be handled by useEffect when user state updates
     } catch (error: any) {
       if (!error?.message?.includes("cancelled")) {
         Alert.alert("Error", "Failed to sign in with Google");
@@ -83,12 +90,7 @@ export default function LoginScreen() {
   const handleAppleSignIn = async () => {
     try {
       await signInWithApple();
-      // Navigate after successful sign in
-      if (redirectTo) {
-        router.replace(redirectTo as any);
-      } else {
-        router.replace("/(tabs)");
-      }
+      // Navigation will be handled by useEffect when user state updates
     } catch (error: any) {
       if (error.message && !error.message.includes("cancelled")) {
         Alert.alert("Error", error.message || "Failed to sign in with Apple");

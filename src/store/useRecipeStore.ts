@@ -11,6 +11,7 @@ import {
   getKitchenRecipes,
 } from "../services/recipeFirestoreService";
 import { Unsubscribe } from "firebase/firestore";
+import { normalizeNutrition } from "../utils/normalizeNutrition";
 
 interface RecipeStore {
   recipes: Recipe[];
@@ -35,8 +36,12 @@ export const useRecipeStore = create<RecipeStore>()(
       unsubscribe: null,
 
       addRecipe: async (recipeData: RecipeCreateInput, kitchenId?: string) => {
+        // Normalize nutrition to ensure required fields are always present
+        const normalizedNutrition = normalizeNutrition(recipeData.nutritionalInfo);
+        
         const newRecipe: Recipe = {
           ...recipeData,
+          nutritionalInfo: normalizedNutrition,
           id: `recipe-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           createdAt: recipeData.createdAt || Timestamp.now(),
         };
@@ -56,7 +61,12 @@ export const useRecipeStore = create<RecipeStore>()(
         // Sync to Firestore if kitchenId is provided
         if (kitchenId) {
           try {
-            await addRecipeToFirestore(kitchenId, recipeData);
+            // Ensure nutrition is normalized before syncing
+            const recipeDataToSync = {
+              ...recipeData,
+              nutritionalInfo: normalizedNutrition,
+            };
+            await addRecipeToFirestore(kitchenId, recipeDataToSync);
             console.log("Recipe synced to Firestore");
           } catch (error) {
             console.error("Failed to sync recipe to Firestore:", error);
@@ -68,17 +78,22 @@ export const useRecipeStore = create<RecipeStore>()(
       },
 
       updateRecipe: async (id: string, updates: Partial<Recipe>, kitchenId?: string) => {
+        // Normalize nutrition if it's being updated
+        const normalizedUpdates = updates.nutritionalInfo
+          ? { ...updates, nutritionalInfo: normalizeNutrition(updates.nutritionalInfo) }
+          : updates;
+        
         // Update local state immediately
         set((state) => ({
           recipes: state.recipes.map((recipe) =>
-            recipe.id === id ? { ...recipe, ...updates } : recipe
+            recipe.id === id ? { ...recipe, ...normalizedUpdates } : recipe
           ),
         }));
 
         // Sync to Firestore if kitchenId is provided
         if (kitchenId) {
           try {
-            await updateRecipeInFirestore(kitchenId, id, updates);
+            await updateRecipeInFirestore(kitchenId, id, normalizedUpdates);
             console.log("Recipe update synced to Firestore");
           } catch (error) {
             console.error("Failed to sync recipe update to Firestore:", error);
@@ -113,8 +128,13 @@ export const useRecipeStore = create<RecipeStore>()(
         set({ loading: true });
         try {
           const recipes = await getKitchenRecipes(kitchenId);
-          set({ recipes, synced: true, loading: false });
-          console.log(`Loaded ${recipes.length} recipes from Firestore`);
+          // Normalize nutrition for all loaded recipes to ensure required fields are present
+          const normalizedRecipes = recipes.map((recipe) => ({
+            ...recipe,
+            nutritionalInfo: normalizeNutrition(recipe.nutritionalInfo),
+          }));
+          set({ recipes: normalizedRecipes, synced: true, loading: false });
+          console.log(`Loaded ${normalizedRecipes.length} recipes from Firestore`);
         } catch (error) {
           console.error("Failed to load recipes from Firestore:", error);
           set({ loading: false });
@@ -132,8 +152,13 @@ export const useRecipeStore = create<RecipeStore>()(
 
         try {
           const unsubscribe = subscribeToKitchenRecipes(kitchenId, (recipes) => {
-            set({ recipes, synced: true });
-            console.log(`Received ${recipes.length} recipes from Firestore subscription`);
+            // Normalize nutrition for all recipes from subscription to ensure required fields are present
+            const normalizedRecipes = recipes.map((recipe) => ({
+              ...recipe,
+              nutritionalInfo: normalizeNutrition(recipe.nutritionalInfo),
+            }));
+            set({ recipes: normalizedRecipes, synced: true });
+            console.log(`Received ${normalizedRecipes.length} recipes from Firestore subscription`);
           });
 
           set({ unsubscribe });

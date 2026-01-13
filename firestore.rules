@@ -14,29 +14,40 @@ service cloud.firestore {
 
     // Kitchens collection
     match /kitchens/{kitchenId} {
-      // Kitchen document - only members can read
-      allow read: if request.auth != null && isKitchenMember(kitchenId);
+      // Kitchen document - members can read, or authenticated users can read (needed for invite acceptance)
+      allow read: if request.auth != null;
       allow create: if request.auth != null && request.resource.data.createdBy == request.auth.uid;
       allow update: if request.auth != null && isKitchenMember(kitchenId);
       allow delete: if false; // Prevent kitchen deletion for now
 
       // Kitchen members subcollection
       match /members/{memberId} {
-        allow read: if request.auth != null && isKitchenMember(kitchenId);
-        allow create: if request.auth != null && (
-          // User can add themselves (when creating kitchen or accepting invite)
+        // Allow reading your own member document, or if you're already a member (for reading others)
+        allow read: if request.auth != null && (
+          // Can read your own member document (needed for isKitchenMember check)
           memberId == request.auth.uid ||
-          // Or if they're already a member (for adding others)
-          isKitchenMember(kitchenId) ||
-          // Or if they're the kitchen creator (for initial member creation)
-          get(/databases/$(database)/documents/kitchens/$(kitchenId)).data.createdBy == request.auth.uid
+          // Or if you're already a member (for reading others)
+          isKitchenMember(kitchenId)
+        );
+        allow create: if request.auth != null && (
+          // Primary path: User can always add themselves (for accepting invites or creating kitchen)
+          // This must be first to short-circuit and avoid evaluation issues
+          memberId == request.auth.uid ||
+          // Secondary path: If they're already a member (for adding others)
+          (isKitchenMember(kitchenId)) ||
+          // Tertiary path: If they're the kitchen creator (for initial member creation)
+          // Only check this if kitchen exists to avoid errors
+          (exists(/databases/$(database)/documents/kitchens/$(kitchenId)) &&
+           get(/databases/$(database)/documents/kitchens/$(kitchenId)).data.createdBy == request.auth.uid)
         );
         allow update: if request.auth != null && isKitchenMember(kitchenId);
         allow delete: if request.auth != null && (
           // User can remove themselves
           memberId == request.auth.uid ||
           // Or owner can remove others
-          get(/databases/$(database)/documents/kitchens/$(kitchenId)/members/$(request.auth.uid)).data.role == 'owner'
+          (isKitchenMember(kitchenId) &&
+           exists(/databases/$(database)/documents/kitchens/$(kitchenId)/members/$(request.auth.uid)) &&
+           get(/databases/$(database)/documents/kitchens/$(kitchenId)/members/$(request.auth.uid)).data.role == 'owner')
         );
       }
 
