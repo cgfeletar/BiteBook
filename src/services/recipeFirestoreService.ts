@@ -1,19 +1,17 @@
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  query,
-  addDoc,
-  updateDoc,
-  setDoc,
-  deleteDoc,
-  where,
-  orderBy,
-  serverTimestamp,
-  Timestamp,
   onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
   Unsubscribe,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { Recipe, RecipeCreateInput } from "../types";
@@ -52,20 +50,24 @@ export async function updateRecipeInFirestore(
   }
 
   const recipeRef = doc(db, "kitchens", kitchenId, "recipes", recipeId);
-  
+
   // Check if document exists
   const recipeSnap = await getDoc(recipeRef);
-  
+
   if (recipeSnap.exists()) {
     // Document exists, update it
-  await updateDoc(recipeRef, updates);
+    await updateDoc(recipeRef, updates);
   } else {
     // Document doesn't exist, create it with the updates
     // This handles the case where a recipe exists locally but hasn't been synced yet
-    await setDoc(recipeRef, {
-      ...updates,
-      createdAt: updates.createdAt || serverTimestamp(),
-    }, { merge: true });
+    await setDoc(
+      recipeRef,
+      {
+        ...updates,
+        createdAt: updates.createdAt || serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
 }
 
@@ -111,9 +113,7 @@ export async function getRecipeFromFirestore(
 /**
  * Get all recipes for a kitchen
  */
-export async function getKitchenRecipes(
-  kitchenId: string
-): Promise<Recipe[]> {
+export async function getKitchenRecipes(kitchenId: string): Promise<Recipe[]> {
   if (!kitchenId) {
     throw new Error("kitchenId is required");
   }
@@ -156,7 +156,7 @@ export function subscribeToKitchenRecipes(
  * This copies recipes (does not delete from source)
  * Used when a user joins another kitchen to merge their recipes
  * @param fromKitchenId - The source kitchen ID
- * @param toKitchenId - The destination kitchen ID  
+ * @param toKitchenId - The destination kitchen ID
  * @returns The number of recipes migrated
  */
 export async function migrateRecipesToKitchen(
@@ -169,46 +169,82 @@ export async function migrateRecipesToKitchen(
 
   // Don't migrate if source and destination are the same
   if (fromKitchenId === toKitchenId) {
-    console.log(`[migrateRecipes] Source and destination are the same, skipping migration`);
+    console.log(
+      `[migrateRecipes] Source and destination are the same, skipping migration`
+    );
     return 0;
   }
 
-  console.log(`[migrateRecipes] Starting migration from ${fromKitchenId} to ${toKitchenId}`);
+  console.log(
+    `[migrateRecipes] Starting migration from ${fromKitchenId} to ${toKitchenId}`
+  );
 
   try {
     // Get all recipes from the source kitchen
     const sourceRecipes = await getKitchenRecipes(fromKitchenId);
-    
+
     if (sourceRecipes.length === 0) {
-      console.log(`[migrateRecipes] No recipes to migrate from ${fromKitchenId}`);
+      console.log(
+        `[migrateRecipes] No recipes to migrate from ${fromKitchenId}`
+      );
       return 0;
     }
 
-    console.log(`[migrateRecipes] Found ${sourceRecipes.length} recipes to migrate`);
+    console.log(
+      `[migrateRecipes] Found ${sourceRecipes.length} recipes to migrate`
+    );
 
     // Get existing recipes in destination to avoid duplicates
     const destRecipes = await getKitchenRecipes(toKitchenId);
-    
-    // Create sets for duplicate detection - check by sourceUrl AND title
-    const existingSourceUrls = new Set(destRecipes.map(r => r.sourceUrl).filter(Boolean));
-    const existingTitles = new Set(destRecipes.map(r => r.title?.toLowerCase().trim()).filter(Boolean));
+    console.log(
+      `[migrateRecipes] Destination has ${destRecipes.length} existing recipes`
+    );
+
+    // Build multiple sets for robust duplicate detection
+    const existingSourceUrls = new Set(
+      destRecipes.map((r) => r.sourceUrl).filter(Boolean)
+    );
+    const existingTitles = new Set(
+      destRecipes.map((r) => r.title?.toLowerCase().trim()).filter(Boolean)
+    );
+    // Track recipes already migrated from this specific source kitchen
+    const alreadyMigratedTitles = new Set(
+      destRecipes
+        .filter((r: any) => r.migratedFrom === fromKitchenId)
+        .map((r) => r.title?.toLowerCase().trim())
+        .filter(Boolean)
+    );
 
     let migratedCount = 0;
     let skippedCount = 0;
 
     // Copy each recipe to the destination kitchen
     for (const recipe of sourceRecipes) {
-      // Skip if a recipe with the same source URL already exists
-      if (recipe.sourceUrl && existingSourceUrls.has(recipe.sourceUrl)) {
-        console.log(`[migrateRecipes] Skipping duplicate recipe: ${recipe.title} (same sourceUrl exists)`);
+      const normalizedTitle = recipe.title?.toLowerCase().trim();
+
+      // Skip if already migrated from this exact source kitchen
+      if (normalizedTitle && alreadyMigratedTitles.has(normalizedTitle)) {
+        console.log(
+          `[migrateRecipes] Skip: "${recipe.title}" (already migrated from this kitchen)`
+        );
         skippedCount++;
         continue;
       }
-      
-      // Also skip if a recipe with the same title already exists (fallback for recipes without sourceUrl)
-      const normalizedTitle = recipe.title?.toLowerCase().trim();
+
+      // Skip if a recipe with the same source URL already exists
+      if (recipe.sourceUrl && existingSourceUrls.has(recipe.sourceUrl)) {
+        console.log(
+          `[migrateRecipes] Skip: "${recipe.title}" (same sourceUrl exists)`
+        );
+        skippedCount++;
+        continue;
+      }
+
+      // Skip if a recipe with the same title already exists
       if (normalizedTitle && existingTitles.has(normalizedTitle)) {
-        console.log(`[migrateRecipes] Skipping duplicate recipe: ${recipe.title} (same title exists)`);
+        console.log(
+          `[migrateRecipes] Skip: "${recipe.title}" (same title exists)`
+        );
         skippedCount++;
         continue;
       }
@@ -216,27 +252,107 @@ export async function migrateRecipesToKitchen(
       // Create recipe in destination kitchen (without the old id)
       const { id, ...recipeData } = recipe;
       const recipesRef = collection(db, "kitchens", toKitchenId, "recipes");
-      
+
       await addDoc(recipesRef, {
         ...recipeData,
-        migratedFrom: fromKitchenId, // Track origin for debugging
+        migratedFrom: fromKitchenId,
         migratedAt: serverTimestamp(),
       });
 
-      // Add to existing sets to prevent duplicates within the same migration batch
+      // Add to tracking sets to prevent duplicates within same batch
       if (recipe.sourceUrl) existingSourceUrls.add(recipe.sourceUrl);
-      if (normalizedTitle) existingTitles.add(normalizedTitle);
+      if (normalizedTitle) {
+        existingTitles.add(normalizedTitle);
+        alreadyMigratedTitles.add(normalizedTitle);
+      }
 
       migratedCount++;
-      console.log(`[migrateRecipes] Migrated recipe: ${recipe.title}`);
+      console.log(`[migrateRecipes] Migrated: "${recipe.title}"`);
     }
 
-    console.log(`[migrateRecipes] Successfully migrated ${migratedCount} recipes, skipped ${skippedCount} duplicates`);
+    console.log(
+      `[migrateRecipes] Complete: ${migratedCount} migrated, ${skippedCount} skipped`
+    );
     return migratedCount;
   } catch (error: any) {
     console.error(`[migrateRecipes] Failed to migrate recipes:`, {
       fromKitchenId,
       toKitchenId,
+      error: error?.message,
+      code: error?.code,
+    });
+    throw error;
+  }
+}
+
+/**
+ * Remove duplicate recipes from a kitchen
+ * Keeps the oldest version of each recipe (by title)
+ * @param kitchenId - The kitchen ID to clean up
+ * @returns The number of duplicates removed
+ */
+export async function removeDuplicateRecipes(
+  kitchenId: string
+): Promise<number> {
+  if (!kitchenId) {
+    throw new Error("kitchenId is required");
+  }
+
+  console.log(`[removeDuplicates] Starting cleanup for kitchen ${kitchenId}`);
+
+  try {
+    const recipes = await getKitchenRecipes(kitchenId);
+    console.log(`[removeDuplicates] Found ${recipes.length} total recipes`);
+
+    // Group recipes by normalized title
+    const recipesByTitle = new Map<string, Recipe[]>();
+    for (const recipe of recipes) {
+      const normalizedTitle = recipe.title?.toLowerCase().trim() || "";
+      if (!recipesByTitle.has(normalizedTitle)) {
+        recipesByTitle.set(normalizedTitle, []);
+      }
+      recipesByTitle.get(normalizedTitle)!.push(recipe);
+    }
+
+    let removedCount = 0;
+
+    // For each group with more than one recipe, keep the oldest and delete the rest
+    for (const [title, group] of recipesByTitle) {
+      if (group.length > 1) {
+        console.log(
+          `[removeDuplicates] Found ${group.length} copies of "${title}"`
+        );
+
+        // Sort by createdAt (oldest first) - keep the first one
+        group.sort((a, b) => {
+          const aTime =
+            a.createdAt instanceof Date
+              ? a.createdAt.getTime()
+              : (a.createdAt as any)?.toDate?.()?.getTime() || 0;
+          const bTime =
+            b.createdAt instanceof Date
+              ? b.createdAt.getTime()
+              : (b.createdAt as any)?.toDate?.()?.getTime() || 0;
+          return aTime - bTime;
+        });
+
+        // Delete all but the first (oldest)
+        for (let i = 1; i < group.length; i++) {
+          const duplicate = group[i];
+          console.log(
+            `[removeDuplicates] Removing duplicate: "${duplicate.title}" (id: ${duplicate.id})`
+          );
+          await deleteRecipeFromFirestore(kitchenId, duplicate.id);
+          removedCount++;
+        }
+      }
+    }
+
+    console.log(`[removeDuplicates] Removed ${removedCount} duplicates`);
+    return removedCount;
+  } catch (error: any) {
+    console.error(`[removeDuplicates] Failed:`, {
+      kitchenId,
       error: error?.message,
       code: error?.code,
     });

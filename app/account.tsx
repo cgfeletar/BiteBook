@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import {
   ArrowLeft,
   Edit2,
+  LogIn,
   LogOut,
   Mail,
   Palette,
@@ -112,26 +113,42 @@ export default function AccountScreen() {
                 <User size={40} color="#FAF9F7" />
               )}
             </View>
-            <View className="flex-row items-center mb-1">
-              <Text
-                className="text-xl font-bold text-charcoal"
-                style={{ fontFamily: "Lora_700Bold" }}
-              >
-                {user?.displayName || "User"}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setDisplayName(user?.displayName || "");
-                  setIsEditingName(true);
-                }}
-                className="ml-2"
-                activeOpacity={0.7}
-              >
-                <Edit2 size={16} color="#5A6E6C" />
-              </TouchableOpacity>
-            </View>
-            {user?.email && (
-              <Text className="text-charcoal/70 text-sm">{user.email}</Text>
+            {user ? (
+              <>
+                <View className="flex-row items-center mb-1">
+                  <Text
+                    className="text-xl font-bold text-charcoal"
+                    style={{ fontFamily: "Lora_700Bold" }}
+                  >
+                    {user.displayName || "User"}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setDisplayName(user.displayName || "");
+                      setIsEditingName(true);
+                    }}
+                    className="ml-2"
+                    activeOpacity={0.7}
+                  >
+                    <Edit2 size={16} color="#5A6E6C" />
+                  </TouchableOpacity>
+                </View>
+                {user.email && (
+                  <Text className="text-charcoal/70 text-sm">{user.email}</Text>
+                )}
+              </>
+            ) : (
+              <>
+                <Text
+                  className="text-xl font-bold text-charcoal mb-1"
+                  style={{ fontFamily: "Lora_700Bold" }}
+                >
+                  Guest
+                </Text>
+                <Text className="text-charcoal/70 text-sm text-center">
+                  Sign in to sync your recipes across devices
+                </Text>
+              </>
             )}
           </View>
         </View>
@@ -206,18 +223,31 @@ export default function AccountScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Sign Out Section */}
+        {/* Sign In / Sign Out Section */}
         <View className="px-6 mb-8">
-          <TouchableOpacity
-            onPress={handleLogout}
-            className="bg-white rounded-xl p-4 flex-row items-center justify-center"
-            activeOpacity={0.7}
-          >
-            <LogOut size={20} color="#7A2E2A" />
-            <Text className="text-redwood font-semibold text-base ml-2">
-              Sign Out
-            </Text>
-          </TouchableOpacity>
+          {user ? (
+            <TouchableOpacity
+              onPress={handleLogout}
+              className="bg-white rounded-xl p-4 flex-row items-center justify-center"
+              activeOpacity={0.7}
+            >
+              <LogOut size={20} color="#7A2E2A" />
+              <Text className="text-redwood font-semibold text-base ml-2">
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => router.push("/(auth)/login")}
+              className="bg-dark-sage rounded-xl p-4 flex-row items-center justify-center"
+              activeOpacity={0.7}
+            >
+              <LogIn size={20} color="#FAF9F7" />
+              <Text className="text-off-white font-semibold text-base ml-2">
+                Sign In
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

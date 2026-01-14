@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { createKitchenInvite } from "@/src/services/kitchenInviteService";
 import { getKitchenMembers, KitchenMember, createKitchen, removeKitchenMember } from "@/src/services/kitchenService";
+import { removeDuplicateRecipes } from "@/src/services/recipeFirestoreService";
 import { getUserDocument, createOrUpdateUser } from "@/src/services/userService";
 import { buildInviteLink, buildWebInviteLink } from "@/src/utils/buildInviteLink";
 import { router } from "expo-router";
@@ -12,6 +13,7 @@ import {
   Crown,
   MoreVertical,
   UserMinus,
+  Trash2,
 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
@@ -40,9 +42,42 @@ export default function KitchenMembersScreen() {
   const [members, setMembers] = useState<MemberWithDetails[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [menuOpenForMember, setMenuOpenForMember] = useState<string | null>(null);
+  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState(false);
 
   // Check if current user is the owner
   const currentUserIsOwner = members.find(m => m.userId === user?.uid)?.role === "owner";
+
+  const handleRemoveDuplicates = async () => {
+    if (!user?.defaultKitchenId) return;
+
+    Alert.alert(
+      "Remove Duplicate Recipes",
+      "This will scan your kitchen's recipes and remove any duplicates (keeping the oldest version of each). Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove Duplicates",
+          style: "destructive",
+          onPress: async () => {
+            setIsCleaningDuplicates(true);
+            try {
+              const removedCount = await removeDuplicateRecipes(user.defaultKitchenId!);
+              if (removedCount > 0) {
+                Alert.alert("Success", `Removed ${removedCount} duplicate recipe${removedCount === 1 ? "" : "s"}.`);
+              } else {
+                Alert.alert("No Duplicates", "No duplicate recipes were found.");
+              }
+            } catch (error: any) {
+              console.error("Error removing duplicates:", error);
+              Alert.alert("Error", error?.message || "Failed to remove duplicates");
+            } finally {
+              setIsCleaningDuplicates(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleRemoveMember = async (member: MemberWithDetails) => {
     if (!user?.defaultKitchenId) return;
@@ -349,6 +384,33 @@ export default function KitchenMembersScreen() {
             {isGenerating ? "Generating..." : "Copy Invite Link"}
           </Text>
         </TouchableOpacity>
+
+        {/* Remove Duplicates Button - only show for owners */}
+        {currentUserIsOwner && (
+          <TouchableOpacity
+            onPress={handleRemoveDuplicates}
+            disabled={isCleaningDuplicates}
+            className={`rounded-xl p-4 flex-row items-center justify-center border-2 mb-8 ${
+              isCleaningDuplicates
+                ? "border-red-300 bg-red-50"
+                : "border-red-400 bg-white"
+            }`}
+            activeOpacity={0.7}
+          >
+            {isCleaningDuplicates ? (
+              <ActivityIndicator size="small" color="#DC2626" />
+            ) : (
+              <Trash2 size={20} color="#DC2626" />
+            )}
+            <Text
+              className={`font-semibold text-base ml-2 ${
+                isCleaningDuplicates ? "text-red-400" : "text-red-600"
+              }`}
+            >
+              {isCleaningDuplicates ? "Cleaning..." : "Remove Duplicate Recipes"}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Members List */}
         <View className="mb-8">
