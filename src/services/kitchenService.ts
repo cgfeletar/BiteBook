@@ -81,18 +81,18 @@ export async function getKitchen(kitchenId: string): Promise<Kitchen | null> {
   console.log(`[getKitchen] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
   
   try {
-    const kitchenRef = doc(db, "kitchens", kitchenId);
-    const kitchenSnap = await getDoc(kitchenRef);
+  const kitchenRef = doc(db, "kitchens", kitchenId);
+  const kitchenSnap = await getDoc(kitchenRef);
 
-    if (!kitchenSnap.exists()) {
+  if (!kitchenSnap.exists()) {
       console.log(`[getKitchen] Kitchen not found at path: ${path}`);
-      return null;
-    }
+    return null;
+  }
 
     const data = {
-      id: kitchenSnap.id,
-      ...kitchenSnap.data(),
-    } as Kitchen;
+    id: kitchenSnap.id,
+    ...kitchenSnap.data(),
+  } as Kitchen;
     console.log(`[getKitchen] Successfully read kitchen:`, { id: data.id, createdBy: data.createdBy });
     return data;
   } catch (error: any) {
@@ -234,8 +234,8 @@ export async function isKitchenMember(
   console.log(`[isKitchenMember] Auth UID: ${auth.currentUser?.uid}, Email: ${auth.currentUser?.email}`);
   
   try {
-    const memberRef = doc(db, "kitchens", kitchenId, "members", userId);
-    const memberSnap = await getDoc(memberRef);
+  const memberRef = doc(db, "kitchens", kitchenId, "members", userId);
+  const memberSnap = await getDoc(memberRef);
     const exists = memberSnap.exists();
     console.log(`[isKitchenMember] SUCCESS - Member exists: ${exists} at path: ${path}`);
     return exists;

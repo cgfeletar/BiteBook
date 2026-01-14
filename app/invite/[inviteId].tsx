@@ -1,5 +1,9 @@
 import { acceptKitchenInvite } from "@/src/services/kitchenInviteService";
-import { createOrUpdateUser } from "@/src/services/userService";
+import { migrateRecipesToKitchen } from "@/src/services/recipeFirestoreService";
+import {
+  createOrUpdateUser,
+  getUserDocument,
+} from "@/src/services/userService";
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { router, useLocalSearchParams } from "expo-router";
 import { CheckCircle, XCircle } from "lucide-react-native";
@@ -51,17 +55,48 @@ export default function InviteScreen() {
       try {
         setStatus("loading");
 
-        const kitchenId = await acceptKitchenInvite(inviteId, user.uid);
+        // Step 1: Get the user's current kitchen ID before switching
+        const userDoc = await getUserDocument(user.uid);
+        const oldKitchenId = userDoc?.defaultKitchenId;
+        console.log(`[InviteScreen] User's current kitchenId: ${oldKitchenId}`);
 
-        // Update user doc with kitchenId (createOrUpdateUser will use auth.currentUser for email/displayName)
-        console.log(`[InviteScreen] Updating user document with kitchenId: ${kitchenId}`);
+        // Step 2: Accept the invite (adds user to new kitchen members)
+        const newKitchenId = await acceptKitchenInvite(inviteId, user.uid);
+        console.log(`[InviteScreen] Joined new kitchen: ${newKitchenId}`);
+
+        // Step 3: Migrate recipes from old kitchen to new kitchen (if different)
+        if (oldKitchenId && oldKitchenId !== newKitchenId) {
+          console.log(
+            `[InviteScreen] Migrating recipes from ${oldKitchenId} to ${newKitchenId}`
+          );
+          try {
+            const migratedCount = await migrateRecipesToKitchen(
+              oldKitchenId,
+              newKitchenId
+            );
+            console.log(
+              `[InviteScreen] Successfully migrated ${migratedCount} recipes`
+            );
+          } catch (migrateError: any) {
+            // Don't fail the whole invite if migration fails - log and continue
+            console.error(
+              `[InviteScreen] Recipe migration failed (non-fatal):`,
+              migrateError?.message
+            );
+          }
+        }
+
+        // Step 4: Update user doc with new kitchenId
+        console.log(
+          `[InviteScreen] Updating user document with kitchenId: ${newKitchenId}`
+        );
         await createOrUpdateUser({
           ...user,
-          defaultKitchenId: kitchenId,
+          defaultKitchenId: newKitchenId,
         });
 
         // Update local state
-        setUser({ ...user, defaultKitchenId: kitchenId });
+        setUser({ ...user, defaultKitchenId: newKitchenId });
 
         setStatus("success");
       } catch (e: any) {

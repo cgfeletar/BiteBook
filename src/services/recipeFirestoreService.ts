@@ -58,7 +58,7 @@ export async function updateRecipeInFirestore(
   
   if (recipeSnap.exists()) {
     // Document exists, update it
-    await updateDoc(recipeRef, updates);
+  await updateDoc(recipeRef, updates);
   } else {
     // Document doesn't exist, create it with the updates
     // This handles the case where a recipe exists locally but hasn't been synced yet
@@ -151,3 +151,79 @@ export function subscribeToKitchenRecipes(
   });
 }
 
+
+/**
+ * Migrate all recipes from one kitchen to another
+ * This copies recipes (does not delete from source)
+ * Used when a user joins another kitchen to merge their recipes
+ * @param fromKitchenId - The source kitchen ID
+ * @param toKitchenId - The destination kitchen ID  
+ * @returns The number of recipes migrated
+ */
+export async function migrateRecipesToKitchen(
+  fromKitchenId: string,
+  toKitchenId: string
+): Promise<number> {
+  if (!fromKitchenId || !toKitchenId) {
+    throw new Error("Both fromKitchenId and toKitchenId are required");
+  }
+
+  // Don't migrate if source and destination are the same
+  if (fromKitchenId === toKitchenId) {
+    console.log(`[migrateRecipes] Source and destination are the same, skipping migration`);
+    return 0;
+  }
+
+  console.log(`[migrateRecipes] Starting migration from ${fromKitchenId} to ${toKitchenId}`);
+
+  try {
+    // Get all recipes from the source kitchen
+    const sourceRecipes = await getKitchenRecipes(fromKitchenId);
+    
+    if (sourceRecipes.length === 0) {
+      console.log(`[migrateRecipes] No recipes to migrate from ${fromKitchenId}`);
+      return 0;
+    }
+
+    console.log(`[migrateRecipes] Found ${sourceRecipes.length} recipes to migrate`);
+
+    // Get existing recipes in destination to avoid duplicates (by sourceUrl)
+    const destRecipes = await getKitchenRecipes(toKitchenId);
+    const existingSourceUrls = new Set(destRecipes.map(r => r.sourceUrl).filter(Boolean));
+
+    let migratedCount = 0;
+
+    // Copy each recipe to the destination kitchen
+    for (const recipe of sourceRecipes) {
+      // Skip if a recipe with the same source URL already exists
+      if (recipe.sourceUrl && existingSourceUrls.has(recipe.sourceUrl)) {
+        console.log(`[migrateRecipes] Skipping duplicate recipe: ${recipe.title} (same sourceUrl exists)`);
+        continue;
+      }
+
+      // Create recipe in destination kitchen (without the old id)
+      const { id, ...recipeData } = recipe;
+      const recipesRef = collection(db, "kitchens", toKitchenId, "recipes");
+      
+      await addDoc(recipesRef, {
+        ...recipeData,
+        migratedFrom: fromKitchenId, // Track origin for debugging
+        migratedAt: serverTimestamp(),
+      });
+
+      migratedCount++;
+      console.log(`[migrateRecipes] Migrated recipe: ${recipe.title}`);
+    }
+
+    console.log(`[migrateRecipes] Successfully migrated ${migratedCount} recipes`);
+    return migratedCount;
+  } catch (error: any) {
+    console.error(`[migrateRecipes] Failed to migrate recipes:`, {
+      fromKitchenId,
+      toKitchenId,
+      error: error?.message,
+      code: error?.code,
+    });
+    throw error;
+  }
+}

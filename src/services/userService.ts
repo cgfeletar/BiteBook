@@ -47,8 +47,8 @@ export async function createOrUpdateUser(user: User): Promise<void> {
   });
 
   try {
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
+  const userRef = doc(db, "users", user.uid);
+  const userSnap = await getDoc(userRef);
 
     // Build user data with proper null handling (not undefined)
     // Use auth.currentUser as source of truth for email/displayName if not provided
@@ -58,43 +58,43 @@ export async function createOrUpdateUser(user: User): Promise<void> {
 
     // Build payload object
     const userDataPayload: Record<string, any> = {
-      uid: user.uid,
+    uid: user.uid,
       email: email,
       displayName: displayName,
       photoURL: photoURL,
-      defaultKitchenId: user.defaultKitchenId || generateUniqueId(),
-    };
+    defaultKitchenId: user.defaultKitchenId || generateUniqueId(),
+  };
 
     // Remove undefined values (Firestore doesn't allow undefined)
     const sanitizedPayload = stripUndefined(userDataPayload);
 
-    if (!userSnap.exists()) {
-      // New user - create kitchen first, then user document
-      const kitchenId = user.defaultKitchenId || generateUniqueId();
-      await createKitchen(user.uid, kitchenId);
-      
-      // Create document with createdAt and kitchenId
+  if (!userSnap.exists()) {
+    // New user - create kitchen first, then user document
+    const kitchenId = user.defaultKitchenId || generateUniqueId();
+    await createKitchen(user.uid, kitchenId);
+    
+    // Create document with createdAt and kitchenId
       const createPayload = {
         ...sanitizedPayload,
-        defaultKitchenId: kitchenId,
-        createdAt: serverTimestamp(),
+      defaultKitchenId: kitchenId,
+      createdAt: serverTimestamp(),
       };
       
       console.log(`[createOrUpdateUser] Creating new user with payload:`, createPayload);
       await setDoc(userRef, createPayload);
       console.log(`[createOrUpdateUser] SUCCESS - New user created at path: ${path}`);
-    } else {
-      // Existing user - check if they have a kitchen, create one if not
-      const existingData = userSnap.data();
-      let kitchenId = existingData?.defaultKitchenId || user.defaultKitchenId;
-      
-      // If no kitchen exists, create one
-      if (!kitchenId) {
-        kitchenId = generateUniqueId();
-        await createKitchen(user.uid, kitchenId);
-      }
-      
-      // Update user document with kitchenId
+  } else {
+    // Existing user - check if they have a kitchen, create one if not
+    const existingData = userSnap.data();
+    let kitchenId = existingData?.defaultKitchenId || user.defaultKitchenId;
+    
+    // If no kitchen exists, create one
+    if (!kitchenId) {
+      kitchenId = generateUniqueId();
+      await createKitchen(user.uid, kitchenId);
+    }
+    
+    // Update user document with kitchenId
       // Only update fields that are provided (merge mode)
       const updatePayload = {
         ...sanitizedPayload,
