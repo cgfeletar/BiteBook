@@ -1,5 +1,5 @@
-import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
-import { db, auth } from "../config/firebase";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth, db } from "../config/firebase";
 import { User } from "../store/useAuthStore";
 import { createKitchen } from "./kitchenService";
 
@@ -47,54 +47,61 @@ export async function createOrUpdateUser(user: User): Promise<void> {
   });
 
   try {
-  const userRef = doc(db, "users", user.uid);
-  const userSnap = await getDoc(userRef);
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
 
     // Build user data with proper null handling (not undefined)
     // Use auth.currentUser as source of truth for email/displayName if not provided
     const email = user.email ?? auth.currentUser?.email ?? null;
-    const displayName = user.displayName ?? auth.currentUser?.displayName ?? null;
+    const displayName =
+      user.displayName ?? auth.currentUser?.displayName ?? null;
     const photoURL = user.photoURL ?? auth.currentUser?.photoURL ?? null;
 
     // Build payload object
     const userDataPayload: Record<string, any> = {
-    uid: user.uid,
+      uid: user.uid,
       email: email,
       displayName: displayName,
       photoURL: photoURL,
-    defaultKitchenId: user.defaultKitchenId || generateUniqueId(),
-  };
+      defaultKitchenId: user.defaultKitchenId || generateUniqueId(),
+    };
 
     // Remove undefined values (Firestore doesn't allow undefined)
     const sanitizedPayload = stripUndefined(userDataPayload);
 
-  if (!userSnap.exists()) {
-    // New user - create kitchen first, then user document
-    const kitchenId = user.defaultKitchenId || generateUniqueId();
-    await createKitchen(user.uid, kitchenId);
-    
-    // Create document with createdAt and kitchenId
+    if (!userSnap.exists()) {
+      // New user - create kitchen first, then user document
+      const kitchenId = user.defaultKitchenId || generateUniqueId();
+      await createKitchen(user.uid, kitchenId);
+
+      // Create document with createdAt and kitchenId
       const createPayload = {
         ...sanitizedPayload,
-      defaultKitchenId: kitchenId,
-      createdAt: serverTimestamp(),
+        defaultKitchenId: kitchenId,
+        createdAt: serverTimestamp(),
       };
-      
-      console.log(`[createOrUpdateUser] Creating new user with payload:`, createPayload);
+
+      console.log(
+        `[createOrUpdateUser] Creating new user with payload:`,
+        createPayload
+      );
       await setDoc(userRef, createPayload);
-      console.log(`[createOrUpdateUser] SUCCESS - New user created at path: ${path}`);
-  } else {
-    // Existing user - check if they have a kitchen, create one if not
-    const existingData = userSnap.data();
-    let kitchenId = existingData?.defaultKitchenId || user.defaultKitchenId;
-    
-    // If no kitchen exists, create one
-    if (!kitchenId) {
-      kitchenId = generateUniqueId();
-      await createKitchen(user.uid, kitchenId);
-    }
-    
-    // Update user document with kitchenId
+      console.log(
+        `[createOrUpdateUser] SUCCESS - New user created at path: ${path}`
+      );
+    } else {
+      // Existing user - check if they have a kitchen, create one if not
+      const existingData = userSnap.data();
+      // IMPORTANT: Prioritize the new kitchenId (e.g., from invite acceptance) over existing
+      let kitchenId = user.defaultKitchenId || existingData?.defaultKitchenId;
+
+      // If no kitchen exists, create one
+      if (!kitchenId) {
+        kitchenId = generateUniqueId();
+        await createKitchen(user.uid, kitchenId);
+      }
+
+      // Update user document with kitchenId
       // Only update fields that are provided (merge mode)
       const updatePayload = {
         ...sanitizedPayload,
@@ -102,19 +109,27 @@ export async function createOrUpdateUser(user: User): Promise<void> {
         // Preserve createdAt for existing users
         createdAt: existingData.createdAt || serverTimestamp(),
       };
-      
-      console.log(`[createOrUpdateUser] Updating existing user with payload:`, updatePayload);
+
+      console.log(
+        `[createOrUpdateUser] Updating existing user with payload:`,
+        updatePayload
+      );
       await setDoc(userRef, updatePayload, { merge: true });
-      console.log(`[createOrUpdateUser] SUCCESS - User updated at path: ${path}`);
+      console.log(
+        `[createOrUpdateUser] SUCCESS - User updated at path: ${path}`
+      );
     }
   } catch (error: any) {
-    console.error(`[createOrUpdateUser] FAILED - Operation: setDoc, Path: ${path}`, {
-      code: error?.code,
-      message: error?.message,
-      authUid: auth.currentUser?.uid,
-      authEmail: auth.currentUser?.email,
-      userUid: user.uid,
-    });
+    console.error(
+      `[createOrUpdateUser] FAILED - Operation: setDoc, Path: ${path}`,
+      {
+        code: error?.code,
+        message: error?.message,
+        authUid: auth.currentUser?.uid,
+        authEmail: auth.currentUser?.email,
+        userUid: user.uid,
+      }
+    );
     throw error;
   }
 }
@@ -122,7 +137,9 @@ export async function createOrUpdateUser(user: User): Promise<void> {
 /**
  * Get user document from Firestore
  */
-export async function getUserDocument(uid: string): Promise<UserDocument | null> {
+export async function getUserDocument(
+  uid: string
+): Promise<UserDocument | null> {
   const userRef = doc(db, "users", uid);
   const userSnap = await getDoc(userRef);
 
@@ -139,4 +156,3 @@ export async function getUserDocument(uid: string): Promise<UserDocument | null>
 function generateUniqueId(): string {
   return `kitchen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
-

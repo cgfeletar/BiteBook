@@ -151,7 +151,6 @@ export function subscribeToKitchenRecipes(
   });
 }
 
-
 /**
  * Migrate all recipes from one kitchen to another
  * This copies recipes (does not delete from source)
@@ -187,17 +186,30 @@ export async function migrateRecipesToKitchen(
 
     console.log(`[migrateRecipes] Found ${sourceRecipes.length} recipes to migrate`);
 
-    // Get existing recipes in destination to avoid duplicates (by sourceUrl)
+    // Get existing recipes in destination to avoid duplicates
     const destRecipes = await getKitchenRecipes(toKitchenId);
+    
+    // Create sets for duplicate detection - check by sourceUrl AND title
     const existingSourceUrls = new Set(destRecipes.map(r => r.sourceUrl).filter(Boolean));
+    const existingTitles = new Set(destRecipes.map(r => r.title?.toLowerCase().trim()).filter(Boolean));
 
     let migratedCount = 0;
+    let skippedCount = 0;
 
     // Copy each recipe to the destination kitchen
     for (const recipe of sourceRecipes) {
       // Skip if a recipe with the same source URL already exists
       if (recipe.sourceUrl && existingSourceUrls.has(recipe.sourceUrl)) {
         console.log(`[migrateRecipes] Skipping duplicate recipe: ${recipe.title} (same sourceUrl exists)`);
+        skippedCount++;
+        continue;
+      }
+      
+      // Also skip if a recipe with the same title already exists (fallback for recipes without sourceUrl)
+      const normalizedTitle = recipe.title?.toLowerCase().trim();
+      if (normalizedTitle && existingTitles.has(normalizedTitle)) {
+        console.log(`[migrateRecipes] Skipping duplicate recipe: ${recipe.title} (same title exists)`);
+        skippedCount++;
         continue;
       }
 
@@ -211,11 +223,15 @@ export async function migrateRecipesToKitchen(
         migratedAt: serverTimestamp(),
       });
 
+      // Add to existing sets to prevent duplicates within the same migration batch
+      if (recipe.sourceUrl) existingSourceUrls.add(recipe.sourceUrl);
+      if (normalizedTitle) existingTitles.add(normalizedTitle);
+
       migratedCount++;
       console.log(`[migrateRecipes] Migrated recipe: ${recipe.title}`);
     }
 
-    console.log(`[migrateRecipes] Successfully migrated ${migratedCount} recipes`);
+    console.log(`[migrateRecipes] Successfully migrated ${migratedCount} recipes, skipped ${skippedCount} duplicates`);
     return migratedCount;
   } catch (error: any) {
     console.error(`[migrateRecipes] Failed to migrate recipes:`, {

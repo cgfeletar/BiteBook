@@ -1,6 +1,6 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
 import { createKitchenInvite } from "@/src/services/kitchenInviteService";
-import { getKitchenMembers, KitchenMember, createKitchen } from "@/src/services/kitchenService";
+import { getKitchenMembers, KitchenMember, createKitchen, removeKitchenMember } from "@/src/services/kitchenService";
 import { getUserDocument, createOrUpdateUser } from "@/src/services/userService";
 import { buildInviteLink, buildWebInviteLink } from "@/src/utils/buildInviteLink";
 import { router } from "expo-router";
@@ -10,6 +10,8 @@ import {
   Share2,
   Users,
   Crown,
+  MoreVertical,
+  UserMinus,
 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
@@ -20,6 +22,8 @@ import {
   View,
   ActivityIndicator,
   ScrollView,
+  Modal,
+  Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
@@ -35,6 +39,53 @@ export default function KitchenMembersScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [members, setMembers] = useState<MemberWithDetails[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [menuOpenForMember, setMenuOpenForMember] = useState<string | null>(null);
+
+  // Check if current user is the owner
+  const currentUserIsOwner = members.find(m => m.userId === user?.uid)?.role === "owner";
+
+  const handleRemoveMember = async (member: MemberWithDetails) => {
+    if (!user?.defaultKitchenId) return;
+
+    const isRemovingSelf = member.userId === user.uid;
+    const memberName = member.displayName || member.email || "this member";
+
+    // Confirmation message based on whether removing self or another member
+    const confirmTitle = isRemovingSelf ? "Leave Kitchen" : "Remove Member";
+    const confirmMessage = isRemovingSelf
+      ? "Are you sure you want to leave this kitchen? You'll need a new invite to rejoin."
+      : `Are you sure you want to remove ${memberName} from this kitchen?`;
+
+    Alert.alert(confirmTitle, confirmMessage, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: isRemovingSelf ? "Leave" : "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await removeKitchenMember(user.defaultKitchenId!, member.userId);
+            
+            if (isRemovingSelf) {
+              // If leaving, create a new kitchen for the user
+              const newKitchenId = `kitchen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              await createKitchen(user.uid, newKitchenId);
+              await createOrUpdateUser({ ...user, defaultKitchenId: newKitchenId });
+              setUser({ ...user, defaultKitchenId: newKitchenId });
+              Alert.alert("Left Kitchen", "You've left the kitchen. A new kitchen has been created for you.");
+            } else {
+              // Refresh the members list
+              loadMembers();
+              Alert.alert("Success", `${memberName} has been removed from the kitchen.`);
+            }
+          } catch (error: any) {
+            console.error("Error removing member:", error);
+            Alert.alert("Error", error?.message || "Failed to remove member");
+          }
+        },
+      },
+    ]);
+    setMenuOpenForMember(null);
+  };
 
   const handleInvite = async () => {
     if (!user) {
@@ -348,11 +399,21 @@ export default function KitchenMembersScreen() {
                     )}
                   </View>
                   {member.role === "owner" && (
-                    <View className="bg-dark-sage/10 rounded-full px-3 py-1">
+                    <View className="bg-dark-sage/10 rounded-full px-3 py-1 mr-2">
                       <Text className="text-dark-sage text-xs font-semibold">
                         Owner
                       </Text>
                     </View>
+                  )}
+                  {/* Show menu for: owners can remove anyone, members can only remove themselves */}
+                  {(currentUserIsOwner || member.userId === user?.uid) && (
+                    <TouchableOpacity
+                      onPress={() => setMenuOpenForMember(member.userId)}
+                      className="w-10 h-10 items-center justify-center"
+                      activeOpacity={0.7}
+                    >
+                      <MoreVertical size={20} color="#6B7280" />
+                    </TouchableOpacity>
                   )}
                 </View>
               ))}
@@ -360,6 +421,66 @@ export default function KitchenMembersScreen() {
           )}
         </View>
       </ScrollView>
+
+      {/* Action Sheet Modal */}
+      <Modal
+        visible={menuOpenForMember !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpenForMember(null)}
+      >
+        <Pressable 
+          className="flex-1 bg-black/50 justify-end"
+          onPress={() => setMenuOpenForMember(null)}
+        >
+          <Pressable 
+            className="bg-white rounded-t-2xl"
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Handle bar */}
+            <View className="items-center pt-3 pb-2">
+              <View className="w-10 h-1 bg-gray-300 rounded-full" />
+            </View>
+            
+            {/* Member info */}
+            {menuOpenForMember && (
+              <View className="px-6 pb-2">
+                <Text className="text-charcoal/60 text-sm">
+                  {members.find(m => m.userId === menuOpenForMember)?.displayName || 
+                   members.find(m => m.userId === menuOpenForMember)?.email || 
+                   "Member"}
+                </Text>
+              </View>
+            )}
+            
+            {/* Remove/Leave button */}
+            <TouchableOpacity
+              onPress={() => {
+                const member = members.find(m => m.userId === menuOpenForMember);
+                if (member) handleRemoveMember(member);
+              }}
+              className="flex-row items-center px-6 py-4 border-t border-gray-100"
+              activeOpacity={0.7}
+            >
+              <UserMinus size={20} color="#DC2626" />
+              <Text className="text-red-600 ml-3 text-base font-medium">
+                {menuOpenForMember === user?.uid ? "Leave Kitchen" : "Remove from Kitchen"}
+              </Text>
+            </TouchableOpacity>
+            
+            {/* Cancel button */}
+            <TouchableOpacity
+              onPress={() => setMenuOpenForMember(null)}
+              className="px-6 py-4 border-t border-gray-100 mb-8"
+              activeOpacity={0.7}
+            >
+              <Text className="text-charcoal text-base font-medium text-center">
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
