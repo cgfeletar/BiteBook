@@ -1012,7 +1012,7 @@ async function callLLM(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4.1", // Using GPT-4.1 for faster, cost-effective results
+        model: "gpt-4o", // Using GPT-4o for accurate results
         messages: [
           {
             role: "system",
@@ -1911,7 +1911,7 @@ async function generateNutritionFromIngredients(
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-4.1-mini", // Using GPT-4.1-mini for faster, cost-effective results
+        model: "gpt-4o-mini", // Using GPT-4o-mini for faster, cost-effective results
         messages: [
           {
             role: "system",

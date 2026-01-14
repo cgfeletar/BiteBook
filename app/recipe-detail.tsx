@@ -557,9 +557,15 @@ export default function RecipeDetailScreen() {
   }, [params.importedData, params.recipeData, getRecipe]);
 
   // Check and generate nutritional info if missing or incomplete
+  // Use a ref to track if we've already generated nutrition for this recipe
+  const hasGeneratedNutrition = useRef<string | null>(null);
+  
   useEffect(() => {
     const checkAndGenerateNutrition = async () => {
       if (!recipeData) return;
+      
+      // Skip if we've already generated nutrition for this recipe
+      if (hasGeneratedNutrition.current === recipeData.id) return;
 
       // Check if nutritional info is incomplete (has some but not all required values)
       const nutritionIncomplete = isNutritionIncomplete(recipeData.nutritionalInfo);
@@ -569,6 +575,8 @@ export default function RecipeDetailScreen() {
         recipeData.ingredients &&
         recipeData.ingredients.length > 0
       ) {
+        // Mark that we're generating for this recipe to prevent duplicate calls
+        hasGeneratedNutrition.current = recipeData.id;
         setIsLoadingNutrition(true);
         try {
           // Generate nutritional info from ingredients
@@ -584,6 +592,7 @@ export default function RecipeDetailScreen() {
           // Normalize to ensure all required fields are present
           const finalNutrition = normalizeNutrition(mergedNutrition);
 
+          // Update local state
           setRecipeData((prev) => {
             if (!prev) return prev;
             return {
@@ -591,8 +600,19 @@ export default function RecipeDetailScreen() {
               nutritionalInfo: finalNutrition,
             };
           });
+          
+          // Persist to Firestore if this is a saved recipe (has an id and not imported)
+          if (recipeData.id && user?.defaultKitchenId) {
+            updateRecipe(
+              recipeData.id,
+              { nutritionalInfo: finalNutrition },
+              user.defaultKitchenId
+            );
+          }
         } catch (error) {
           console.error("Failed to generate nutritional info:", error);
+          // Reset the flag so it can try again if user revisits
+          hasGeneratedNutrition.current = null;
           // Silently fail - user can still use the recipe without nutrition info
         } finally {
           setIsLoadingNutrition(false);
@@ -601,7 +621,7 @@ export default function RecipeDetailScreen() {
     };
 
     checkAndGenerateNutrition();
-  }, [recipeData]);
+  }, [recipeData, user?.defaultKitchenId, updateRecipe]);
 
   // Initialize timer states when recipe data loads (but don't auto-start)
   useEffect(() => {
