@@ -16,10 +16,11 @@ export default function ComingSoonScreen() {
       <View className="flex-row items-center justify-between px-6 pt-4 pb-4">
         <TouchableOpacity
           onPress={() => router.back()}
-          className="w-10 h-10 items-center justify-center"
+          className="w-11 h-11 items-center justify-center"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={24} color="#3E3E3E" />
+          <ArrowLeft size={24} color="#3E3E3E" pointerEvents="none" />
         </TouchableOpacity>
         <Text
           className="text-2xl font-bold text-charcoal flex-1 ml-4"

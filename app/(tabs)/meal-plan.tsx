@@ -222,10 +222,11 @@ export default function MealPlanScreen() {
           <Text className="text-3xl font-bold text-charcoal">Meal Plan</Text>
           <TouchableOpacity
             onPress={() => router.push("/account")}
-            className="w-10 h-10 rounded-full bg-warm-sand items-center justify-center"
+            className="w-11 h-11 rounded-full bg-warm-sand items-center justify-center"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
           >
-            <User size={20} color="#3E3E3E" />
+            <User size={20} color="#3E3E3E" pointerEvents="none" />
           </TouchableOpacity>
         </View>
 

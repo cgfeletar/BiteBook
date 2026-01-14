@@ -375,10 +375,11 @@ export function FilterModal({
               </View>
               <TouchableOpacity
                 onPress={onClose}
-                className="w-10 h-10 items-center justify-center"
+                className="w-11 h-11 items-center justify-center"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.7}
               >
-                <X size={24} color="#3E3E3E" />
+                <X size={24} color="#3E3E3E" pointerEvents="none" />
               </TouchableOpacity>
             </View>
 

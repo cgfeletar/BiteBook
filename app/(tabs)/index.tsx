@@ -590,11 +590,11 @@ export default function RecipeFeed() {
           </Text>
           <TouchableOpacity
             onPress={() => router.push("/account")}
-            className="bg-redwood rounded-full w-10 h-10 items-center justify-center"
+            className="bg-redwood rounded-full w-11 h-11 items-center justify-center"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}
-            style={{ minWidth: 44, minHeight: 44 }}
           >
-            <User size={20} color="white" />
+            <User size={20} color="white" pointerEvents="none" />
           </TouchableOpacity>
         </View>
 
@@ -784,6 +784,7 @@ export default function RecipeFeed() {
                   ? "bg-dark-sage"
                   : "bg-soft-beige"
               }`}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               activeOpacity={0.7}
               style={{ width: 44, height: 44 }}
             >

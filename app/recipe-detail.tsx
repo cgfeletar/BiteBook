@@ -2500,7 +2500,8 @@ export default function RecipeDetailScreen() {
                                 </View>
                                 <RNTouchableOpacity
                                   onPress={() => handleDeleteIngredient(index)}
-                                  className="ml-2 p-2"
+                                  className="ml-2 w-10 h-10 items-center justify-center"
+                                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                   activeOpacity={0.7}
                                 >
                                   <X
@@ -3108,7 +3109,8 @@ export default function RecipeDetailScreen() {
                             </View>
                             <RNTouchableOpacity
                               onPress={() => handleDeleteStep(step.id)}
-                              className="ml-2 p-2"
+                              className="ml-2 w-10 h-10 items-center justify-center"
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                               activeOpacity={0.7}
                             >
                               <X
@@ -3306,11 +3308,12 @@ export default function RecipeDetailScreen() {
                                                         })
                                                       );
                                                     }}
-                                                    className="bg-warm-sand rounded-lg px-3 py-1.5"
+                                                    className="bg-warm-sand rounded-lg w-10 h-10 items-center justify-center"
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                                     activeOpacity={0.7}
                                                   >
                                                     <Pause
-                                                      size={14}
+                                                      size={16}
                                                       color="#3E3E3E"
                                                       pointerEvents="none"
                                                     />
@@ -3453,7 +3456,8 @@ export default function RecipeDetailScreen() {
                                                         );
                                                       }, 1000);
                                                     }}
-                                                    className="bg-dark-sage rounded-lg px-3 py-1.5"
+                                                    className="bg-dark-sage rounded-lg w-10 h-10 items-center justify-center"
+                                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                                     activeOpacity={0.7}
                                                   >
                                                     <Play
@@ -4093,10 +4097,11 @@ export default function RecipeDetailScreen() {
                   setTimerExtensionStepId(null);
                   setCustomMinutes("");
                 }}
-                className="p-2"
+                className="w-11 h-11 items-center justify-center"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.7}
               >
-                <X size={20} color="#3E3E3E" />
+                <X size={20} color="#3E3E3E" pointerEvents="none" />
               </RNTouchableOpacity>
             </View>
             <Text className="text-charcoal-gray/70 text-sm mb-4">

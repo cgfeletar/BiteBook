@@ -57,7 +57,7 @@ export default function BookDetailScreen() {
                 style={{ width: 44, height: 44, justifyContent: "center", marginRight: 12 }}
                 activeOpacity={0.7}
               >
-                <ArrowLeft size={24} color="#3E3E3E" />
+                <ArrowLeft size={24} color="#3E3E3E" pointerEvents="none" />
               </TouchableOpacity>
               <View className="flex-1">
                 <Text className="text-2xl font-bold text-charcoal-gray">

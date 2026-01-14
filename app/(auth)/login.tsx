@@ -114,10 +114,11 @@ export default function LoginScreen() {
             <View className="mb-8">
               <TouchableOpacity
                 onPress={() => router.back()}
-                className="mb-4"
+                className="w-11 h-11 items-center justify-center mb-4 -ml-2"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.7}
               >
-                <ArrowLeft size={24} color="#3E3E3E" />
+                <ArrowLeft size={24} color="#3E3E3E" pointerEvents="none" />
               </TouchableOpacity>
               <Text
                 className="text-3xl font-bold text-charcoal-gray mb-2"

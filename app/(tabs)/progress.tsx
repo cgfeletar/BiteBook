@@ -334,11 +334,12 @@ export default function ProgressScreen() {
                 </Text>
               </View>
               <TouchableOpacity
-                className="w-8 h-8 bg-dark-sage rounded-full items-center justify-center"
+                className="w-11 h-11 bg-dark-sage rounded-full items-center justify-center"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 activeOpacity={0.7}
                 onPress={() => setShowAddModal(true)}
               >
-                <Plus size={18} color="#FAF9F7" />
+                <Plus size={18} color="#FAF9F7" pointerEvents="none" />
               </TouchableOpacity>
             </View>
 
@@ -350,11 +351,12 @@ export default function ProgressScreen() {
                     className="bg-soft-beige rounded-xl p-4 border border-warm-sand/50 relative"
                   >
                     <TouchableOpacity
-                      className="absolute top-3 right-3 w-6 h-6 items-center justify-center"
+                      className="absolute top-3 right-3 w-10 h-10 items-center justify-center"
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       onPress={() => removeChallenge(challenge.id)}
                       activeOpacity={0.7}
                     >
-                      <X size={16} color="#9CA3AF" />
+                      <X size={16} color="#9CA3AF" pointerEvents="none" />
                     </TouchableOpacity>
 
                     <View className="flex-row items-start mb-3">
@@ -429,9 +431,11 @@ export default function ProgressScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => setShowAddModal(false)}
-                className="w-8 h-8 items-center justify-center"
+                className="w-11 h-11 items-center justify-center"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
               >
-                <X size={24} color="#3E3E3E" />
+                <X size={24} color="#3E3E3E" pointerEvents="none" />
               </TouchableOpacity>
             </View>
 
