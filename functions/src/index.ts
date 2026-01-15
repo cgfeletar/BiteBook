@@ -109,9 +109,17 @@ IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript in
 EXTRACTION RULES:
 
 1. TITLE:
-   - Extract the main recipe title from <h1>, <h2>, or meta tags (og:title, twitter:title)
+   - Extract the main recipe title - this should be the NAME OF THE DISH (e.g., "Chicken Alfredo", "Chocolate Chip Cookies", "Beef Tacos")
+   - For traditional recipe websites: Look in <h1>, <h2>, or meta tags (og:title, twitter:title)
+   - For social media posts (TikTok, Instagram): The title is usually NOT the first line of the caption. Instead:
+     * Look through the ENTIRE caption/description text for the actual dish name
+     * The recipe name often appears: before the ingredients list, after phrases like "here's my", "try this", "making", "how to make", or stands alone on its own line
+     * Look for food-related words that form a dish name (e.g., "pasta", "chicken", "cake", "soup", "salad", etc.)
+     * Ignore hashtags, emojis, promotional text, and generic phrases like "recipe", "easy recipe", "viral recipe"
+     * If the caption mentions a specific dish name anywhere (even in the middle), use that as the title
    - Clean up extra whitespace, emojis, and "Recipe:" prefixes
-   - If multiple titles exist, choose the most prominent one
+   - The title should be a proper dish name, NOT the first sentence of a caption or promotional text
+   - If you cannot find a specific dish name, infer it from the main ingredients (e.g., ingredients with chicken and pasta → "Chicken Pasta")
 
 2. COVER IMAGE:
    - Look for images in this priority: og:image, twitter:image, first large <img> in content
@@ -137,6 +145,12 @@ EXTRACTION RULES:
    - Handle "to taste", "as needed", "optional" → quantity: null, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
    - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
    - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
+   - IMPORTANT: Look for WordPress Recipe Maker (WPRM) classes first:
+     * .wprm-recipe-ingredient-group - contains groups of ingredients
+     * .wprm-recipe-ingredient - individual ingredient items  
+     * .wprm-recipe-ingredient-amount - the quantity
+     * .wprm-recipe-ingredient-unit - the unit
+     * .wprm-recipe-ingredient-name - the ingredient name
    - Extract from common selectors: [data-ingredient], .ingredient, .recipe-ingredient, <li> in ingredient lists, or any list items under an "Ingredients" heading
    - Each ingredient should be on its own line or list item
    - Clean ingredient names: remove quantities, units, and extra text (parenthetical notes can stay if they're part of the ingredient name)
@@ -144,9 +158,13 @@ EXTRACTION RULES:
    - IMPORTANT: If you see an ingredient list with clear quantities (like "2 cups flour", "1/2 tsp salt"), extract those exact quantities. Do not assume "to taste" unless the recipe explicitly says so.
 
 4. STEPS:
-   - CRITICAL: Find the section that contains intructions (this is usually just below the ingredient list), then extract ALL cooking instructions - do not skip or omit any steps
+   - CRITICAL: Find the section that contains instructions (this is usually just below the ingredient list), then extract ALL cooking instructions - do not skip or omit any steps
    - Extract from ordered/unordered lists, paragraphs, or structured data
-   - Look for: <ol>, <ul> with class containing "step", "instruction", "direction"
+   - IMPORTANT: Look for WordPress Recipe Maker (WPRM) classes first:
+     * .wprm-recipe-instruction-group - contains groups of instructions
+     * .wprm-recipe-instruction - individual instruction items
+     * .wprm-recipe-instruction-text - the actual instruction text
+   - Also look for: <ol>, <ul> with class containing "step", "instruction", "direction"
    - Also check: numbered lists, bullet points, recipe instruction sections, and any text that describes cooking actions
    - If instructions are in paragraph form, split them into individual steps
    - If there is a title above one section of instructions (for example "Make the dough"), then extract that title as the step title.
@@ -174,7 +192,11 @@ EXTRACTION RULES:
 
 5. NUTRITIONAL INFO:
    - Extract from nutrition facts tables, JSON-LD, or text
-   - Look for patterns: "Calories: 250", "Protein 10g", etc.
+   - IMPORTANT: Look for WordPress Recipe Maker (WPRM) nutrition classes:
+     * .wprm-nutrition-label-container or .wprm-internal-container-nutrition - main nutrition container
+     * .wprm-nutrition-label-text-nutrition-value - individual nutrition values
+     * Classes like wprm-nutrition-label-text-nutrition-container-calories, -protein, -carbohydrates, -fat, -fiber, -sugar, -sodium
+   - Look for patterns: "Calories: 250", "Protein 10g", "Calories: 450kcal", etc.
    - Convert units: ensure protein/carbs/fat in grams, sodium in mg
    - CRITICAL: Check if nutrition is labeled as "per serving", "per portion", "per slice", or similar
    - If nutrition table/header says "per serving" or "Nutrition per serving" or similar, set isPerServing: true
@@ -233,20 +255,33 @@ HANDLING MESSY DATA:
 
 11. VIDEO RECIPES (TikTok, Instagram Reels, etc.):
    - For video recipe platforms, extract recipe information from:
-     * Video description/caption text (PRIORITY: Look for content in elements with class "tiktok-description" or similar)
+     * Video description/caption text (PRIORITY: Look for content in elements with class "social-media-description" or "tiktok-description")
      * Meta descriptions and og:description tags (these often contain the full recipe description)
      * Comments that contain recipe details
      * Text overlays in the video (if available in HTML)
-   - TikTok descriptions often contain:
-     * Recipe title at the beginning
+   - TITLE EXTRACTION FOR VIDEO RECIPES (CRITICAL):
+     * Do NOT use the first line of the caption as the title - this is usually just intro text
+     * Read through the ENTIRE caption to find the actual dish name
+     * Look for the dish name in these common patterns:
+       - Before ingredients (e.g., "Garlic Butter Shrimp\n\nIngredients:")
+       - After intro phrases (e.g., "Here's my famous Chicken Alfredo recipe!")
+       - After "making" or "how to make" (e.g., "Making the BEST chocolate chip cookies")
+       - Standalone line that names a food (e.g., a line that just says "Birria Tacos")
+       - Near the end before hashtags (e.g., "...and that's my Easy Pasta Bake! #recipe")
+     * The title should be a proper dish name like "Garlic Butter Shrimp", "Chicken Alfredo", "Birria Tacos"
+     * NOT generic text like "This recipe is so good", "You need to try this", or "Easy weeknight dinner"
+     * If no explicit dish name is found, create one from the main protein + cooking style or main ingredients
+   - TikTok/Instagram descriptions often contain:
+     * Intro text or hook (SKIP THIS for title)
+     * Recipe name somewhere in the text (USE THIS for title)
      * Ingredients list (may be in various formats: bullet points, numbered, comma-separated, or in text)
      * Instructions/steps (may be brief or detailed)
+     * Hashtags at the end (ignore for title)
    - CRITICAL: Parse the description text carefully - ingredients might be written as "2 cups flour, 1 tsp salt" or "flour\nsalt\nsugar" or "• flour\n• salt"
    - Extract ingredients even if they're embedded in the description text, not in a structured list
    - Extract steps/instructions from the description if present
    - If recipe information is incomplete or unavailable, that's okay - the recipe will be saved as a "video recipe" reference
-   - Always include the "video recipe" tag for TikTok URLs
-   - Extract the video title from og:title or page title (often the first line of the description)
+   - Always include the "video recipe" tag for TikTok/Instagram URLs
    - Extract the video thumbnail/image from og:image (this is the video screenshot/cover)
 
 OUTPUT FORMAT:
@@ -512,18 +547,72 @@ function extractAuthorAndTimesFromDOM(html: string) {
 function extractRecipeSection(html: string): string | null {
   const $ = cheerio.load(html);
 
-  // 1️⃣ WP Recipe Maker (VERY common)
-  const wprm = $(".wprm-recipe").first();
-  if (wprm.length) {
-    console.log("Found WP Recipe Maker section (.wprm-recipe)");
-    return wprm.html();
-  }
+  // 1️⃣ WP Recipe Maker (VERY common) - try multiple selectors
+  const wprmSelectors = [
+    ".wprm-recipe",
+    "[id^='wprm-recipe-container']",
+    ".wprm-recipe-container",
+  ];
 
-  // 2️⃣ ID starts with wprm-recipe-container
-  const wprmContainer = $("[id^='wprm-recipe-container']").first();
-  if (wprmContainer.length) {
-    console.log("Found WP Recipe Maker container (#wprm-recipe-container-*)");
-    return wprmContainer.html();
+  for (const selector of wprmSelectors) {
+    const wprm = $(selector).first();
+    if (wprm.length) {
+      console.log(`Found WP Recipe Maker section (${selector})`);
+
+      // For WPRM, explicitly include instruction groups and nutrition if they exist
+      // Sometimes these are outside the main container
+      let content = wprm.html() || "";
+
+      // Check for instruction groups that might be separate
+      const instructionGroups = $(
+        ".wprm-recipe-instruction-group, .wprm-recipe-instructions"
+      );
+      if (
+        instructionGroups.length &&
+        !content.includes("wprm-recipe-instruction")
+      ) {
+        console.log("Adding WPRM instruction groups to content");
+        content +=
+          "\n" +
+          instructionGroups
+            .map((_, el) => $(el).html())
+            .get()
+            .join("\n");
+      }
+
+      // Check for nutrition container
+      const nutritionContainer = $(
+        ".wprm-nutrition-label-container, .wprm-internal-container-nutrition, .wprm-recipe-nutrition"
+      );
+      if (nutritionContainer.length && !content.includes("wprm-nutrition")) {
+        console.log("Adding WPRM nutrition to content");
+        content +=
+          "\n" +
+          nutritionContainer
+            .map((_, el) => $(el).html())
+            .get()
+            .join("\n");
+      }
+
+      // Check for ingredients that might be separate
+      const ingredientGroups = $(
+        ".wprm-recipe-ingredient-group, .wprm-recipe-ingredients"
+      );
+      if (
+        ingredientGroups.length &&
+        !content.includes("wprm-recipe-ingredient")
+      ) {
+        console.log("Adding WPRM ingredient groups to content");
+        content +=
+          "\n" +
+          ingredientGroups
+            .map((_, el) => $(el).html())
+            .get()
+            .join("\n");
+      }
+
+      return content;
+    }
   }
 
   // 3️⃣ Schema.org Recipe (very reliable)
@@ -1287,6 +1376,21 @@ function isTikTokUrl(url: string): boolean {
 }
 
 /**
+ * Check if a URL is an Instagram URL
+ */
+function isInstagramUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    return (
+      urlObj.hostname.includes("instagram.com") ||
+      urlObj.hostname.includes("instagr.am")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get TikTok video metadata using oEmbed API
  * Returns: { title, author_name, thumbnail_url }
  */
@@ -1341,6 +1445,8 @@ export const extractRecipeFromUrl = functions
     // Check if this is a Pinterest URL and extract the original URL
     let actualRecipeUrl = data.url;
     const isTikTok = isTikTokUrl(data.url);
+    const isInstagram = isInstagramUrl(data.url);
+    const isSocialMediaVideo = isTikTok || isInstagram;
 
     if (isPinterestUrl(data.url)) {
       console.log("Detected Pinterest URL, extracting original recipe URL...");
@@ -1429,8 +1535,8 @@ export const extractRecipeFromUrl = functions
       // Parse HTML with Cheerio
       const $ = cheerio.load(response.data);
 
-      // For TikTok, get metadata from oEmbed API and extract description from page
-      let tiktokDescription = "";
+      // For TikTok/Instagram, get metadata and extract description from page
+      let socialMediaDescription = "";
       let tiktokOEmbed: {
         title: string;
         author_name: string;
@@ -1443,13 +1549,13 @@ export const extractRecipeFromUrl = functions
         console.log("TikTok oEmbed data:", tiktokOEmbed);
 
         // Extract description from meta tags for recipe parsing
-        tiktokDescription =
+        socialMediaDescription =
           $('meta[property="og:description"]').attr("content") ||
           $('meta[name="description"]').attr("content") ||
           "";
 
         // Try to extract description from TikTok's JSON data in script tags
-        if (!tiktokDescription) {
+        if (!socialMediaDescription) {
           const scripts = $("script");
           for (let i = 0; i < scripts.length; i++) {
             const scriptContent = scripts.eq(i).html() || "";
@@ -1463,7 +1569,7 @@ export const extractRecipeFromUrl = functions
                   jsonData?.__DEFAULT_SCOPE__?.["webapp.video-detail"]?.itemInfo
                     ?.itemStruct?.desc
                 ) {
-                  tiktokDescription =
+                  socialMediaDescription =
                     jsonData.__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo
                       .itemStruct.desc;
                   break;
@@ -1473,8 +1579,8 @@ export const extractRecipeFromUrl = functions
               // Look for description in any JSON structure
               const descPattern = /"desc"\s*:\s*"([^"]+)"/;
               const descMatch = scriptContent.match(descPattern);
-              if (descMatch && !tiktokDescription) {
-                tiktokDescription = descMatch[1]
+              if (descMatch && !socialMediaDescription) {
+                socialMediaDescription = descMatch[1]
                   .replace(/\\n/g, "\n")
                   .replace(/\\"/g, '"');
                 break;
@@ -1487,7 +1593,52 @@ export const extractRecipeFromUrl = functions
 
         console.log(
           "TikTok extracted description:",
-          tiktokDescription.substring(0, 200)
+          socialMediaDescription.substring(0, 200)
+        );
+      }
+
+      if (isInstagram) {
+        // Extract description from Instagram meta tags
+        socialMediaDescription =
+          $('meta[property="og:description"]').attr("content") ||
+          $('meta[name="description"]').attr("content") ||
+          "";
+
+        // Try to extract from Instagram's JSON data in script tags
+        if (!socialMediaDescription) {
+          const scripts = $("script");
+          for (let i = 0; i < scripts.length; i++) {
+            const scriptContent = scripts.eq(i).html() || "";
+            try {
+              // Instagram stores data in various JSON structures
+              const captionPatterns = [
+                /"caption"\s*:\s*"([^"]+)"/,
+                /"text"\s*:\s*"([^"]+)"/,
+                /"edge_media_to_caption".*?"text"\s*:\s*"([^"]+)"/s,
+              ];
+
+              for (const pattern of captionPatterns) {
+                const match = scriptContent.match(pattern);
+                if (match && !socialMediaDescription) {
+                  socialMediaDescription = match[1]
+                    .replace(/\\n/g, "\n")
+                    .replace(/\\"/g, '"')
+                    .replace(/\\u[\dA-Fa-f]{4}/g, (m) =>
+                      String.fromCharCode(parseInt(m.slice(2), 16))
+                    );
+                  break;
+                }
+              }
+              if (socialMediaDescription) break;
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+
+        console.log(
+          "Instagram extracted description:",
+          socialMediaDescription.substring(0, 200)
         );
       }
 
@@ -1514,9 +1665,9 @@ export const extractRecipeFromUrl = functions
         htmlContent = body.html() || "";
       }
 
-      // For TikTok, prepend the description to help LLM extract recipe info
-      if (isTikTok && tiktokDescription) {
-        htmlContent = `<div class="tiktok-description">${tiktokDescription}</div>\n${htmlContent}`;
+      // For TikTok/Instagram, prepend the description to help LLM extract recipe info
+      if (isSocialMediaVideo && socialMediaDescription) {
+        htmlContent = `<div class="social-media-description">${socialMediaDescription}</div>\n${htmlContent}`;
       }
 
       // Clean up HTML: remove excessive whitespace but preserve structure
@@ -1652,18 +1803,24 @@ export const extractRecipeFromUrl = functions
         }
       }
 
-      // For TikTok, override title, image, and author from oEmbed API
+      // For TikTok, use oEmbed data for image and author, but prefer LLM-extracted title
       if (isTikTok && tiktokOEmbed) {
-        extractedData.title =
-          tiktokOEmbed.title || extractedData.title || "TikTok Recipe Video";
+        // Only use oEmbed title as fallback if LLM didn't extract a good title
+        // LLM is prompted to find the actual dish name from the full caption
+        if (
+          !extractedData.title ||
+          extractedData.title === "TikTok Recipe Video"
+        ) {
+          extractedData.title = tiktokOEmbed.title || "TikTok Recipe Video";
+        }
         extractedData.coverImage =
           tiktokOEmbed.thumbnail_url || extractedData.coverImage || "";
         extractedData.originalAuthor =
           tiktokOEmbed.author_name || extractedData.originalAuthor || "Unknown";
       }
 
-      // Ensure video recipe tag for TikTok
-      if (isTikTok && !extractedData.tags?.includes("video recipe")) {
+      // Ensure video recipe tag for TikTok and Instagram
+      if (isSocialMediaVideo && !extractedData.tags?.includes("video recipe")) {
         extractedData.tags = [...(extractedData.tags || []), "video recipe"];
       }
 
@@ -1864,23 +2021,26 @@ Given a list of ingredients with quantities and units, calculate the total nutri
 
 Output ONLY valid JSON matching this exact structure:
 {
-  "calories": number,
-  "protein": number (in grams),
-  "carbohydrates": number (in grams),
-  "fat": number (in grams),
-  "fiber": number (in grams, optional),
-  "sugar": number (in grams, optional),
-  "sodium": number (in milligrams, optional)
+  "calories": number (REQUIRED - always provide a number, estimate if needed),
+  "protein": number (REQUIRED - in grams, always provide a number),
+  "carbohydrates": number (REQUIRED - in grams, always provide a number),
+  "fat": number (REQUIRED - in grams, always provide a number),
+  "sugar": number (REQUIRED - in grams, always provide a number),
+  "fiber": number (in grams, optional - can be null),
+  "sodium": number (in milligrams, optional - can be null)
 }
 
 Rules:
+- CRITICAL: calories, protein, carbohydrates, fat, and sugar are REQUIRED fields - you MUST always return a number for these, never null
 - Calculate totals for the entire recipe based on all ingredients
-- Use standard nutritional databases for common ingredients
+- Use standard nutritional databases (USDA, etc.) for common ingredients
 - Convert all units to grams/milligrams as needed
 - Round to nearest whole number
-- If an ingredient is ambiguous, make reasonable estimates
+- If an ingredient quantity is missing or unclear, estimate a typical amount (e.g., "salt" without quantity = 1/4 tsp)
+- If an ingredient is ambiguous, make reasonable estimates based on common usage
 - Include all ingredients in the calculation
-- Return null for optional fields if you cannot determine them
+- For optional fields (fiber, sodium), return null if you cannot determine them
+- Even if ingredients are vague, ALWAYS estimate the 5 required nutrition values based on what the dish appears to be
 
 Ingredients list:
 `;
@@ -1964,6 +2124,30 @@ async function generateNutritionFromIngredients(
         }. Response: ${responseText.substring(0, 200)}`
       );
     }
+
+    // Ensure required fields are always numbers (never null/undefined)
+    // This is critical for the client-side merge logic to work correctly
+    const requiredFields = [
+      "calories",
+      "protein",
+      "carbohydrates",
+      "fat",
+      "sugar",
+    ];
+    for (const field of requiredFields) {
+      if (
+        nutritionData[field] === null ||
+        nutritionData[field] === undefined ||
+        isNaN(nutritionData[field])
+      ) {
+        console.warn(
+          `Nutrition field ${field} was ${nutritionData[field]}, defaulting to 0`
+        );
+        nutritionData[field] = 0;
+      }
+    }
+
+    console.log("Generated nutrition data:", JSON.stringify(nutritionData));
 
     return nutritionData;
   } catch (error: any) {
