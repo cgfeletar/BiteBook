@@ -18,9 +18,10 @@ interface RecipeStore {
   loading: boolean;
   synced: boolean;
   unsubscribe: Unsubscribe | null;
-  addRecipe: (recipe: RecipeCreateInput, kitchenId?: string) => Promise<Recipe>;
-  updateRecipe: (id: string, updates: Partial<Recipe>, kitchenId?: string) => Promise<void>;
-  deleteRecipe: (id: string, kitchenId?: string) => Promise<void>;
+  // Note: These functions update local state immediately and sync to Firestore in background
+  addRecipe: (recipe: RecipeCreateInput, kitchenId?: string) => Recipe;
+  updateRecipe: (id: string, updates: Partial<Recipe>, kitchenId?: string) => void;
+  deleteRecipe: (id: string, kitchenId?: string) => void;
   getRecipe: (id: string) => Recipe | undefined;
   loadRecipesFromFirestore: (kitchenId: string) => Promise<void>;
   subscribeToRecipes: (kitchenId: string) => void;
@@ -35,7 +36,7 @@ export const useRecipeStore = create<RecipeStore>()(
       synced: false,
       unsubscribe: null,
 
-      addRecipe: async (recipeData: RecipeCreateInput, kitchenId?: string) => {
+      addRecipe: (recipeData: RecipeCreateInput, kitchenId?: string) => {
         // Normalize nutrition to ensure required fields are always present
         const normalizedNutrition = normalizeNutrition(recipeData.nutritionalInfo);
         
@@ -58,26 +59,23 @@ export const useRecipeStore = create<RecipeStore>()(
           recipes: [newRecipe, ...state.recipes], // Add to beginning for newest first
         }));
 
-        // Sync to Firestore if kitchenId is provided
+        // Sync to Firestore in background (non-blocking for faster UX)
+        // Recipe is already in local state, so user sees it immediately
         if (kitchenId) {
-          try {
-            // Ensure nutrition is normalized before syncing
-            const recipeDataToSync = {
-              ...recipeData,
-              nutritionalInfo: normalizedNutrition,
-            };
-            await addRecipeToFirestore(kitchenId, recipeDataToSync);
-            console.log("Recipe synced to Firestore");
-          } catch (error) {
-            console.error("Failed to sync recipe to Firestore:", error);
-            // Recipe is still in local state, will sync later
-          }
+          const recipeDataToSync = {
+            ...recipeData,
+            nutritionalInfo: normalizedNutrition,
+          };
+          // Fire-and-forget: don't await, let it sync in background
+          addRecipeToFirestore(kitchenId, recipeDataToSync)
+            .then(() => console.log("Recipe synced to Firestore"))
+            .catch((error) => console.error("Failed to sync recipe to Firestore:", error));
         }
 
         return newRecipe;
       },
 
-      updateRecipe: async (id: string, updates: Partial<Recipe>, kitchenId?: string) => {
+      updateRecipe: (id: string, updates: Partial<Recipe>, kitchenId?: string) => {
         // Normalize nutrition if it's being updated
         const normalizedUpdates = updates.nutritionalInfo
           ? { ...updates, nutritionalInfo: normalizeNutrition(updates.nutritionalInfo) }
@@ -90,31 +88,25 @@ export const useRecipeStore = create<RecipeStore>()(
           ),
         }));
 
-        // Sync to Firestore if kitchenId is provided
+        // Sync to Firestore in background (non-blocking)
         if (kitchenId) {
-          try {
-            await updateRecipeInFirestore(kitchenId, id, normalizedUpdates);
-            console.log("Recipe update synced to Firestore");
-          } catch (error) {
-            console.error("Failed to sync recipe update to Firestore:", error);
-          }
+          updateRecipeInFirestore(kitchenId, id, normalizedUpdates)
+            .then(() => console.log("Recipe update synced to Firestore"))
+            .catch((error) => console.error("Failed to sync recipe update to Firestore:", error));
         }
       },
 
-      deleteRecipe: async (id: string, kitchenId?: string) => {
+      deleteRecipe: (id: string, kitchenId?: string) => {
         // Update local state immediately
         set((state) => ({
           recipes: state.recipes.filter((recipe) => recipe.id !== id),
         }));
 
-        // Sync to Firestore if kitchenId is provided
+        // Sync to Firestore in background (non-blocking)
         if (kitchenId) {
-          try {
-            await deleteRecipeFromFirestore(kitchenId, id);
-            console.log("Recipe deletion synced to Firestore");
-          } catch (error) {
-            console.error("Failed to sync recipe deletion to Firestore:", error);
-          }
+          deleteRecipeFromFirestore(kitchenId, id)
+            .then(() => console.log("Recipe deletion synced to Firestore"))
+            .catch((error) => console.error("Failed to sync recipe deletion to Firestore:", error));
         }
       },
 

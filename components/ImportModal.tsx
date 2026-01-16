@@ -110,7 +110,7 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
               text: "Import Anyway",
               onPress: async () => {
                 // Add recipe to the store and sync to Firestore
-                const newRecipe = await addRecipe(recipeData, user?.defaultKitchenId);
+                const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
                 // Show success message
                 Alert.alert(
@@ -148,7 +148,7 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
       }
 
       // Add recipe to the store and sync to Firestore
-      const newRecipe = await addRecipe(recipeData, user?.defaultKitchenId);
+      const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
       // Show success message
       Alert.alert(

@@ -262,7 +262,7 @@ export default function AddScreen() {
 
       // Check if component is still mounted before updating state
       if (!isMountedRef.current) {
-        await addRecipe(recipeData, user?.defaultKitchenId);
+        addRecipe(recipeData, user?.defaultKitchenId);
         return;
       }
 
@@ -352,7 +352,7 @@ export default function AddScreen() {
     missingFields: string[] = []
   ) => {
     // Add recipe to store
-    const newRecipe = await addRecipe(recipeData, user?.defaultKitchenId);
+    const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
     if (!isMountedRef.current) {
       return;
@@ -421,7 +421,7 @@ export default function AddScreen() {
       // Check if component is still mounted before updating state
       if (!isMountedRef.current) {
         // Component unmounted, but recipe was imported - add it silently
-        await addRecipe(recipeData, user?.defaultKitchenId);
+        addRecipe(recipeData, user?.defaultKitchenId);
         return;
       }
 
@@ -460,7 +460,7 @@ export default function AddScreen() {
               text: "Import Anyway",
               onPress: async () => {
                 // Add recipe to store
-                const newRecipe = await addRecipe(recipeData, user?.defaultKitchenId);
+                const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
                 // Reset form
                 setUrl("");
@@ -481,7 +481,7 @@ export default function AddScreen() {
       }
 
       // Add recipe to store
-      const newRecipe = await addRecipe(recipeData, user?.defaultKitchenId);
+      const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
       // Check if component is still mounted before navigation
       if (!isMountedRef.current) {
