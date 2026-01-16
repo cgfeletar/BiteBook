@@ -551,7 +551,7 @@ function extractRecipeSection($: cheerio.CheerioAPI): string | null {
 
   for (const selector of wprmSelectors) {
     const wprm = $(selector).first();
-    if (wprm.length) {
+  if (wprm.length) {
       console.log(`Found WP Recipe Maker section (${selector})`);
 
       // For WPRM, explicitly include instruction groups and nutrition if they exist
@@ -1496,74 +1496,45 @@ export const extractRecipeFromUrl = functions
       );
     }
 
+    // TODO: CACHING DISABLED FOR PERFORMANCE
+    // Cache check was taking ~400ms per request. Uncomment below to re-enable caching.
+    // This would help if users frequently re-import the same recipe URL.
+    /*
     // Normalize URL for caching (remove trailing slashes, fragments, etc.)
-    // Use the original Pinterest URL for cache key to avoid duplicate caching
-    const normalizedUrl = data.url
-      .trim()
-      .replace(/\/$/, "")
-      .split("#")[0]
-      .split("?")[0];
-    // Include version in cache key to invalidate cache when extraction logic changes
-    const CACHE_VERSION = "v2"; // Increment this when extraction logic changes significantly
-    const cacheKey = `recipe-cache-${CACHE_VERSION}-${Buffer.from(normalizedUrl)
-      .toString("base64")
-      .replace(/[+/=]/g, "")}`;
+    const normalizedUrl = data.url.trim().replace(/\/$/, "").split("#")[0].split("?")[0];
+    const CACHE_VERSION = "v2";
+    const cacheKey = `recipe-cache-${CACHE_VERSION}-${Buffer.from(normalizedUrl).toString("base64").replace(/[+/=]/g, "")}`;
 
-    // Skip cache for social media - each TikTok/Instagram video is unique, unlikely to reimport
-    // This saves ~400ms on social media imports
     if (!isSocialMediaVideo) {
-      // Check cache first (cache expires after 7 days)
-      // Gracefully handle if Firestore is not enabled
       const cacheCheckStart = Date.now();
-      try {
-        const db = admin.firestore();
-        const cacheRef = db.collection("recipeCache").doc(cacheKey);
-        const cachedDoc = await cacheRef.get();
+    try {
+      const db = admin.firestore();
+      const cacheRef = db.collection("recipeCache").doc(cacheKey);
+      const cachedDoc = await cacheRef.get();
         timings.cacheCheck = Date.now() - cacheCheckStart;
         console.log(`[TIMING] Cache check: ${timings.cacheCheck}ms`);
 
-        if (cachedDoc.exists) {
-          const cachedData = cachedDoc.data();
-          const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
-          const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+      if (cachedDoc.exists) {
+        const cachedData = cachedDoc.data();
+        const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
+          const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-          if (cacheAge < cacheExpiry) {
+        if (cacheAge < cacheExpiry) {
             console.log(`[TIMING] Cache HIT - returning cached recipe`);
-            console.log(
-              `[TIMING] Total time (cache hit): ${Date.now() - totalStart}ms`
-            );
-            // Update sourceUrl to the actual recipe URL if it was from Pinterest
-            const cachedRecipe = cachedData!.recipe;
-            if (isPinterestUrl(data.url) && actualRecipeUrl !== data.url) {
-              cachedRecipe.sourceUrl = actualRecipeUrl;
-            }
-            return cachedRecipe;
-          } else {
-            // Cache expired, delete it
-            await cacheRef.delete();
+          const cachedRecipe = cachedData!.recipe;
+          if (isPinterestUrl(data.url) && actualRecipeUrl !== data.url) {
+            cachedRecipe.sourceUrl = actualRecipeUrl;
           }
-        }
-      } catch (cacheError: any) {
-        // If Firestore is not enabled or unavailable, continue without caching
-        if (
-          cacheError.code === "failed-precondition" ||
-          cacheError.message?.includes("SERVICE_DISABLED")
-        ) {
-          console.warn(
-            "Firestore not available, continuing without cache:",
-            cacheError.message
-          );
+          return cachedRecipe;
         } else {
-          // Log other cache errors but don't fail the request
-          console.warn(
-            "Cache check failed, continuing without cache:",
-            cacheError.message
-          );
+          await cacheRef.delete();
         }
       }
-    } else {
-      console.log(`[TIMING] Skipping cache check for social media URL`);
+    } catch (cacheError: any) {
+        console.warn("Cache check failed:", cacheError.message);
+      }
     }
+    */
 
     try {
       // Fetch HTML content from the actual recipe URL (not Pinterest)
@@ -2094,38 +2065,26 @@ export const extractRecipeFromUrl = functions
         ...(servings !== undefined && servings !== null && { servings }),
       };
 
-      // Cache the result for future requests (if Firestore is available)
-      // Skip caching for social media - each video is unique, unlikely to reimport
+      // TODO: CACHING DISABLED FOR PERFORMANCE
+      // Cache write was adding ~100-200ms. Uncomment below to re-enable caching.
+      /*
       if (!isSocialMediaVideo) {
         const cacheWriteStart = Date.now();
-        try {
-          const db = admin.firestore();
-          const cacheRef = db.collection("recipeCache").doc(cacheKey);
-          await cacheRef.set({
-            recipe,
-            cachedAt: admin.firestore.FieldValue.serverTimestamp(),
-            url: normalizedUrl,
-          });
+      try {
+        const db = admin.firestore();
+        const cacheRef = db.collection("recipeCache").doc(cacheKey);
+        await cacheRef.set({
+          recipe,
+          cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+          url: normalizedUrl,
+        });
           timings.cacheWrite = Date.now() - cacheWriteStart;
           console.log(`[TIMING] Cache write: ${timings.cacheWrite}ms`);
-          console.log(`Cached recipe for URL: ${normalizedUrl}`);
-        } catch (cacheError: any) {
-          // Don't fail the request if caching fails
-          if (
-            cacheError.code === "failed-precondition" ||
-            cacheError.message?.includes("SERVICE_DISABLED")
-          ) {
-            console.warn(
-              "Firestore not available, skipping cache:",
-              cacheError.message
-            );
-          } else {
-            console.warn("Failed to cache recipe:", cacheError.message);
-          }
+      } catch (cacheError: any) {
+          console.warn("Failed to cache recipe:", cacheError.message);
         }
-      } else {
-        console.log(`[TIMING] Skipping cache write for social media URL`);
       }
+      */
 
       // Final timing summary
       const totalTime = Date.now() - totalStart;
