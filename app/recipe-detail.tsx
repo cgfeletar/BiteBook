@@ -578,7 +578,7 @@ export default function RecipeDetailScreen() {
       const nutritionIncomplete = isNutritionIncomplete(
         recipeData.nutritionalInfo
       );
-      console.log("[Nutrition] Checking recipe:", recipeData.title);
+      console.log("[Nutrition] Checking recipe:", recipeData.title || "Untitled");
       console.log(
         "[Nutrition] Current nutrition:",
         JSON.stringify(recipeData.nutritionalInfo)
@@ -991,7 +991,7 @@ export default function RecipeDetailScreen() {
     if (!recipeData) return;
 
     try {
-      const titleToShare = recipeData.title.slice(0, 40);
+      const titleToShare = (recipeData.title || "Untitled Recipe").slice(0, 40);
       const shareText = `${titleToShare}\n\n${recipeData.sourceUrl || ""}`;
       await Share.share({
         message: shareText,
@@ -1055,7 +1055,7 @@ export default function RecipeDetailScreen() {
 
     Alert.alert(
       "Delete Recipe",
-      `Are you sure you want to delete "${recipeData.title.slice(
+      `Are you sure you want to delete "${(recipeData.title || "Untitled Recipe").slice(
         0,
         40
       )}"? This action cannot be undone.`,
@@ -1080,7 +1080,7 @@ export default function RecipeDetailScreen() {
 
   const handleStartEditTitle = () => {
     if (!recipeData) return;
-    setEditedTitle(recipeData.title.slice(0, 40));
+    setEditedTitle((recipeData.title || "Untitled Recipe").slice(0, 40));
     setIsEditingTitle(true);
   };
 
@@ -1475,7 +1475,7 @@ export default function RecipeDetailScreen() {
               numberOfLines={1}
               style={{ fontFamily: "Lora_700Bold" }}
             >
-              {recipeData.title.slice(0, 40)}
+              {(recipeData.title || "Untitled Recipe").slice(0, 40)}
             </Text>
             <RNTouchableOpacity
               onPress={() => setShowMenu(true)}
@@ -1650,7 +1650,7 @@ export default function RecipeDetailScreen() {
                             numberOfLines={2}
                             style={{ fontFamily: "Lora_700Bold" }}
                           >
-                            {recipeData.title.slice(0, 40) || "Untitled Recipe"}
+                            {(recipeData.title || "Untitled Recipe").slice(0, 40)}
                           </Text>
                           {missingFields.includes("title") && (
                             <Text className="text-xs text-dusty-rose mt-1">

@@ -76,7 +76,7 @@ export function RecipeCard({
             className="text-charcoal-gray font-semibold text-sm mb-1"
             numberOfLines={2}
           >
-            {recipe.title}
+            {recipe.title || "Untitled Recipe"}
           </Text>
 
           {/* Time Display */}

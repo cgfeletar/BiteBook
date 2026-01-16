@@ -379,9 +379,8 @@ function parseInstructions(raw: any): Step[] {
  */
 
 function parseJSONLD(
-  html: string
+  $: cheerio.CheerioAPI
 ): Partial<Omit<Recipe, "id" | "createdAt">> | null {
-  const $ = cheerio.load(html);
   const scripts = $('script[type="application/ld+json"]');
 
   // Helper: parse ISO 8601 duration → minutes
@@ -502,9 +501,7 @@ function parseJSONLD(
   return null;
 }
 
-function extractAuthorAndTimesFromDOM(html: string) {
-  const $ = cheerio.load(html);
-
+function extractAuthorAndTimesFromDOM($: cheerio.CheerioAPI) {
   let author = "";
   let prepTime = null;
   let cookTime = null;
@@ -544,9 +541,7 @@ function extractAuthorAndTimesFromDOM(html: string) {
   return { author, prepTime, cookTime, totalTime };
 }
 
-function extractRecipeSection(html: string): string | null {
-  const $ = cheerio.load(html);
-
+function extractRecipeSection($: cheerio.CheerioAPI): string | null {
   // 1️⃣ WP Recipe Maker (VERY common) - try multiple selectors
   const wprmSelectors = [
     ".wprm-recipe",
@@ -1076,6 +1071,13 @@ async function callLLM(
   htmlContent: string,
   sourceUrl: string
 ): Promise<Omit<Recipe, "id" | "createdAt">> {
+  const llmStartTime = Date.now();
+  console.log(
+    `[TIMING] LLM call starting - input size: ${(
+      htmlContent.length / 1024
+    ).toFixed(1)}KB`
+  );
+
   // Access API key from secret
   const apiKeyRaw = OPENAI_API_KEY.value();
 
@@ -1097,7 +1099,14 @@ async function callLLM(
       ? htmlContent.substring(0, maxLength) + "\n\n[Content truncated...]"
       : htmlContent;
 
+  console.log(
+    `[TIMING] LLM input after truncation: ${(
+      truncatedContent.length / 1024
+    ).toFixed(1)}KB`
+  );
+
   try {
+    const apiCallStart = Date.now();
     const response = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -1125,6 +1134,15 @@ async function callLLM(
         timeout: 60000, // 60 second timeout
       }
     );
+    const apiCallDuration = Date.now() - apiCallStart;
+    console.log(`[TIMING] OpenAI API call: ${apiCallDuration}ms`);
+
+    // Log token usage if available
+    if (response.data.usage) {
+      console.log(
+        `[TIMING] OpenAI tokens - prompt: ${response.data.usage.prompt_tokens}, completion: ${response.data.usage.completion_tokens}, total: ${response.data.usage.total_tokens}`
+      );
+    }
 
     // Check if response has choices
     if (!response.data.choices || response.data.choices.length === 0) {
@@ -1143,6 +1161,7 @@ async function callLLM(
       throw new Error("OpenAI returned no content");
     }
 
+    const parseStart = Date.now();
     let extractedData: any;
 
     try {
@@ -1154,6 +1173,9 @@ async function callLLM(
         }. Response: ${responseText.substring(0, 200)}`
       );
     }
+    console.log(
+      `[TIMING] JSON parse of LLM response: ${Date.now() - parseStart}ms`
+    );
 
     // Validate required fields
     if (!extractedData.title) {
@@ -1162,6 +1184,9 @@ async function callLLM(
 
     // Ensure sourceUrl is set
     extractedData.sourceUrl = sourceUrl;
+
+    const totalLlmTime = Date.now() - llmStartTime;
+    console.log(`[TIMING] Total LLM function time: ${totalLlmTime}ms`);
 
     return extractedData;
   } catch (error: any) {
@@ -1433,6 +1458,8 @@ export const extractRecipeFromUrl = functions
   .runWith({ secrets: [OPENAI_API_KEY] })
   .https.onCall(async (data: { url: string }, context) => {
     // Note: Authentication is optional - users can import recipes without logging in
+    const timings: Record<string, number> = {};
+    const totalStart = Date.now();
 
     // Validate input
     if (!data.url || typeof data.url !== "string") {
@@ -1442,6 +1469,8 @@ export const extractRecipeFromUrl = functions
       );
     }
 
+    console.log(`[TIMING] Starting recipe extraction for: ${data.url}`);
+
     // Check if this is a Pinterest URL and extract the original URL
     let actualRecipeUrl = data.url;
     const isTikTok = isTikTokUrl(data.url);
@@ -1449,6 +1478,7 @@ export const extractRecipeFromUrl = functions
     const isSocialMediaVideo = isTikTok || isInstagram;
 
     if (isPinterestUrl(data.url)) {
+      const pinterestStart = Date.now();
       console.log("Detected Pinterest URL, extracting original recipe URL...");
       const originalUrl = await extractOriginalUrlFromPinterest(data.url);
       if (originalUrl) {
@@ -1460,6 +1490,10 @@ export const extractRecipeFromUrl = functions
         );
         // Continue with Pinterest URL if we can't extract the original
       }
+      timings.pinterestExtraction = Date.now() - pinterestStart;
+      console.log(
+        `[TIMING] Pinterest extraction: ${timings.pinterestExtraction}ms`
+      );
     }
 
     // Normalize URL for caching (remove trailing slashes, fragments, etc.)
@@ -1475,52 +1509,65 @@ export const extractRecipeFromUrl = functions
       .toString("base64")
       .replace(/[+/=]/g, "")}`;
 
-    // Check cache first (cache expires after 7 days)
-    // Gracefully handle if Firestore is not enabled
-    try {
-      const db = admin.firestore();
-      const cacheRef = db.collection("recipeCache").doc(cacheKey);
-      const cachedDoc = await cacheRef.get();
+    // Skip cache for social media - each TikTok/Instagram video is unique, unlikely to reimport
+    // This saves ~400ms on social media imports
+    if (!isSocialMediaVideo) {
+      // Check cache first (cache expires after 7 days)
+      // Gracefully handle if Firestore is not enabled
+      const cacheCheckStart = Date.now();
+      try {
+        const db = admin.firestore();
+        const cacheRef = db.collection("recipeCache").doc(cacheKey);
+        const cachedDoc = await cacheRef.get();
+        timings.cacheCheck = Date.now() - cacheCheckStart;
+        console.log(`[TIMING] Cache check: ${timings.cacheCheck}ms`);
 
-      if (cachedDoc.exists) {
-        const cachedData = cachedDoc.data();
-        const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
-        const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+        if (cachedDoc.exists) {
+          const cachedData = cachedDoc.data();
+          const cacheAge = Date.now() - cachedData!.cachedAt.toMillis();
+          const cacheExpiry = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
-        if (cacheAge < cacheExpiry) {
-          console.log(`Cache hit for URL: ${normalizedUrl}`);
-          // Update sourceUrl to the actual recipe URL if it was from Pinterest
-          const cachedRecipe = cachedData!.recipe;
-          if (isPinterestUrl(data.url) && actualRecipeUrl !== data.url) {
-            cachedRecipe.sourceUrl = actualRecipeUrl;
+          if (cacheAge < cacheExpiry) {
+            console.log(`[TIMING] Cache HIT - returning cached recipe`);
+            console.log(
+              `[TIMING] Total time (cache hit): ${Date.now() - totalStart}ms`
+            );
+            // Update sourceUrl to the actual recipe URL if it was from Pinterest
+            const cachedRecipe = cachedData!.recipe;
+            if (isPinterestUrl(data.url) && actualRecipeUrl !== data.url) {
+              cachedRecipe.sourceUrl = actualRecipeUrl;
+            }
+            return cachedRecipe;
+          } else {
+            // Cache expired, delete it
+            await cacheRef.delete();
           }
-          return cachedRecipe;
+        }
+      } catch (cacheError: any) {
+        // If Firestore is not enabled or unavailable, continue without caching
+        if (
+          cacheError.code === "failed-precondition" ||
+          cacheError.message?.includes("SERVICE_DISABLED")
+        ) {
+          console.warn(
+            "Firestore not available, continuing without cache:",
+            cacheError.message
+          );
         } else {
-          // Cache expired, delete it
-          await cacheRef.delete();
+          // Log other cache errors but don't fail the request
+          console.warn(
+            "Cache check failed, continuing without cache:",
+            cacheError.message
+          );
         }
       }
-    } catch (cacheError: any) {
-      // If Firestore is not enabled or unavailable, continue without caching
-      if (
-        cacheError.code === "failed-precondition" ||
-        cacheError.message?.includes("SERVICE_DISABLED")
-      ) {
-        console.warn(
-          "Firestore not available, continuing without cache:",
-          cacheError.message
-        );
-      } else {
-        // Log other cache errors but don't fail the request
-        console.warn(
-          "Cache check failed, continuing without cache:",
-          cacheError.message
-        );
-      }
+    } else {
+      console.log(`[TIMING] Skipping cache check for social media URL`);
     }
 
     try {
       // Fetch HTML content from the actual recipe URL (not Pinterest)
+      const fetchStart = Date.now();
       const response = await axios.get(actualRecipeUrl, {
         headers: {
           "User-Agent":
@@ -1531,9 +1578,18 @@ export const extractRecipeFromUrl = functions
         timeout: 10000,
         maxRedirects: 5,
       });
+      timings.httpFetch = Date.now() - fetchStart;
+      console.log(
+        `[TIMING] HTTP fetch: ${timings.httpFetch}ms (${(
+          response.data.length / 1024
+        ).toFixed(1)}KB)`
+      );
 
       // Parse HTML with Cheerio
+      const parseStart = Date.now();
       const $ = cheerio.load(response.data);
+      timings.htmlParse = Date.now() - parseStart;
+      console.log(`[TIMING] HTML parse (Cheerio): ${timings.htmlParse}ms`);
 
       // For TikTok/Instagram, get metadata and extract description from page
       let socialMediaDescription = "";
@@ -1545,7 +1601,10 @@ export const extractRecipeFromUrl = functions
 
       if (isTikTok) {
         // Get metadata from TikTok oEmbed API
+        const oembedStart = Date.now();
         tiktokOEmbed = await getTikTokOEmbed(actualRecipeUrl);
+        timings.tiktokOembed = Date.now() - oembedStart;
+        console.log(`[TIMING] TikTok oEmbed: ${timings.tiktokOembed}ms`);
         console.log("TikTok oEmbed data:", tiktokOEmbed);
 
         // Extract description from meta tags for recipe parsing
@@ -1642,7 +1701,50 @@ export const extractRecipeFromUrl = functions
         );
       }
 
-      // Remove script, style, and non-essential elements first
+      // Skip JSON-LD, DOM fallback, and recipe section extraction for social media
+      // These platforms don't have structured recipe data - saves ~50-100ms
+      type DomFallbackData = {
+        author: string;
+        prepTime: number | null;
+        cookTime: number | null;
+        totalTime: number | null;
+      };
+      let jsonLdData: ReturnType<typeof parseJSONLD> = null;
+      let fallbackDomData: DomFallbackData | null = null;
+      let recipeSectionHtml: string | null = null;
+
+      if (!isSocialMediaVideo) {
+        // IMPORTANT: Parse JSON-LD and recipe section BEFORE removing script tags!
+        // JSON-LD data lives in <script type="application/ld+json"> tags
+        const jsonLdStart = Date.now();
+        jsonLdData = parseJSONLD($);
+        timings.jsonLdParse = Date.now() - jsonLdStart;
+        console.log(
+          `[TIMING] JSON-LD parse: ${timings.jsonLdParse}ms (found: ${
+            jsonLdData ? "yes" : "no"
+          })`
+        );
+
+        // DOM fallback is now lazy - only extracted when JSON-LD is missing fields
+        // See extractDomFallbackLazy() call below
+
+        const recipeSectionStart = Date.now();
+        recipeSectionHtml = extractRecipeSection($);
+        timings.recipeSection = Date.now() - recipeSectionStart;
+        console.log(
+          `[TIMING] Recipe section extraction: ${
+            timings.recipeSection
+          }ms (found: ${
+            recipeSectionHtml ? recipeSectionHtml.length + " chars" : "no"
+          })`
+        );
+      } else {
+        console.log(
+          `[TIMING] Skipping JSON-LD/DOM/recipe section extraction for social media URL`
+        );
+      }
+
+      // NOW remove script, style, and non-essential elements (after JSON-LD extraction)
       $(
         "script, style, noscript, iframe, embed, object, video, audio, .comments, .comment, #comments"
       ).remove();
@@ -1676,14 +1778,32 @@ export const extractRecipeFromUrl = functions
         .replace(/>\s+</g, "><")
         .trim();
 
-      const jsonLdData = parseJSONLD(response.data);
-      const fallbackDomData = extractAuthorAndTimesFromDOM(response.data);
-      console.log("DOM fallback data:", fallbackDomData);
-
-      const recipeSectionHtml = extractRecipeSection(response.data);
       let extractedData: Omit<Recipe, "id" | "createdAt">;
 
       if (jsonLdData) {
+        // Check if we need DOM fallback for any missing fields
+        const needsDomFallback =
+          !jsonLdData.originalAuthor ||
+          jsonLdData.prepTime === undefined ||
+          jsonLdData.cookTime === undefined ||
+          jsonLdData.totalTime === undefined;
+
+        // Only extract DOM fallback if JSON-LD is missing fields we can supplement
+        // This lazy approach saves ~20-50ms when JSON-LD has all fields
+        if (needsDomFallback) {
+          const domFallbackStart = Date.now();
+          fallbackDomData = extractAuthorAndTimesFromDOM($);
+          timings.domFallback = Date.now() - domFallbackStart;
+          console.log(
+            `[TIMING] DOM fallback extraction (lazy): ${timings.domFallback}ms`
+          );
+          console.log("DOM fallback data:", fallbackDomData);
+        } else {
+          console.log(
+            `[TIMING] Skipping DOM fallback - JSON-LD has all fields`
+          );
+        }
+
         extractedData = {
           title: jsonLdData.title || "",
           coverImage: jsonLdData.coverImage || "",
@@ -1695,9 +1815,6 @@ export const extractRecipeFromUrl = functions
             jsonLdData.originalAuthor || fallbackDomData?.author || "Unknown",
           tags: jsonLdData.tags || [],
           categoryIds: jsonLdData.categoryIds || [],
-          ...(jsonLdData.prepTime !== undefined && {
-            prepTime: jsonLdData.prepTime,
-          }),
           ...(jsonLdData.prepTime !== undefined
             ? { prepTime: jsonLdData.prepTime }
             : fallbackDomData?.prepTime !== undefined
@@ -1745,7 +1862,12 @@ export const extractRecipeFromUrl = functions
               "WARNING: No recipe section found, using full HTML to supplement JSON-LD"
             );
           }
+          const llmSupplementStart = Date.now();
           const aiData = await callLLM(aiHtml, actualRecipeUrl);
+          timings.llmSupplement = Date.now() - llmSupplementStart;
+          console.log(
+            `[TIMING] LLM supplement call: ${timings.llmSupplement}ms`
+          );
 
           // Combine duplicate ingredients (e.g., butter from "making the dough" and "making the frosting")
           const combinedIngredients = combineIngredients(
@@ -1792,7 +1914,20 @@ export const extractRecipeFromUrl = functions
           console.log(`Full HTML length: ${htmlContent.length} characters`);
         }
 
+        const llmMainStart = Date.now();
         extractedData = await callLLM(aiHtml, actualRecipeUrl);
+        timings.llmMain = Date.now() - llmMainStart;
+        console.log(`[TIMING] LLM main call: ${timings.llmMain}ms`);
+
+        // For non-social-media sites without JSON-LD, try DOM fallback for cookTime/totalTime
+        if (!isSocialMediaVideo && !fallbackDomData) {
+          const domFallbackStart = Date.now();
+          fallbackDomData = extractAuthorAndTimesFromDOM($);
+          timings.domFallback = Date.now() - domFallbackStart;
+          console.log(
+            `[TIMING] DOM fallback extraction (no JSON-LD path): ${timings.domFallback}ms`
+          );
+        }
 
         // Add cookTime and totalTime from DOM fallback if available
         if (fallbackDomData?.cookTime !== undefined) {
@@ -1912,12 +2047,39 @@ export const extractRecipeFromUrl = functions
         }
       }
 
+      // Sanitize ingredients to ensure no undefined values (Firestore doesn't accept undefined)
+      const sanitizedIngredients = combinedIngredients.map((ing) => ({
+        name: ing.name || "",
+        quantity: ing.quantity ?? 0,
+        unit: ing.unit || "",
+        isChecked: ing.isChecked ?? false,
+      }));
+
+      // Sanitize steps to ensure no undefined values
+      const sanitizedSteps = (extractedData.steps || []).map((step: any) => ({
+        id: step.id || `step-${Math.random().toString(36).substr(2, 9)}`,
+        instruction: step.instruction || "",
+        isCompleted: step.isCompleted ?? false,
+        isBeginnerFriendly: step.isBeginnerFriendly ?? true,
+        ...(step.timerDuration !== undefined &&
+          step.timerDuration !== null && { timerDuration: step.timerDuration }),
+        ...(step.title && { title: step.title }),
+      }));
+
+      // Sanitize nutrition to remove undefined values
+      const sanitizedNutrition: Record<string, any> = {};
+      Object.entries(normalizedNutrition).forEach(([key, value]) => {
+        if (value !== undefined) {
+          sanitizedNutrition[key] = value;
+        }
+      });
+
       const recipe: Omit<Recipe, "id" | "createdAt"> = {
         title: extractedData.title || "Untitled Recipe",
         coverImage: extractedData.coverImage || "",
-        ingredients: combinedIngredients,
-        steps: extractedData.steps || [],
-        nutritionalInfo: normalizedNutrition,
+        ingredients: sanitizedIngredients,
+        steps: sanitizedSteps,
+        nutritionalInfo: sanitizedNutrition,
         sourceUrl: actualRecipeUrl,
         originalAuthor: extractedData.originalAuthor || "Unknown",
         tags: extractedData.tags || [],
@@ -1933,29 +2095,52 @@ export const extractRecipeFromUrl = functions
       };
 
       // Cache the result for future requests (if Firestore is available)
-      try {
-        const db = admin.firestore();
-        const cacheRef = db.collection("recipeCache").doc(cacheKey);
-        await cacheRef.set({
-          recipe,
-          cachedAt: admin.firestore.FieldValue.serverTimestamp(),
-          url: normalizedUrl,
-        });
-        console.log(`Cached recipe for URL: ${normalizedUrl}`);
-      } catch (cacheError: any) {
-        // Don't fail the request if caching fails
-        if (
-          cacheError.code === "failed-precondition" ||
-          cacheError.message?.includes("SERVICE_DISABLED")
-        ) {
-          console.warn(
-            "Firestore not available, skipping cache:",
-            cacheError.message
-          );
-        } else {
-          console.warn("Failed to cache recipe:", cacheError.message);
+      // Skip caching for social media - each video is unique, unlikely to reimport
+      if (!isSocialMediaVideo) {
+        const cacheWriteStart = Date.now();
+        try {
+          const db = admin.firestore();
+          const cacheRef = db.collection("recipeCache").doc(cacheKey);
+          await cacheRef.set({
+            recipe,
+            cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+            url: normalizedUrl,
+          });
+          timings.cacheWrite = Date.now() - cacheWriteStart;
+          console.log(`[TIMING] Cache write: ${timings.cacheWrite}ms`);
+          console.log(`Cached recipe for URL: ${normalizedUrl}`);
+        } catch (cacheError: any) {
+          // Don't fail the request if caching fails
+          if (
+            cacheError.code === "failed-precondition" ||
+            cacheError.message?.includes("SERVICE_DISABLED")
+          ) {
+            console.warn(
+              "Firestore not available, skipping cache:",
+              cacheError.message
+            );
+          } else {
+            console.warn("Failed to cache recipe:", cacheError.message);
+          }
         }
+      } else {
+        console.log(`[TIMING] Skipping cache write for social media URL`);
       }
+
+      // Final timing summary
+      const totalTime = Date.now() - totalStart;
+      console.log(`\n[TIMING] ===== FINAL SUMMARY =====`);
+      console.log(
+        `[TIMING] Total extraction time: ${totalTime}ms (${(
+          totalTime / 1000
+        ).toFixed(1)}s)`
+      );
+      console.log(`[TIMING] Breakdown:`);
+      Object.entries(timings).forEach(([key, value]) => {
+        const percent = ((value / totalTime) * 100).toFixed(1);
+        console.log(`[TIMING]   ${key}: ${value}ms (${percent}%)`);
+      });
+      console.log(`[TIMING] =============================\n`);
 
       return recipe;
     } catch (error: any) {
