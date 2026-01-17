@@ -481,6 +481,7 @@ export default function AddScreen() {
       }
 
       // Add recipe to store
+      console.log("📝 Adding recipe with kitchenId:", user?.defaultKitchenId, "user:", user?.uid);
       const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
       // Check if component is still mounted before navigation

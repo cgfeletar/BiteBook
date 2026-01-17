@@ -13,6 +13,21 @@ import {
 import { Unsubscribe } from "firebase/firestore";
 import { normalizeNutrition } from "../utils/normalizeNutrition";
 
+// Helper to remove undefined values from objects (Firestore doesn't accept undefined)
+const stripUndefined = <T extends Record<string, any>>(obj: T): T => {
+  const result = {} as T;
+  for (const key in obj) {
+    if (obj[key] !== undefined) {
+      if (typeof obj[key] === 'object' && obj[key] !== null && !Array.isArray(obj[key]) && !(obj[key] instanceof Timestamp)) {
+        result[key] = stripUndefined(obj[key]);
+      } else {
+        result[key] = obj[key];
+      }
+    }
+  }
+  return result;
+};
+
 interface RecipeStore {
   recipes: Recipe[];
   loading: boolean;
@@ -62,14 +77,28 @@ export const useRecipeStore = create<RecipeStore>()(
         // Sync to Firestore in background (non-blocking for faster UX)
         // Recipe is already in local state, so user sees it immediately
         if (kitchenId) {
-          const recipeDataToSync = {
+          // Strip undefined values - Firestore doesn't accept them
+          const recipeDataToSync = stripUndefined({
             ...recipeData,
-            nutritionalInfo: normalizedNutrition,
-          };
+            nutritionalInfo: stripUndefined(normalizedNutrition),
+          });
+          console.log("Starting Firestore sync for recipe:", newRecipe.title, "to kitchen:", kitchenId);
+          console.log("📦 Data being synced:", JSON.stringify({
+            title: recipeDataToSync.title,
+            hasImage: !!recipeDataToSync.coverImage,
+            ingredientCount: recipeDataToSync.ingredients?.length,
+            stepCount: recipeDataToSync.steps?.length,
+          }));
           // Fire-and-forget: don't await, let it sync in background
           addRecipeToFirestore(kitchenId, recipeDataToSync)
-            .then(() => console.log("Recipe synced to Firestore"))
-            .catch((error) => console.error("Failed to sync recipe to Firestore:", error));
+            .then((firestoreId) => console.log("✅ Recipe synced to Firestore with ID:", firestoreId))
+            .catch((error) => {
+              console.error("❌ Failed to sync recipe to Firestore:", error);
+              console.error("Recipe that failed:", newRecipe.title);
+              console.error("Kitchen ID:", kitchenId);
+            });
+        } else {
+          console.warn("⚠️ No kitchenId provided - recipe only saved locally!", newRecipe.title);
         }
 
         return newRecipe;
@@ -89,10 +118,12 @@ export const useRecipeStore = create<RecipeStore>()(
         }));
 
         // Sync to Firestore in background (non-blocking)
+        // Strip undefined values - Firestore doesn't accept them
         if (kitchenId) {
-          updateRecipeInFirestore(kitchenId, id, normalizedUpdates)
-            .then(() => console.log("Recipe update synced to Firestore"))
-            .catch((error) => console.error("Failed to sync recipe update to Firestore:", error));
+          const updatesToSync = stripUndefined(normalizedUpdates);
+          updateRecipeInFirestore(kitchenId, id, updatesToSync)
+            .then(() => console.log("✅ Recipe update synced to Firestore"))
+            .catch((error) => console.error("❌ Failed to sync recipe update to Firestore:", error));
         }
       },
 
@@ -149,8 +180,10 @@ export const useRecipeStore = create<RecipeStore>()(
               ...recipe,
               nutritionalInfo: normalizeNutrition(recipe.nutritionalInfo),
             }));
+            // Log recipe titles to debug duplicates
+            console.log(`📥 Firestore subscription: ${normalizedRecipes.length} recipes:`, 
+              normalizedRecipes.map(r => `${r.title || 'UNTITLED'} (${r.id})`).join(', '));
             set({ recipes: normalizedRecipes, synced: true });
-            console.log(`Received ${normalizedRecipes.length} recipes from Firestore subscription`);
           });
 
           set({ unsubscribe });

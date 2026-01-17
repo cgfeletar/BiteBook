@@ -38,7 +38,7 @@ export async function addRecipeToFirestore(
 
 /**
  * Update a recipe in Firestore
- * If the document doesn't exist, it will be created with the updates
+ * Only updates if the document exists - won't create partial docs
  */
 export async function updateRecipeInFirestore(
   kitchenId: string,
@@ -58,16 +58,10 @@ export async function updateRecipeInFirestore(
     // Document exists, update it
     await updateDoc(recipeRef, updates);
   } else {
-    // Document doesn't exist, create it with the updates
-    // This handles the case where a recipe exists locally but hasn't been synced yet
-    await setDoc(
-      recipeRef,
-      {
-        ...updates,
-        createdAt: updates.createdAt || serverTimestamp(),
-      },
-      { merge: true }
-    );
+    // Document doesn't exist - skip update
+    // This happens when local recipe ID doesn't match Firestore ID
+    // The recipe will sync properly via the subscription
+    console.warn(`⚠️ Recipe ${recipeId} not found in Firestore - skipping update`);
   }
 }
 
