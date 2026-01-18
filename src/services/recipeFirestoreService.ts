@@ -56,7 +56,7 @@ export async function updateRecipeInFirestore(
 
   if (recipeSnap.exists()) {
     // Document exists, update it
-    await updateDoc(recipeRef, updates);
+  await updateDoc(recipeRef, updates);
   } else {
     // Document doesn't exist - skip update
     // This happens when local recipe ID doesn't match Firestore ID

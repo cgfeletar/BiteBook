@@ -67,6 +67,34 @@ interface Recipe {
  * This prompt is designed to be used with OpenAI GPT models.
  * It handles messy, unstructured recipe data from various websites.
  */
+/**
+ * Simplified prompt for social media posts (TikTok/Instagram)
+ * These posts have recipe info in plain text captions, not structured HTML
+ */
+const SOCIAL_MEDIA_EXTRACTION_PROMPT = `Extract recipe information from this social media post caption. Output ONLY valid JSON.
+
+{
+  "title": string (the dish name - look for the actual food name, not hashtags or promo text),
+  "ingredients": Array<{ "name": string, "quantity": number | null, "unit": string, "isChecked": false }>,
+  "steps": Array<{ "id": string, "instruction": string, "isCompleted": false, "isBeginnerFriendly": true, "timerDuration": number | null, "title": null }>,
+  "nutritionalInfo": {},
+  "sourceUrl": "",
+  "originalAuthor": "",
+  "tags": string[],
+  "categoryIds": [],
+  "prepTime": null,
+  "servings": null
+}
+
+RULES:
+- Title: Find the actual dish name (e.g., "Garlic Butter Pasta", "Chocolate Cake"). Ignore hashtags, emojis, promo text.
+- Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. Handle fractions (1/2 = 0.5).
+- Steps: Create clear, actionable steps. Generate IDs like "step-1", "step-2". If instructions mention timing (e.g., "cook for 5 min"), set timerDuration in seconds.
+- Tags: Extract relevant tags like "easy", "quick", "dessert", cuisine types, etc.
+
+Caption:
+`;
+
 const RECIPE_EXTRACTION_PROMPT = `You are an expert recipe data extraction assistant. Your task is to extract structured recipe information from raw HTML content and output it as a JSON object.
 
 IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript interface:
@@ -1200,6 +1228,96 @@ async function callLLM(
 }
 
 /**
+ * Fast LLM call specifically for social media posts (TikTok/Instagram)
+ * Uses a simpler prompt and faster model since we're just parsing caption text
+ */
+async function callLLMForSocialMedia(
+  captionText: string,
+  sourceUrl: string
+): Promise<Omit<Recipe, "id" | "createdAt">> {
+  const llmStartTime = Date.now();
+  console.log(
+    `[TIMING] Social media LLM call starting - input size: ${captionText.length} chars`
+  );
+
+  const apiKeyRaw = OPENAI_API_KEY.value();
+  if (!apiKeyRaw) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+  const apiKey = apiKeyRaw.trim().replace(/\s+/g, "");
+
+  try {
+    const apiCallStart = Date.now();
+    const response = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini", // Faster model for simpler social media extraction
+        messages: [
+          {
+            role: "user",
+            content: SOCIAL_MEDIA_EXTRACTION_PROMPT + captionText,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2, // Lower temperature for more consistent results
+        max_tokens: 2000, // Social media recipes are typically simpler
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        timeout: 30000, // 30 second timeout (should be much faster)
+      }
+    );
+    const apiCallDuration = Date.now() - apiCallStart;
+    console.log(`[TIMING] OpenAI API call (social media): ${apiCallDuration}ms`);
+
+    if (response.data.usage) {
+      console.log(
+        `[TIMING] OpenAI tokens - prompt: ${response.data.usage.prompt_tokens}, completion: ${response.data.usage.completion_tokens}`
+      );
+    }
+
+    if (!response.data.choices || response.data.choices.length === 0) {
+      throw new Error("No choices in OpenAI response");
+    }
+
+    const responseText = response.data.choices[0].message?.content;
+    if (!responseText) {
+      throw new Error("OpenAI returned no content");
+    }
+
+    let extractedData: any;
+    try {
+      extractedData = JSON.parse(responseText);
+    } catch (parseError: any) {
+      throw new Error(
+        `Failed to parse OpenAI response as JSON: ${parseError.message}`
+      );
+    }
+
+    if (!extractedData.title) {
+      throw new Error("Extracted data missing required field: title");
+    }
+
+    extractedData.sourceUrl = sourceUrl;
+
+    const totalLlmTime = Date.now() - llmStartTime;
+    console.log(`[TIMING] Total social media LLM time: ${totalLlmTime}ms`);
+
+    return extractedData;
+  } catch (error: any) {
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+      throw new Error(`OpenAI API error (${status}): ${JSON.stringify(data)}`);
+    }
+    throw error;
+  }
+}
+
+/**
  * Extract the original recipe URL from a Pinterest pin page
  * Pinterest pins contain the original URL in various meta tags and data structures
  */
@@ -1738,11 +1856,6 @@ export const extractRecipeFromUrl = functions
         htmlContent = body.html() || "";
       }
 
-      // For TikTok/Instagram, prepend the description to help LLM extract recipe info
-      if (isSocialMediaVideo && socialMediaDescription) {
-        htmlContent = `<div class="social-media-description">${socialMediaDescription}</div>\n${htmlContent}`;
-      }
-
       // Clean up HTML: remove excessive whitespace but preserve structure
       htmlContent = htmlContent
         .replace(/\s+/g, " ")
@@ -1751,7 +1864,23 @@ export const extractRecipeFromUrl = functions
 
       let extractedData: Omit<Recipe, "id" | "createdAt">;
 
-      if (jsonLdData) {
+      // 🚀 FAST PATH: For social media (TikTok/Instagram), use only the caption text
+      // This dramatically reduces LLM input size and uses a faster model
+      if (isSocialMediaVideo && socialMediaDescription) {
+        console.log(
+          `[TIMING] Using fast social media path - caption length: ${socialMediaDescription.length} chars`
+        );
+
+        const llmMainStart = Date.now();
+        extractedData = await callLLMForSocialMedia(
+          socialMediaDescription,
+          actualRecipeUrl
+        );
+        timings.llmMain = Date.now() - llmMainStart;
+        console.log(
+          `[TIMING] Social media LLM call: ${timings.llmMain}ms`
+        );
+      } else if (jsonLdData) {
         // Check if we need DOM fallback for any missing fields
         const needsDomFallback =
           !jsonLdData.originalAuthor ||

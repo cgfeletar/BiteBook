@@ -58,11 +58,11 @@ export function KitchenDataSync() {
 
     setupSubscriptions();
 
-    // Cleanup on unmount or when user changes
-    return () => {
-      unsubscribeFromRecipes();
-      unsubscribeFromShoppingList();
-    };
+      // Cleanup on unmount or when user changes
+      return () => {
+        unsubscribeFromRecipes();
+        unsubscribeFromShoppingList();
+      };
   }, [user?.uid, user?.defaultKitchenId, subscribeToRecipes, unsubscribeFromRecipes, subscribeToShoppingList, unsubscribeFromShoppingList, setUser]);
 
   return null; // This component doesn't render anything

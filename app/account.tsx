@@ -116,27 +116,27 @@ export default function AccountScreen() {
             </View>
             {user ? (
               <>
-                <View className="flex-row items-center mb-1">
-                  <Text
-                    className="text-xl font-bold text-charcoal"
-                    style={{ fontFamily: "Lora_700Bold" }}
-                  >
+            <View className="flex-row items-center mb-1">
+              <Text
+                className="text-xl font-bold text-charcoal"
+                style={{ fontFamily: "Lora_700Bold" }}
+              >
                     {user.displayName || "User"}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
                       setDisplayName(user.displayName || "");
-                      setIsEditingName(true);
-                    }}
+                  setIsEditingName(true);
+                }}
                     className="ml-2 w-10 h-10 items-center justify-center"
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    activeOpacity={0.7}
-                  >
+                activeOpacity={0.7}
+              >
                     <Edit2 size={16} color="#5A6E6C" pointerEvents="none" />
-                  </TouchableOpacity>
-                </View>
+              </TouchableOpacity>
+            </View>
                 {user.email && (
-                  <Text className="text-charcoal/70 text-sm">{user.email}</Text>
+              <Text className="text-charcoal/70 text-sm">{user.email}</Text>
                 )}
               </>
             ) : (
@@ -228,16 +228,16 @@ export default function AccountScreen() {
         {/* Sign In / Sign Out Section */}
         <View className="px-6 mb-8">
           {user ? (
-            <TouchableOpacity
-              onPress={handleLogout}
-              className="bg-white rounded-xl p-4 flex-row items-center justify-center"
-              activeOpacity={0.7}
-            >
-              <LogOut size={20} color="#7A2E2A" />
-              <Text className="text-redwood font-semibold text-base ml-2">
-                Sign Out
-              </Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleLogout}
+            className="bg-white rounded-xl p-4 flex-row items-center justify-center"
+            activeOpacity={0.7}
+          >
+            <LogOut size={20} color="#7A2E2A" />
+            <Text className="text-redwood font-semibold text-base ml-2">
+              Sign Out
+            </Text>
+          </TouchableOpacity>
           ) : (
             <TouchableOpacity
               onPress={() => router.push("/(auth)/login")}
