@@ -511,13 +511,11 @@ export default function AddScreen() {
       const errorMessage =
         error.message || "Failed to import recipe. Please try again.";
 
+      // Clear the URL field after failed import
+      setUrl("");
+
       // Show more detailed error message
-      Alert.alert(
-        "Import Failed",
-        errorMessage +
-          "\n\nNote: Make sure the Cloud Functions are deployed and the URL is accessible.",
-        [{ text: "OK" }]
-      );
+      Alert.alert("Import Failed", errorMessage, [{ text: "OK" }]);
     } finally {
       // Only update loading state if component is still mounted
       if (isMountedRef.current) {

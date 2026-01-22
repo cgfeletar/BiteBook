@@ -9,8 +9,9 @@ import sharp from "sharp";
 // Initialize Firebase Admin
 admin.initializeApp();
 
-// Define the secret for OpenAI API Key
+// Define the secrets for API Keys
 const OPENAI_API_KEY = defineSecret("OPENAI_API_KEY");
+const GROQ_API_KEY = defineSecret("GROQ_API_KEY");
 
 /**
  * TypeScript interfaces matching the client-side Recipe interface
@@ -73,7 +74,14 @@ interface Recipe {
  */
 const SOCIAL_MEDIA_EXTRACTION_PROMPT = `Extract recipe information from this social media post caption. Output ONLY valid JSON.
 
+CRITICAL: If the content does NOT contain an actual recipe with ingredients and/or cooking instructions, you MUST return:
+{ "noRecipeFound": true, "reason": "brief explanation" }
+
+DO NOT invent or make up recipes. Only extract recipes that are explicitly present in the text.
+
+If a recipe IS found, return:
 {
+  "noRecipeFound": false,
   "title": string (the dish name - look for the actual food name, not hashtags or promo text),
   "ingredients": Array<{ "name": string, "quantity": number | null, "unit": string, "isChecked": false }>,
   "steps": Array<{ "id": string, "instruction": string, "isCompleted": false, "isBeginnerFriendly": true, "timerDuration": number | null, "title": null }>,
@@ -91,13 +99,19 @@ RULES:
 - Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. Handle fractions (1/2 = 0.5).
 - Steps: Create clear, actionable steps. Generate IDs like "step-1", "step-2". If instructions mention timing (e.g., "cook for 5 min"), set timerDuration in seconds.
 - Tags: Extract relevant tags like "easy", "quick", "dessert", cuisine types, etc.
+- If the text is just a list of recipe links, a menu, or promotional content WITHOUT actual recipe details, set noRecipeFound: true.
 
 Caption:
 `;
 
 const RECIPE_EXTRACTION_PROMPT = `You are an expert recipe data extraction assistant. Your task is to extract structured recipe information from raw HTML content and output it as a JSON object.
 
-IMPORTANT: You must output ONLY valid JSON that matches this exact TypeScript interface:
+CRITICAL: If the page does NOT contain an actual recipe (e.g., it's a list of recipe links, a category page, a homepage, or promotional content without specific ingredients/instructions), you MUST return:
+{ "noRecipeFound": true, "reason": "brief explanation" }
+
+DO NOT invent or make up recipes. Only extract recipes that are explicitly present in the content.
+
+IMPORTANT: If a recipe IS found, output ONLY valid JSON that matches this exact TypeScript interface:
 
 {
   "title": string,
@@ -1205,6 +1219,15 @@ async function callLLM(
       `[TIMING] JSON parse of LLM response: ${Date.now() - parseStart}ms`
     );
 
+    // Check if the LLM determined there's no recipe on this page
+    if (extractedData.noRecipeFound === true) {
+      const reason = extractedData.reason || "No recipe content found";
+      console.log(`[LLM] No recipe found: ${reason}`);
+      throw new Error(
+        `No recipe found on this page. ${reason} Please make sure the link goes directly to a recipe, not a list of recipes.`
+      );
+    }
+
     // Validate required fields
     if (!extractedData.title) {
       throw new Error("Extracted data missing required field: title");
@@ -1229,7 +1252,7 @@ async function callLLM(
 
 /**
  * Fast LLM call specifically for social media posts (TikTok/Instagram)
- * Uses a simpler prompt and faster model since we're just parsing caption text
+ * Uses Groq with Llama 3.3 70B for ultra-fast inference (~10-20x faster than OpenAI)
  */
 async function callLLMForSocialMedia(
   captionText: string,
@@ -1237,21 +1260,24 @@ async function callLLMForSocialMedia(
 ): Promise<Omit<Recipe, "id" | "createdAt">> {
   const llmStartTime = Date.now();
   console.log(
-    `[TIMING] Social media LLM call starting - input size: ${captionText.length} chars`
+    `[TIMING] Social media LLM call starting (Groq) - input size: ${captionText.length} chars`
   );
 
-  const apiKeyRaw = OPENAI_API_KEY.value();
+  const apiKeyRaw = GROQ_API_KEY.value();
   if (!apiKeyRaw) {
-    throw new Error("OPENAI_API_KEY is not configured");
+    throw new Error(
+      "GROQ_API_KEY is not configured. Please set it using:\n" +
+        "firebase functions:secrets:set GROQ_API_KEY"
+    );
   }
   const apiKey = apiKeyRaw.trim().replace(/\s+/g, "");
 
   try {
     const apiCallStart = Date.now();
     const response = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "gpt-4o-mini", // Faster model for simpler social media extraction
+        model: "llama-3.3-70b-versatile", // Fast + high quality on Groq
         messages: [
           {
             role: "user",
@@ -1267,25 +1293,25 @@ async function callLLMForSocialMedia(
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        timeout: 30000, // 30 second timeout (should be much faster)
+        timeout: 15000, // 15 second timeout (Groq is very fast)
       }
     );
     const apiCallDuration = Date.now() - apiCallStart;
-    console.log(`[TIMING] OpenAI API call (social media): ${apiCallDuration}ms`);
+    console.log(`[TIMING] Groq API call (social media): ${apiCallDuration}ms`);
 
     if (response.data.usage) {
       console.log(
-        `[TIMING] OpenAI tokens - prompt: ${response.data.usage.prompt_tokens}, completion: ${response.data.usage.completion_tokens}`
+        `[TIMING] Groq tokens - prompt: ${response.data.usage.prompt_tokens}, completion: ${response.data.usage.completion_tokens}`
       );
     }
 
     if (!response.data.choices || response.data.choices.length === 0) {
-      throw new Error("No choices in OpenAI response");
+      throw new Error("No choices in Groq response");
     }
 
     const responseText = response.data.choices[0].message?.content;
     if (!responseText) {
-      throw new Error("OpenAI returned no content");
+      throw new Error("Groq returned no content");
     }
 
     let extractedData: any;
@@ -1293,7 +1319,16 @@ async function callLLMForSocialMedia(
       extractedData = JSON.parse(responseText);
     } catch (parseError: any) {
       throw new Error(
-        `Failed to parse OpenAI response as JSON: ${parseError.message}`
+        `Failed to parse Groq response as JSON: ${parseError.message}`
+      );
+    }
+
+    // Check if the LLM determined there's no recipe on this page
+    if (extractedData.noRecipeFound === true) {
+      const reason = extractedData.reason || "No recipe content found";
+      console.log(`[LLM] No recipe found: ${reason}`);
+      throw new Error(
+        `No recipe found on this page. ${reason} Please make sure the link goes directly to a recipe, not a list of recipes.`
       );
     }
 
@@ -1311,7 +1346,7 @@ async function callLLMForSocialMedia(
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
-      throw new Error(`OpenAI API error (${status}): ${JSON.stringify(data)}`);
+      throw new Error(`Groq API error (${status}): ${JSON.stringify(data)}`);
     }
     throw error;
   }
@@ -1573,7 +1608,7 @@ async function getTikTokOEmbed(tiktokUrl: string): Promise<{
  */
 export const extractRecipeFromUrl = functions
   .region("us-central1")
-  .runWith({ secrets: [OPENAI_API_KEY] })
+  .runWith({ secrets: [OPENAI_API_KEY, GROQ_API_KEY] })
   .https.onCall(async (data: { url: string }, context) => {
     // Note: Authentication is optional - users can import recipes without logging in
     const timings: Record<string, number> = {};
