@@ -96,7 +96,9 @@ If a recipe IS found, return:
 
 RULES:
 - Title: Find the actual dish name (e.g., "Garlic Butter Pasta", "Chocolate Cake"). Ignore hashtags, emojis, promo text.
-- Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. Handle fractions (1/2 = 0.5).
+- Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. 
+  Handle fractions: 1/2 = 0.5, 1/3 = 0.333, 1/4 = 0.25, 2/3 = 0.667, 3/4 = 0.75.
+  Handle ranges: "1/3-1/2 cup" → use the FIRST value (quantity: 0.333, unit: "cup").
 - Steps: Create clear, actionable steps. Generate IDs like "step-1", "step-2". If instructions mention timing (e.g., "cook for 5 min"), set timerDuration in seconds.
 - Tags: Extract relevant tags like "easy", "quick", "dessert", cuisine types, etc.
 - If the text is just a list of recipe links, a menu, or promotional content WITHOUT actual recipe details, set noRecipeFound: true.
@@ -182,8 +184,8 @@ EXTRACTION RULES:
      * "pepper (optional)" → { name: "pepper", quantity: null, unit: "to taste" } (if no quantity given and optional)
    - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
    - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
-   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
-   - Handle ranges: "2-3 cups" → Print as written (e.g., "2-3 cups")
+   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 1/3 = 0.333, 2/3 = 0.667, 3/4 = 0.75, etc. (for volume/weight units only)
+   - Handle ranges: "1/3-1/2 cup" or "2-3 cups" → Use the FIRST value for quantity (e.g., quantity: 0.333, unit: "cup" for "1/3-1/2 cup")
    - Handle "to taste", "as needed", "optional" → quantity: null, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
    - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
    - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
@@ -1698,9 +1700,12 @@ export const extractRecipeFromUrl = functions
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           Accept:
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Encoding": "gzip, deflate", // Request compressed content for faster download
         },
         timeout: 10000,
         maxRedirects: 5,
+        maxContentLength: 5 * 1024 * 1024, // Limit to 5MB to avoid huge pages
+        decompress: true, // Auto-decompress gzip responses
       });
       timings.httpFetch = Date.now() - fetchStart;
       console.log(

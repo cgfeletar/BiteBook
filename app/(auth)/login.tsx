@@ -23,8 +23,12 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const { signIn, signUp, signInWithApple, loading, user, initialized } = useAuthStore();
   const { promptAsync, request } = useAuth();
+
+  // Combined loading state (auth store loading OR local logging in state)
+  const isProcessing = loading || isLoggingIn;
 
   // Redirect after successful authentication
   useEffect(() => {
@@ -78,9 +82,17 @@ export default function LoginScreen() {
 
   const handleGoogleSignIn = async () => {
     try {
-      await promptAsync();
+      setIsLoggingIn(true);
+      const result = await promptAsync();
+      // Check if user cancelled or dismissed the popup
+      if (result?.type === "cancel" || result?.type === "dismiss") {
+        setIsLoggingIn(false);
+        return;
+      }
       // Navigation will be handled by useEffect when user state updates
+      // Keep isLoggingIn true - it will show until redirect happens
     } catch (error: any) {
+      setIsLoggingIn(false);
       if (!error?.message?.includes("cancelled")) {
         Alert.alert("Error", "Failed to sign in with Google");
       }
@@ -89,9 +101,12 @@ export default function LoginScreen() {
 
   const handleAppleSignIn = async () => {
     try {
+      setIsLoggingIn(true);
       await signInWithApple();
       // Navigation will be handled by useEffect when user state updates
+      // Keep isLoggingIn true - it will show until redirect happens
     } catch (error: any) {
+      setIsLoggingIn(false);
       if (error.message && !error.message.includes("cancelled")) {
         Alert.alert("Error", error.message || "Failed to sign in with Apple");
       }
@@ -145,7 +160,7 @@ export default function LoginScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
-                editable={!loading}
+                editable={!isProcessing}
               />
 
               <Text className="text-sm text-charcoal-gray mb-2 ml-1">
@@ -159,7 +174,7 @@ export default function LoginScreen() {
                 onChangeText={setPassword}
                 secureTextEntry
                 autoCapitalize="none"
-                editable={!loading}
+                editable={!isProcessing}
               />
 
               {isSignUp && (
@@ -175,7 +190,7 @@ export default function LoginScreen() {
                     onChangeText={setConfirmPassword}
                     secureTextEntry
                     autoCapitalize="none"
-                    editable={!loading}
+                    editable={!isProcessing}
                   />
                 </>
               )}
@@ -183,7 +198,7 @@ export default function LoginScreen() {
               <TouchableOpacity
                 className="bg-dark-sage rounded-2xl py-4 items-center justify-center mb-4"
                 onPress={handleEmailAuth}
-                disabled={loading}
+                disabled={isProcessing}
                 activeOpacity={0.8}
               >
                 {loading ? (
@@ -201,7 +216,7 @@ export default function LoginScreen() {
                   setPassword("");
                   setConfirmPassword("");
                 }}
-                disabled={loading}
+                disabled={isProcessing}
               >
                 <Text className="text-center text-charcoal-gray/70 text-sm">
                   {isSignUp
@@ -222,7 +237,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               className="bg-soft-beige rounded-2xl py-4 items-center justify-center border-2 border-warm-sand mb-4"
               onPress={handleGoogleSignIn}
-              disabled={!request || loading}
+              disabled={!request || isProcessing}
               activeOpacity={0.8}
             >
               <Text className="text-charcoal-gray text-base font-semibold">
@@ -247,6 +262,19 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Loading Overlay - shown when OAuth is processing */}
+      {isLoggingIn && (
+        <View
+          className="absolute inset-0 bg-off-white/95 items-center justify-center"
+          style={{ zIndex: 100 }}
+        >
+          <ActivityIndicator size="large" color="#5A6E6C" />
+          <Text className="text-charcoal-gray text-base mt-4">
+            Signing you in...
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
