@@ -55,25 +55,12 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
     // Handle Firebase function errors
     // Firebase Functions errors can have different structures
     const errorCode = error?.code || error?.details?.code || "";
-    
-    // Extract error message - handle various formats
-    let errorMessage = "";
-    if (typeof error?.message === "string") {
-      errorMessage = error.message;
-    } else if (typeof error?.details?.message === "string") {
-      errorMessage = error.details.message;
-    } else if (error?.message) {
-      // If message is an object, try to stringify it meaningfully
-      errorMessage = String(error.message);
-    }
-
-    // Check for specific error patterns
-    const lowerMessage = errorMessage.toLowerCase();
+    const errorMessage = error?.message || error?.details?.message || "";
 
     if (
       errorCode === "functions/unauthenticated" ||
       errorCode === "unauthenticated" ||
-      lowerMessage.includes("authenticated")
+      errorMessage.includes("authenticated")
     ) {
       throw new Error("You must be logged in to import recipes");
     } else if (
@@ -91,41 +78,10 @@ export async function importRecipe(url: string): Promise<RecipeCreateInput> {
       errorCode === "deadline-exceeded"
     ) {
       throw new Error("The request took too long. Please try again.");
-    } else if (
-      lowerMessage.includes("no recipe found") ||
-      lowerMessage.includes("norecipefound")
-    ) {
-      // Pass through our custom "no recipe found" errors
-      throw new Error(errorMessage);
-    } else if (
-      lowerMessage.includes("json") ||
-      lowerMessage.includes("parse") ||
-      lowerMessage.includes("decode") ||
-      lowerMessage.includes("[object")
-    ) {
-      // JSON parsing errors usually mean the page returned unexpected content
-      throw new Error(
-        "Could not read the recipe from this page. The page may be behind a paywall, require login, or have restricted access."
-      );
-    } else if (
-      lowerMessage.includes("timeout") ||
-      lowerMessage.includes("timed out")
-    ) {
-      throw new Error("The request took too long. Please try again.");
-    } else if (
-      lowerMessage.includes("network") ||
-      lowerMessage.includes("fetch")
-    ) {
-      throw new Error(
-        "Could not connect to the recipe page. Please check your internet connection and try again."
-      );
-    } else if (errorMessage && !lowerMessage.includes("[object")) {
-      // Only use the raw error message if it's actually readable
+    } else if (errorMessage) {
       throw new Error(errorMessage);
     } else {
-      throw new Error(
-        "Failed to import recipe. The page may be behind a paywall or require login."
-      );
+      throw new Error("Failed to import recipe. Please try again.");
     }
   }
 }

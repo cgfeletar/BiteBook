@@ -92,7 +92,10 @@ export function formatAsFraction(decimal: number): string {
  * Calculates the exact fraction representation of a decimal
  * Uses continued fractions for accuracy
  */
-function calculateExactFraction(decimal: number, maxDenominator: number = 64): string {
+function calculateExactFraction(
+  decimal: number,
+  maxDenominator: number = 64
+): string {
   const wholePart = Math.floor(decimal);
   const fractionalPart = decimal - wholePart;
 
@@ -134,7 +137,7 @@ function calculateExactFraction(decimal: number, maxDenominator: number = 64): s
  * Leaves whole items (eggs, pieces, etc.) as-is
  */
 export function formatQuantity(
-  quantity: number | null | string,
+  quantity: number | null,
   unit: string | null
 ): string {
   // Handle null quantity (for "to taste" ingredients)
@@ -142,105 +145,53 @@ export function formatQuantity(
     return "";
   }
 
-  // Convert string quantities to numbers (safety check for malformed data)
-  let numQuantity: number;
-  if (typeof quantity === "string") {
-    numQuantity = parseFloat(quantity);
-    if (isNaN(numQuantity)) {
-      return quantity; // Return as-is if not parseable
-    }
-  } else {
-    numQuantity = quantity;
-  }
-
   // Handle null unit (for "to taste" ingredients)
   if (!unit) {
-    return formatAsFraction(numQuantity);
+    return quantity.toString();
   }
 
-  // Clean the unit - remove leading dash if it's part of a range (e.g., "-1/2 cup")
-  // This handles cases where the LLM splits ranges incorrectly
-  const cleanUnit = unit.startsWith("-") ? unit.substring(1).trim() : unit;
-
   // Don't convert to fractions for whole items or non-volume units
-  const wholeItemUnits = ["egg", "eggs", "piece", "pieces", "whole", "item", "items", "large", "medium", "small"];
+  const wholeItemUnits = [
+    "egg",
+    "eggs",
+    "piece",
+    "pieces",
+    "whole",
+    "item",
+    "items",
+    "large",
+    "medium",
+    "small",
+  ];
   const isWholeItem = wholeItemUnits.some((u) =>
-    cleanUnit.toLowerCase().includes(u)
+    unit.toLowerCase().includes(u)
   );
 
   // Don't convert for metric units (grams, kg, etc.) unless it's a volume unit
-  const volumeUnits = ["cup", "cups", "tsp", "tbsp", "tablespoon", "teaspoon", "fl oz", "ounce", "oz"];
-  const isVolumeUnit = volumeUnits.some((u) =>
-    cleanUnit.toLowerCase().includes(u)
-  );
+  const volumeUnits = [
+    "cup",
+    "cups",
+    "tsp",
+    "tbsp",
+    "tablespoon",
+    "teaspoon",
+    "fl oz",
+    "ounce",
+    "oz",
+  ];
+  const isVolumeUnit = volumeUnits.some((u) => unit.toLowerCase().includes(u));
 
   // Only format as fraction for volume units, not whole items
-  if (isWholeItem || (!isVolumeUnit && !cleanUnit.toLowerCase().includes("cup"))) {
+  if (isWholeItem || (!isVolumeUnit && !unit.toLowerCase().includes("cup"))) {
     // For whole items, always return as whole number (round if needed)
     if (isWholeItem) {
-      const rounded = Math.round(numQuantity);
-      return rounded < 1 && numQuantity > 0 ? "1" : rounded.toString();
+      const rounded = Math.round(quantity);
+      return rounded < 1 && quantity > 0 ? "1" : rounded.toString();
     }
     // For other non-volume units, return formatted decimal (capped at 2 places)
-    return formatDecimal(numQuantity);
+    return formatDecimal(quantity);
   }
 
   // Format as fraction for volume units
-  return formatAsFraction(numQuantity);
+  return formatAsFraction(quantity);
 }
-
-/**
- * Normalizes an ingredient name for pantry matching
- * Removes common prefixes like "pinch of", "dash of", etc.
- * Examples:
- * - "pinch of salt" → "salt"
- * - "dash of pepper" → "pepper"
- * - "splash of olive oil" → "olive oil"
- * - "handful of spinach" → "spinach"
- * - "salt" → "salt" (unchanged)
- */
-export function normalizeIngredientName(name: string): string {
-  const normalized = name.toLowerCase().trim();
-  
-  // Common quantity prefixes to remove
-  const prefixPatterns = [
-    /^pinch\s+of\s+/i,
-    /^pinches\s+of\s+/i,
-    /^dash\s+of\s+/i,
-    /^dashes\s+of\s+/i,
-    /^splash\s+of\s+/i,
-    /^handful\s+of\s+/i,
-    /^handfuls\s+of\s+/i,
-    /^sprig\s+of\s+/i,
-    /^sprigs\s+of\s+/i,
-    /^bunch\s+of\s+/i,
-    /^bunches\s+of\s+/i,
-    /^clove\s+of\s+/i,
-    /^cloves\s+of\s+/i,
-    /^slice\s+of\s+/i,
-    /^slices\s+of\s+/i,
-    /^piece\s+of\s+/i,
-    /^pieces\s+of\s+/i,
-    /^drop\s+of\s+/i,
-    /^drops\s+of\s+/i,
-    /^drizzle\s+of\s+/i,
-    /^touch\s+of\s+/i,
-    /^hint\s+of\s+/i,
-  ];
-  
-  let result = normalized;
-  for (const pattern of prefixPatterns) {
-    result = result.replace(pattern, "");
-  }
-  
-  return result.trim();
-}
-
-/**
- * Checks if two ingredient names match (accounting for prefixes)
- * Returns true if the normalized names are equal
- */
-export function ingredientNamesMatch(name1: string, name2: string): boolean {
-  return normalizeIngredientName(name1) === normalizeIngredientName(name2);
-}
-

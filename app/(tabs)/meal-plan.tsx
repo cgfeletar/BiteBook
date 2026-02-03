@@ -504,14 +504,20 @@ export default function MealPlanScreen() {
 
                       {/* Search Input */}
                       <View className="mb-4">
-                        <View className="bg-soft-beige rounded-2xl px-4 py-3 flex-row items-center">
+                        <View className="bg-soft-beige rounded-2xl px-4 flex-row items-center" style={{ height: 48 }}>
                           <Search size={20} color="#9CA3AF" />
                           <TextInput
                             placeholder="Search recipes..."
                             placeholderTextColor="#9CA3AF"
                             value={recipeSearchQuery}
                             onChangeText={setRecipeSearchQuery}
-                            className="flex-1 ml-3 text-charcoal text-base"
+                            className="flex-1 ml-3 text-charcoal"
+                            style={{
+                              height: 48,
+                              paddingVertical: 12,
+                              lineHeight: 20,
+                              fontSize: 16,
+                            }}
                             autoFocus
                           />
                         </View>

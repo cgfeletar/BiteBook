@@ -23,12 +23,9 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const { signIn, signUp, signInWithApple, loading, user, initialized } = useAuthStore();
+  const { signIn, signUp, signInWithApple, loading, user, initialized } =
+    useAuthStore();
   const { promptAsync, request } = useAuth();
-
-  // Combined loading state (auth store loading OR local logging in state)
-  const isProcessing = loading || isLoggingIn;
 
   // Redirect after successful authentication
   useEffect(() => {
@@ -82,17 +79,9 @@ export default function LoginScreen() {
 
   const handleGoogleSignIn = async () => {
     try {
-      setIsLoggingIn(true);
-      const result = await promptAsync();
-      // Check if user cancelled or dismissed the popup
-      if (result?.type === "cancel" || result?.type === "dismiss") {
-        setIsLoggingIn(false);
-        return;
-      }
+      await promptAsync();
       // Navigation will be handled by useEffect when user state updates
-      // Keep isLoggingIn true - it will show until redirect happens
     } catch (error: any) {
-      setIsLoggingIn(false);
       if (!error?.message?.includes("cancelled")) {
         Alert.alert("Error", "Failed to sign in with Google");
       }
@@ -101,12 +90,9 @@ export default function LoginScreen() {
 
   const handleAppleSignIn = async () => {
     try {
-      setIsLoggingIn(true);
       await signInWithApple();
       // Navigation will be handled by useEffect when user state updates
-      // Keep isLoggingIn true - it will show until redirect happens
     } catch (error: any) {
-      setIsLoggingIn(false);
       if (error.message && !error.message.includes("cancelled")) {
         Alert.alert("Error", error.message || "Failed to sign in with Apple");
       }
@@ -150,9 +136,17 @@ export default function LoginScreen() {
 
             {/* Email/Password Form */}
             <View className="mb-6">
-              <Text className="text-sm text-charcoal-gray mb-2 ml-1">Email</Text>
+              <Text className="text-sm text-charcoal-gray mb-2 ml-1">
+                Email
+              </Text>
               <TextInput
-                className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+                className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+                style={{
+                  height: 48,
+                  paddingVertical: 12,
+                  lineHeight: 20,
+                  fontSize: 16,
+                }}
                 placeholder="Enter your email"
                 placeholderTextColor="#9CA3AF"
                 value={email}
@@ -160,21 +154,27 @@ export default function LoginScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
-                editable={!isProcessing}
+                editable={!loading}
               />
 
               <Text className="text-sm text-charcoal-gray mb-2 ml-1">
                 Password
               </Text>
               <TextInput
-                className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+                className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+                style={{
+                  height: 48,
+                  paddingVertical: 12,
+                  lineHeight: 20,
+                  fontSize: 16,
+                }}
                 placeholder="Enter your password"
                 placeholderTextColor="#9CA3AF"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
                 autoCapitalize="none"
-                editable={!isProcessing}
+                editable={!loading}
               />
 
               {isSignUp && (
@@ -183,14 +183,20 @@ export default function LoginScreen() {
                     Confirm Password
                   </Text>
                   <TextInput
-                    className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+                    className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+                    style={{
+                      height: 48,
+                      paddingVertical: 12,
+                      lineHeight: 20,
+                      fontSize: 16,
+                    }}
                     placeholder="Confirm your password"
                     placeholderTextColor="#9CA3AF"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry
                     autoCapitalize="none"
-                    editable={!isProcessing}
+                    editable={!loading}
                   />
                 </>
               )}
@@ -198,7 +204,7 @@ export default function LoginScreen() {
               <TouchableOpacity
                 className="bg-dark-sage rounded-2xl py-4 items-center justify-center mb-4"
                 onPress={handleEmailAuth}
-                disabled={isProcessing}
+                disabled={loading}
                 activeOpacity={0.8}
               >
                 {loading ? (
@@ -216,7 +222,7 @@ export default function LoginScreen() {
                   setPassword("");
                   setConfirmPassword("");
                 }}
-                disabled={isProcessing}
+                disabled={loading}
               >
                 <Text className="text-center text-charcoal-gray/70 text-sm">
                   {isSignUp
@@ -237,7 +243,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               className="bg-soft-beige rounded-2xl py-4 items-center justify-center border-2 border-warm-sand mb-4"
               onPress={handleGoogleSignIn}
-              disabled={!request || isProcessing}
+              disabled={!request || loading}
               activeOpacity={0.8}
             >
               <Text className="text-charcoal-gray text-base font-semibold">
@@ -262,20 +268,6 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Loading Overlay - shown when OAuth is processing */}
-      {isLoggingIn && (
-        <View
-          className="absolute inset-0 bg-off-white/95 items-center justify-center"
-          style={{ zIndex: 100 }}
-        >
-          <ActivityIndicator size="large" color="#5A6E6C" />
-          <Text className="text-charcoal-gray text-base mt-4">
-            Signing you in...
-          </Text>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
-

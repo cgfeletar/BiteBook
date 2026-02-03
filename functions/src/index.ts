@@ -96,9 +96,7 @@ If a recipe IS found, return:
 
 RULES:
 - Title: Find the actual dish name (e.g., "Garlic Butter Pasta", "Chocolate Cake"). Ignore hashtags, emojis, promo text.
-- Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. 
-  Handle fractions: 1/2 = 0.5, 1/3 = 0.333, 1/4 = 0.25, 2/3 = 0.667, 3/4 = 0.75.
-  Handle ranges: "1/3-1/2 cup" → use the FIRST value (quantity: 0.333, unit: "cup").
+- Ingredients: Parse quantities like "2 cups flour" → { name: "flour", quantity: 2, unit: "cups" }. Handle fractions (1/2 = 0.5).
 - Steps: Create clear, actionable steps. Generate IDs like "step-1", "step-2". If instructions mention timing (e.g., "cook for 5 min"), set timerDuration in seconds.
 - Tags: Extract relevant tags like "easy", "quick", "dessert", cuisine types, etc.
 - If the text is just a list of recipe links, a menu, or promotional content WITHOUT actual recipe details, set noRecipeFound: true.
@@ -184,8 +182,8 @@ EXTRACTION RULES:
      * "pepper (optional)" → { name: "pepper", quantity: null, unit: "to taste" } (if no quantity given and optional)
    - CRITICAL: Whole items like eggs, pieces, items should NEVER be converted to volume units (cups, tsp, etc.)
    - For whole items: use unit "egg", "eggs", "piece", "pieces", "whole", "item", or descriptive size like "large", "medium", "small"
-   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 1/3 = 0.333, 2/3 = 0.667, 3/4 = 0.75, etc. (for volume/weight units only)
-   - Handle ranges: "1/3-1/2 cup" or "2-3 cups" → Use the FIRST value for quantity (e.g., quantity: 0.333, unit: "cup" for "1/3-1/2 cup")
+   - Handle fractions: 1/2 = 0.5, 1/4 = 0.25, 3/4 = 0.75, etc. (for volume/weight units only)
+   - Handle ranges: "2-3 cups" → Print as written (e.g., "2-3 cups")
    - Handle "to taste", "as needed", "optional" → quantity: null, unit: "to taste" (ONLY when no quantity is specified and recipe says "to taste" or similar)
    - If a quantity is clearly stated in the recipe, extract it exactly - do NOT default to "to taste"
    - Look carefully for quantities even if they're written in different formats (e.g., "two cups", "2 c.", "2c", etc.)
@@ -595,7 +593,7 @@ function extractRecipeSection($: cheerio.CheerioAPI): string | null {
 
   for (const selector of wprmSelectors) {
     const wprm = $(selector).first();
-  if (wprm.length) {
+    if (wprm.length) {
       console.log(`Found WP Recipe Maker section (${selector})`);
 
       // For WPRM, explicitly include instruction groups and nutrition if they exist
@@ -1700,12 +1698,9 @@ export const extractRecipeFromUrl = functions
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           Accept:
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate", // Request compressed content for faster download
         },
         timeout: 10000,
         maxRedirects: 5,
-        maxContentLength: 5 * 1024 * 1024, // Limit to 5MB to avoid huge pages
-        decompress: true, // Auto-decompress gzip responses
       });
       timings.httpFetch = Date.now() - fetchStart;
       console.log(
@@ -1917,9 +1912,7 @@ export const extractRecipeFromUrl = functions
           actualRecipeUrl
         );
         timings.llmMain = Date.now() - llmMainStart;
-        console.log(
-          `[TIMING] Social media LLM call: ${timings.llmMain}ms`
-        );
+        console.log(`[TIMING] Social media LLM call: ${timings.llmMain}ms`);
       } else if (jsonLdData) {
         // Check if we need DOM fallback for any missing fields
         const needsDomFallback =
@@ -2115,102 +2108,75 @@ export const extractRecipeFromUrl = functions
       let normalizedNutrition = extractedData.nutritionalInfo || {};
       const servings = extractedData.servings;
       const isPerServing = normalizedNutrition.isPerServing === true;
-      const isPerServingUnknown =
-        normalizedNutrition.isPerServing === null ||
-        normalizedNutrition.isPerServing === undefined;
-
-      // Helper function to multiply nutrition values
-      const multiplyNutrition = (multiplier: number) => ({
-        ...normalizedNutrition,
-        calories: normalizedNutrition.calories
-          ? Math.round(normalizedNutrition.calories * multiplier)
-          : undefined,
-        protein: normalizedNutrition.protein
-          ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
-          : undefined,
-        carbohydrates: normalizedNutrition.carbohydrates
-          ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) / 10
-          : undefined,
-        fat: normalizedNutrition.fat
-          ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
-          : undefined,
-        fiber: normalizedNutrition.fiber
-          ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
-          : undefined,
-        sugar: normalizedNutrition.sugar
-          ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
-          : undefined,
-        sodium: normalizedNutrition.sodium
-          ? Math.round(normalizedNutrition.sodium * multiplier)
-          : undefined,
-        isPerServing: false, // Now normalized to whole recipe
-      });
 
       if (isPerServing && servings && servings > 0) {
-        // Case 1: Explicitly marked as per serving with known serving count
-        console.log(
-          `[Nutrition] Converting per-serving to whole recipe: ${normalizedNutrition.calories} cal × ${servings} servings`
-        );
-        normalizedNutrition = multiplyNutrition(servings);
+        // Convert per-serving nutrition to whole recipe
+        const multiplier = servings;
+        normalizedNutrition = {
+          ...normalizedNutrition,
+          calories: normalizedNutrition.calories
+            ? Math.round(normalizedNutrition.calories * multiplier)
+            : undefined,
+          protein: normalizedNutrition.protein
+            ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
+            : undefined,
+          carbohydrates: normalizedNutrition.carbohydrates
+            ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) /
+              10
+            : undefined,
+          fat: normalizedNutrition.fat
+            ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
+            : undefined,
+          fiber: normalizedNutrition.fiber
+            ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
+            : undefined,
+          sugar: normalizedNutrition.sugar
+            ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
+            : undefined,
+          sodium: normalizedNutrition.sodium
+            ? Math.round(normalizedNutrition.sodium * multiplier)
+            : undefined,
+          isPerServing: false, // Now normalized to whole recipe
+        };
       } else if (isPerServing && (!servings || servings <= 0)) {
-        // Case 2: Marked as per serving but no serving count
+        // If marked as per serving but no serving count, try to infer from typical values
         // Very low calories (50-300) likely means per serving
         if (
           normalizedNutrition.calories &&
           normalizedNutrition.calories < 300
         ) {
+          // Assume 4 servings as default if not specified
           const defaultServings = 4;
-          console.log(
-            `[Nutrition] Per-serving with no count, inferring ${defaultServings} servings from low calories (${normalizedNutrition.calories})`
-          );
-          normalizedNutrition = multiplyNutrition(defaultServings);
-        }
-      } else if (
-        isPerServingUnknown &&
-        normalizedNutrition.calories &&
-        normalizedNutrition.calories > 0
-      ) {
-        // Case 3: isPerServing is unknown - infer from calorie values
-        // Most single-serving dishes have 200-600 calories
-        // Most whole recipes have 1000+ calories (assuming 4+ servings)
-        // Use 400 as threshold - values below are likely per-serving
-        const calories = normalizedNutrition.calories;
-        const protein = normalizedNutrition.protein || 0;
-        const carbs = normalizedNutrition.carbohydrates || 0;
-        const fat = normalizedNutrition.fat || 0;
-
-        // Check if values look like per-serving amounts
-        // Low calories AND low macros suggest per-serving
-        const looksLikePerServing =
-          calories < 400 && protein < 50 && carbs < 80 && fat < 40;
-
-        // High calories could still be per-serving for calorie-dense dishes
-        // But very high totals (calories + all macros) suggest whole recipe
-        const totalMacros = protein + carbs + fat;
-        const definitelyWholeRecipe = calories > 1500 || totalMacros > 300;
-
-        if (looksLikePerServing && !definitelyWholeRecipe) {
-          // Determine multiplier based on calories
-          let inferredServings: number;
-          if (calories < 150) {
-            inferredServings = 6; // Very low cal - probably many servings (e.g., appetizers)
-          } else if (calories < 300) {
-            inferredServings = 4; // Low cal - typical serving size
-          } else {
-            inferredServings = 4; // Medium cal - assume standard 4 servings
-          }
-
-          // Use recipe's serving count if available, otherwise use inferred
-          const multiplier =
-            servings && servings > 0 ? servings : inferredServings;
-          console.log(
-            `[Nutrition] isPerServing unknown, but values look per-serving (${calories} cal). Multiplying by ${multiplier}`
-          );
-          normalizedNutrition = multiplyNutrition(multiplier);
-        } else {
-          console.log(
-            `[Nutrition] isPerServing unknown, values look like whole recipe (${calories} cal)`
-          );
+          normalizedNutrition = {
+            ...normalizedNutrition,
+            calories: Math.round(
+              normalizedNutrition.calories * defaultServings
+            ),
+            protein: normalizedNutrition.protein
+              ? Math.round(normalizedNutrition.protein * defaultServings * 10) /
+                10
+              : undefined,
+            carbohydrates: normalizedNutrition.carbohydrates
+              ? Math.round(
+                  normalizedNutrition.carbohydrates * defaultServings * 10
+                ) / 10
+              : undefined,
+            fat: normalizedNutrition.fat
+              ? Math.round(normalizedNutrition.fat * defaultServings * 10) / 10
+              : undefined,
+            fiber: normalizedNutrition.fiber
+              ? Math.round(normalizedNutrition.fiber * defaultServings * 10) /
+                10
+              : undefined,
+            sugar: normalizedNutrition.sugar
+              ? Math.round(normalizedNutrition.sugar * defaultServings * 10) /
+                10
+              : undefined,
+            sodium: normalizedNutrition.sodium
+              ? Math.round(normalizedNutrition.sodium * defaultServings)
+              : undefined,
+            isPerServing: false,
+          };
         }
       }
 
@@ -2836,74 +2802,66 @@ async function extractRecipeFromOCRText(
     let normalizedNutrition = recipeData.nutritionalInfo || {};
     const servings = recipeData.servings;
     const isPerServing = normalizedNutrition.isPerServing === true;
-    const isPerServingUnknown =
-      normalizedNutrition.isPerServing === null ||
-      normalizedNutrition.isPerServing === undefined;
-
-    // Helper function to multiply nutrition values
-    const multiplyNutrition = (multiplier: number) => ({
-      ...normalizedNutrition,
-      calories: normalizedNutrition.calories
-        ? Math.round(normalizedNutrition.calories * multiplier)
-        : undefined,
-      protein: normalizedNutrition.protein
-        ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
-        : undefined,
-      carbohydrates: normalizedNutrition.carbohydrates
-        ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) / 10
-        : undefined,
-      fat: normalizedNutrition.fat
-        ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
-        : undefined,
-      fiber: normalizedNutrition.fiber
-        ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
-        : undefined,
-      sugar: normalizedNutrition.sugar
-        ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
-        : undefined,
-      sodium: normalizedNutrition.sodium
-        ? Math.round(normalizedNutrition.sodium * multiplier)
-        : undefined,
-      isPerServing: false, // Now normalized to whole recipe
-    });
 
     if (isPerServing && servings && servings > 0) {
-      // Case 1: Explicitly marked as per serving with known serving count
-      normalizedNutrition = multiplyNutrition(servings);
+      // Convert per-serving nutrition to whole recipe
+      const multiplier = servings;
+      normalizedNutrition = {
+        ...normalizedNutrition,
+        calories: normalizedNutrition.calories
+          ? Math.round(normalizedNutrition.calories * multiplier)
+          : undefined,
+        protein: normalizedNutrition.protein
+          ? Math.round(normalizedNutrition.protein * multiplier * 10) / 10
+          : undefined,
+        carbohydrates: normalizedNutrition.carbohydrates
+          ? Math.round(normalizedNutrition.carbohydrates * multiplier * 10) / 10
+          : undefined,
+        fat: normalizedNutrition.fat
+          ? Math.round(normalizedNutrition.fat * multiplier * 10) / 10
+          : undefined,
+        fiber: normalizedNutrition.fiber
+          ? Math.round(normalizedNutrition.fiber * multiplier * 10) / 10
+          : undefined,
+        sugar: normalizedNutrition.sugar
+          ? Math.round(normalizedNutrition.sugar * multiplier * 10) / 10
+          : undefined,
+        sodium: normalizedNutrition.sodium
+          ? Math.round(normalizedNutrition.sodium * multiplier)
+          : undefined,
+        isPerServing: false, // Now normalized to whole recipe
+      };
     } else if (isPerServing && (!servings || servings <= 0)) {
-      // Case 2: Marked as per serving but no serving count
+      // If marked as per serving but no serving count, try to infer from typical values
       if (normalizedNutrition.calories && normalizedNutrition.calories < 300) {
+        // Assume 4 servings as default if not specified
         const defaultServings = 4;
-        normalizedNutrition = multiplyNutrition(defaultServings);
-      }
-    } else if (
-      isPerServingUnknown &&
-      normalizedNutrition.calories &&
-      normalizedNutrition.calories > 0
-    ) {
-      // Case 3: isPerServing is unknown - infer from calorie values
-      const calories = normalizedNutrition.calories;
-      const protein = normalizedNutrition.protein || 0;
-      const carbs = normalizedNutrition.carbohydrates || 0;
-      const fat = normalizedNutrition.fat || 0;
-
-      const looksLikePerServing =
-        calories < 400 && protein < 50 && carbs < 80 && fat < 40;
-      const totalMacros = protein + carbs + fat;
-      const definitelyWholeRecipe = calories > 1500 || totalMacros > 300;
-
-      if (looksLikePerServing && !definitelyWholeRecipe) {
-        let inferredServings: number;
-        if (calories < 150) {
-          inferredServings = 6;
-        } else if (calories < 300) {
-          inferredServings = 4;
-        } else {
-          inferredServings = 4;
-        }
-        const multiplier =
-          servings && servings > 0 ? servings : inferredServings;
-        normalizedNutrition = multiplyNutrition(multiplier);
+        normalizedNutrition = {
+          ...normalizedNutrition,
+          calories: Math.round(normalizedNutrition.calories * defaultServings),
+          protein: normalizedNutrition.protein
+            ? Math.round(normalizedNutrition.protein * defaultServings * 10) /
+              10
+            : undefined,
+          carbohydrates: normalizedNutrition.carbohydrates
+            ? Math.round(
+                normalizedNutrition.carbohydrates * defaultServings * 10
+              ) / 10
+            : undefined,
+          fat: normalizedNutrition.fat
+            ? Math.round(normalizedNutrition.fat * defaultServings * 10) / 10
+            : undefined,
+          fiber: normalizedNutrition.fiber
+            ? Math.round(normalizedNutrition.fiber * defaultServings * 10) / 10
+            : undefined,
+          sugar: normalizedNutrition.sugar
+            ? Math.round(normalizedNutrition.sugar * defaultServings * 10) / 10
+            : undefined,
+          sodium: normalizedNutrition.sodium
+            ? Math.round(normalizedNutrition.sodium * defaultServings)
+            : undefined,
+          isPerServing: false,
+        };
       }
     }
 

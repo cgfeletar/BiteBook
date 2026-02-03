@@ -113,7 +113,13 @@ export function AuthPromptModal({
           <View className="mb-6">
             <Text className="text-sm text-charcoal-gray mb-2 ml-1">Email</Text>
             <TextInput
-              className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+              className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+              style={{
+                height: 48,
+                paddingVertical: 12,
+                lineHeight: 20,
+                fontSize: 16,
+              }}
               placeholder="Enter your email"
               placeholderTextColor="#9CA3AF"
               value={email}
@@ -128,7 +134,13 @@ export function AuthPromptModal({
               Password
             </Text>
             <TextInput
-              className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+              className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+              style={{
+                height: 48,
+                paddingVertical: 12,
+                lineHeight: 20,
+                fontSize: 16,
+              }}
               placeholder="Enter your password"
               placeholderTextColor="#9CA3AF"
               value={password}
@@ -144,7 +156,13 @@ export function AuthPromptModal({
                   Confirm Password
                 </Text>
                 <TextInput
-                  className="bg-soft-beige rounded-2xl px-4 py-4 text-charcoal-gray text-base mb-4"
+                  className="bg-soft-beige rounded-2xl px-4 text-charcoal-gray mb-4"
+                  style={{
+                    height: 48,
+                    paddingVertical: 12,
+                    lineHeight: 20,
+                    fontSize: 16,
+                  }}
                   placeholder="Confirm your password"
                   placeholderTextColor="#9CA3AF"
                   value={confirmPassword}

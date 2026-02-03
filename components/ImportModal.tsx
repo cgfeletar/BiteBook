@@ -1,7 +1,7 @@
-import { importRecipe } from "@/src/services/recipeService";
-import { useRecipeStore } from "@/src/store/useRecipeStore";
-import { useAuthStore } from "@/src/store/useAuthStore";
 import { AuthPromptModal } from "@/components/AuthPromptModal";
+import { importRecipe } from "@/src/services/recipeService";
+import { useAuthStore } from "@/src/store/useAuthStore";
+import { useRecipeStore } from "@/src/store/useRecipeStore";
 import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
 import { Link2, X } from "lucide-react-native";
@@ -64,7 +64,7 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
       // Wait for auth state to initialize before checking
       return;
     }
-    
+
     if (!user) {
       setShowAuthPrompt(true);
       return;
@@ -241,7 +241,13 @@ export function ImportModal({ visible, onClose }: ImportModalProps) {
               <View className="flex-row items-center">
                 <View className="flex-1 mr-2">
                   <TextInput
-                    className="bg-soft-beige rounded-xl px-4 py-4 text-charcoal-gray text-base"
+                    className="bg-soft-beige rounded-xl px-4 text-charcoal-gray"
+                    style={{
+                      height: 48,
+                      paddingVertical: 12,
+                      lineHeight: 20,
+                      fontSize: 16,
+                    }}
                     placeholder="https://example.com/recipe"
                     placeholderTextColor="#9CA3AF"
                     value={url}

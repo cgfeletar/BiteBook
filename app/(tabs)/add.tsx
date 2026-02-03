@@ -481,7 +481,12 @@ export default function AddScreen() {
       }
 
       // Add recipe to store
-      console.log("📝 Adding recipe with kitchenId:", user?.defaultKitchenId, "user:", user?.uid);
+      console.log(
+        "📝 Adding recipe with kitchenId:",
+        user?.defaultKitchenId,
+        "user:",
+        user?.uid
+      );
       const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
       // Check if component is still mounted before navigation
@@ -510,9 +515,6 @@ export default function AddScreen() {
 
       const errorMessage =
         error.message || "Failed to import recipe. Please try again.";
-
-      // Clear the URL field after failed import
-      setUrl("");
 
       // Show more detailed error message
       Alert.alert("Import Failed", errorMessage, [{ text: "OK" }]);
@@ -615,14 +617,20 @@ export default function AddScreen() {
                   <Text className="text-base font-semibold text-charcoal-gray mb-2">
                     Recipe URL
                   </Text>
-                  <View className="flex-row items-center bg-soft-beige rounded-xl px-4 py-1 border border-warm-sand/50">
+                  <View className="flex-row items-center bg-soft-beige rounded-xl px-4 border border-warm-sand/50" style={{ height: 48 }}>
                     <Link
                       size={20}
                       color="#5A6E6C"
                       style={{ marginRight: 12 }}
                     />
                     <TextInput
-                      className="flex-1 text-base text-charcoal-gray mb-1"
+                      className="flex-1 text-charcoal-gray"
+                      style={{
+                        height: 48,
+                        paddingVertical: 12,
+                        lineHeight: 20,
+                        fontSize: 16,
+                      }}
                       placeholder="https://example.com/recipe"
                       placeholderTextColor="#9CA3AF"
                       value={url}

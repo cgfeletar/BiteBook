@@ -600,10 +600,16 @@ export default function RecipeFeed() {
 
         {/* Search Bar */}
         <View className="px-6 mb-4">
-          <View className="bg-white rounded-xl flex flex-row items-center px-4 py-3">
+          <View className="bg-white rounded-xl flex flex-row items-center px-4" style={{ height: 48 }}>
             <Search size={18} color="#9CA3AF" />
             <TextInput
-              className="flex-1 ml-3 mb-[4px] text-charcoal text-base"
+              className="flex-1 ml-3 text-charcoal"
+              style={{
+                height: 48,
+                paddingVertical: 12,
+                lineHeight: 20,
+                fontSize: 16,
+              }}
               placeholder="Search recipes..."
               placeholderTextColor="#9CA3AF"
               value={searchQuery}
