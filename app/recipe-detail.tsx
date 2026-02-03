@@ -7,7 +7,7 @@ import { useRecipeBooksStore } from "@/src/store/useRecipeBooksStore";
 import { useRecipeStore } from "@/src/store/useRecipeStore";
 import { useShoppingListStore } from "@/src/store/useShoppingListStore";
 import { Ingredient, Recipe, RecipeCreateInput, Step } from "@/src/types";
-import { formatDecimal, formatQuantity } from "@/src/utils/fractionFormatter";
+import { formatDecimal, formatQuantity, normalizeIngredientName } from "@/src/utils/fractionFormatter";
 import { decodeHtmlEntities } from "@/src/utils/htmlDecoder";
 import {
   isNutritionIncomplete,
@@ -433,11 +433,11 @@ export default function RecipeDetailScreen() {
       return { ingredientsInPantry: [], ingredientsToBuy: [] };
     }
 
-    // Check if ingredient is in pantry
+    // Check if ingredient is in pantry (handles prefixes like "pinch of")
     const isIngredientInPantry = (ingredientName: string): boolean => {
-      const normalizedName = ingredientName.toLowerCase().trim();
+      const normalizedName = normalizeIngredientName(ingredientName);
       return pantryItems.some(
-        (item) => item.name.toLowerCase().trim() === normalizedName
+        (item) => normalizeIngredientName(item.name) === normalizedName
       );
     };
 
@@ -2164,10 +2164,11 @@ export default function RecipeDetailScreen() {
                           // Check - add to set (use original name for consistency)
                           newSet.add(ingredientName);
 
-                          // Add to pantry if not already there
+                          // Add to pantry if not already there (use normalized name for matching)
+                          const normalizedIngName = normalizeIngredientName(ingredient.name);
                           const alreadyInPantry = pantryItems.some(
                             (item) =>
-                              item.name.toLowerCase().trim() === normalizedName
+                              normalizeIngredientName(item.name) === normalizedIngName
                           );
 
                           if (
@@ -2184,7 +2185,7 @@ export default function RecipeDetailScreen() {
                           // Remove from shopping list if it exists there
                           const shoppingItem = shoppingItems.find(
                             (item) =>
-                              item.name.toLowerCase().trim() === normalizedName
+                              normalizeIngredientName(item.name) === normalizedIngName
                           );
                           if (shoppingItem) {
                             deleteShoppingItem(shoppingItem.id);
@@ -2249,8 +2250,8 @@ export default function RecipeDetailScreen() {
                         const checked = isIngredientChecked(ingredient.name);
                         const inPantry = pantryItems.some(
                           (item) =>
-                            item.name.toLowerCase().trim() ===
-                            ingredient.name.toLowerCase().trim()
+                            normalizeIngredientName(item.name) ===
+                            normalizeIngredientName(ingredient.name)
                         );
 
                         return (
@@ -2370,8 +2371,8 @@ export default function RecipeDetailScreen() {
                       const checked = isIngredientChecked(ingredient.name);
                       const inPantry = pantryItems.some(
                         (item) =>
-                          item.name.toLowerCase().trim() ===
-                          ingredient.name.toLowerCase().trim()
+                          normalizeIngredientName(item.name) ===
+                          normalizeIngredientName(ingredient.name)
                       );
 
                       return (
@@ -2618,21 +2619,16 @@ export default function RecipeDetailScreen() {
                                       const originalIngredientsToBuy =
                                         recipeData?.ingredients?.filter(
                                           (ing) => {
-                                            const normalizedName = ing.name
-                                              .toLowerCase()
-                                              .trim();
+                                            const normalizedIngName = normalizeIngredientName(ing.name);
                                             const isInPantry = pantryItems.some(
                                               (item) =>
-                                                item.name
-                                                  .toLowerCase()
-                                                  .trim() === normalizedName
+                                                normalizeIngredientName(item.name) === normalizedIngName
                                             );
                                             const isChecked = Array.from(
                                               checkedIngredients
                                             ).some(
                                               (checked) =>
-                                                checked.toLowerCase().trim() ===
-                                                normalizedName
+                                                normalizeIngredientName(checked) === normalizedIngName
                                             );
                                             return !isInPantry && !isChecked;
                                           }

@@ -3,12 +3,44 @@ import { ShoppingItem } from '../types';
 /**
  * Normalizes ingredient name for comparison (case-insensitive, trimmed, handles plurals)
  * Converts plural forms to singular for consistent matching
+ * Removes common quantity prefixes like "pinch of", "dash of", etc.
  */
 function normalizeName(name: string): string {
-  const normalized = name.toLowerCase().trim();
+  let normalized = name.toLowerCase().trim();
   
   // Handle empty strings
   if (!normalized) return normalized;
+  
+  // Remove common quantity prefixes
+  const prefixPatterns = [
+    /^pinch\s+of\s+/i,
+    /^pinches\s+of\s+/i,
+    /^dash\s+of\s+/i,
+    /^dashes\s+of\s+/i,
+    /^splash\s+of\s+/i,
+    /^handful\s+of\s+/i,
+    /^handfuls\s+of\s+/i,
+    /^sprig\s+of\s+/i,
+    /^sprigs\s+of\s+/i,
+    /^bunch\s+of\s+/i,
+    /^bunches\s+of\s+/i,
+    /^clove\s+of\s+/i,
+    /^cloves\s+of\s+/i,
+    /^slice\s+of\s+/i,
+    /^slices\s+of\s+/i,
+    /^piece\s+of\s+/i,
+    /^pieces\s+of\s+/i,
+    /^drop\s+of\s+/i,
+    /^drops\s+of\s+/i,
+    /^drizzle\s+of\s+/i,
+    /^touch\s+of\s+/i,
+    /^hint\s+of\s+/i,
+  ];
+  
+  for (const pattern of prefixPatterns) {
+    normalized = normalized.replace(pattern, "");
+  }
+  normalized = normalized.trim();
   
   // Common irregular plurals that need special handling
   const irregularPlurals: Record<string, string> = {

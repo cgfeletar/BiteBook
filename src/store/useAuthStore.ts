@@ -4,6 +4,7 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
 } from "firebase/auth";
 import { create } from "zustand";
 import { auth } from "../config/firebase";
@@ -30,6 +31,7 @@ interface AuthState {
   signUp: (email: string, password: string) => Promise<void>;
   signInWithApple: () => Promise<void>;
   logout: () => Promise<void>;
+  updateUserDisplayName: (displayName: string) => Promise<void>;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
 }
@@ -177,6 +179,41 @@ export const useAuthStore = create<AuthState>((set, get) => {
       try {
         await signOut(auth);
         set({ user: null, loading: false });
+      } catch (error) {
+        set({ loading: false });
+        throw error;
+      }
+    },
+
+    updateUserDisplayName: async (displayName: string) => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error("No user logged in");
+      }
+
+      set({ loading: true });
+      try {
+        // Update Firebase Auth profile
+        await updateProfile(currentUser, { displayName });
+
+        // Update local state
+        set((state) => ({
+          user: state.user ? { ...state.user, displayName } : null,
+          loading: false,
+        }));
+
+        // Sync to Firestore in background
+        try {
+          await createOrUpdateUser({
+            uid: currentUser.uid,
+            email: currentUser.email,
+            displayName,
+            photoURL: currentUser.photoURL,
+          });
+        } catch (firestoreError) {
+          // Silently handle Firestore errors - the Auth update succeeded
+          console.warn("Failed to sync display name to Firestore:", firestoreError);
+        }
       } catch (error) {
         set({ loading: false });
         throw error;

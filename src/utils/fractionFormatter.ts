@@ -189,3 +189,58 @@ export function formatQuantity(
   return formatAsFraction(numQuantity);
 }
 
+/**
+ * Normalizes an ingredient name for pantry matching
+ * Removes common prefixes like "pinch of", "dash of", etc.
+ * Examples:
+ * - "pinch of salt" → "salt"
+ * - "dash of pepper" → "pepper"
+ * - "splash of olive oil" → "olive oil"
+ * - "handful of spinach" → "spinach"
+ * - "salt" → "salt" (unchanged)
+ */
+export function normalizeIngredientName(name: string): string {
+  const normalized = name.toLowerCase().trim();
+  
+  // Common quantity prefixes to remove
+  const prefixPatterns = [
+    /^pinch\s+of\s+/i,
+    /^pinches\s+of\s+/i,
+    /^dash\s+of\s+/i,
+    /^dashes\s+of\s+/i,
+    /^splash\s+of\s+/i,
+    /^handful\s+of\s+/i,
+    /^handfuls\s+of\s+/i,
+    /^sprig\s+of\s+/i,
+    /^sprigs\s+of\s+/i,
+    /^bunch\s+of\s+/i,
+    /^bunches\s+of\s+/i,
+    /^clove\s+of\s+/i,
+    /^cloves\s+of\s+/i,
+    /^slice\s+of\s+/i,
+    /^slices\s+of\s+/i,
+    /^piece\s+of\s+/i,
+    /^pieces\s+of\s+/i,
+    /^drop\s+of\s+/i,
+    /^drops\s+of\s+/i,
+    /^drizzle\s+of\s+/i,
+    /^touch\s+of\s+/i,
+    /^hint\s+of\s+/i,
+  ];
+  
+  let result = normalized;
+  for (const pattern of prefixPatterns) {
+    result = result.replace(pattern, "");
+  }
+  
+  return result.trim();
+}
+
+/**
+ * Checks if two ingredient names match (accounting for prefixes)
+ * Returns true if the normalized names are equal
+ */
+export function ingredientNamesMatch(name1: string, name2: string): boolean {
+  return normalizeIngredientName(name1) === normalizeIngredientName(name2);
+}
+
