@@ -105,7 +105,7 @@ export default function MealPlanScreen() {
     const normalizedDate = date.split("T")[0];
     setSelectedDate(normalizedDate);
     setShowAddMealModal(true);
-    
+
     // If there's a pending recipe ID, automatically open recipe picker and select it
     if (pendingRecipeId) {
       setShowRecipePicker(true);
@@ -305,14 +305,14 @@ export default function MealPlanScreen() {
                     }`}
                   >
                     <Text
-                      className={`text-xs font-semibold ${
+                      className={`text-xs font-semibold mb-[-6px] ${
                         isToday ? "text-white" : "text-charcoal"
                       }`}
                     >
                       {formatDayName(date)}
                     </Text>
                     <Text
-                      className={`text-base font-bold ${
+                      className={`text-base font-bold mb-[-4px] ${
                         isToday ? "text-white" : "text-charcoal"
                       }`}
                     >
@@ -504,7 +504,10 @@ export default function MealPlanScreen() {
 
                       {/* Search Input */}
                       <View className="mb-4">
-                        <View className="bg-soft-beige rounded-2xl px-4 flex-row items-center" style={{ height: 48 }}>
+                        <View
+                          className="bg-soft-beige rounded-2xl px-4 flex-row items-center"
+                          style={{ height: 48 }}
+                        >
                           <Search size={20} color="#9CA3AF" />
                           <TextInput
                             placeholder="Search recipes..."

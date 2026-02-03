@@ -396,7 +396,7 @@ export default function ShoppingListScreen() {
               >
                 <Plus size={16} color="#5A6E6C" style={{ marginRight: 6 }} />
                 <Text
-                  className={`font-semibold text-sm ${
+                  className={`font-semibold text-xs ${
                     showAddForm ? "text-charcoal-gray" : "text-dark-sage"
                   }`}
                 >
@@ -438,7 +438,7 @@ export default function ShoppingListScreen() {
                     color="#3E3E3E"
                     style={{ marginRight: 6 }}
                   />
-                  <Text className="text-charcoal-gray font-semibold text-sm">
+                  <Text className="text-charcoal-gray font-semibold text-xs">
                     Clear All
                   </Text>
                 </TouchableOpacity>

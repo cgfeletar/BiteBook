@@ -411,7 +411,7 @@ export function FilterModal({
                             activeOpacity={0.7}
                           >
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -450,7 +450,7 @@ export function FilterModal({
                             activeOpacity={0.7}
                           >
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -500,7 +500,7 @@ export function FilterModal({
                           activeOpacity={0.7}
                         >
                           <Text
-                            className={`text-sm font-semibold text-center ${
+                            className={`text-xs font-semibold text-center ${
                               isSelected ? "text-white" : "text-charcoal-gray"
                             }`}
                           >
@@ -538,7 +538,7 @@ export function FilterModal({
                         >
                           <View>
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -591,7 +591,7 @@ export function FilterModal({
                               fill={isSelected ? "#FAF9F7" : "transparent"}
                             />
                             <Text
-                              className={`text-sm font-semibold ml-1 ${
+                              className={`text-xs font-semibold ml-1 ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -626,7 +626,7 @@ export function FilterModal({
                             activeOpacity={0.7}
                           >
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -665,7 +665,7 @@ export function FilterModal({
                             activeOpacity={0.7}
                           >
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
@@ -704,7 +704,7 @@ export function FilterModal({
                             activeOpacity={0.7}
                           >
                             <Text
-                              className={`text-sm font-semibold ${
+                              className={`text-xs font-semibold ${
                                 isSelected ? "text-white" : "text-charcoal-gray"
                               }`}
                             >
