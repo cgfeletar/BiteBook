@@ -20,6 +20,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
   BookOpen,
+  Bookmark,
   Calendar,
   Check,
   ChefHat,
@@ -27,6 +28,7 @@ import {
   ChevronUp,
   Clock,
   ExternalLink,
+  Link as LinkIcon,
   MoreVertical,
   Package,
   Pause,
@@ -124,6 +126,16 @@ export default function RecipeDetailScreen() {
   const [editedSteps, setEditedSteps] = useState<Step[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const isImported = params.isImported === "true";
+
+  // Check if recipe has no ingredients AND no instructions (empty recipe - just a saved link)
+  const isEmptyRecipe = useMemo(() => {
+    if (!recipeData) return false;
+    const hasNoIngredients =
+      !recipeData.ingredients || recipeData.ingredients.length === 0;
+    const hasNoInstructions =
+      !recipeData.steps || recipeData.steps.length === 0;
+    return hasNoIngredients && hasNoInstructions;
+  }, [recipeData]);
 
   // Toast animation shared values
   const toastOpacity = useSharedValue(0);
@@ -1700,63 +1712,67 @@ export default function RecipeDetailScreen() {
               )}
 
               {/* Prep Time, Total Time, and Servings Cards */}
-              <View className="flex-row items-center justify-between mb-4 gap-3">
-                {/* Prep Time Card */}
-                {recipeData.prepTime && (
-                  <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                    <ChefHat size={20} color="#5A6E6C" />
-                    <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                      {recipeData.prepTime} mins
-                    </Text>
-                    <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                      prep
-                    </Text>
-                  </View>
-                )}
+              {!isEmptyRecipe && (
+                <>
+                  <View className="flex-row items-center justify-between mb-4 gap-3">
+                    {/* Prep Time Card */}
+                    {recipeData.prepTime && (
+                      <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                        <ChefHat size={20} color="#5A6E6C" />
+                        <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                          {recipeData.prepTime} mins
+                        </Text>
+                        <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                          prep
+                        </Text>
+                      </View>
+                    )}
 
-                {/* Total Time Card */}
-                {(() => {
-                  // Use recipe.totalTime if available, otherwise calculate from step timers
-                  const totalTime =
-                    recipeData.totalTime ||
-                    (() => {
-                      const totalSeconds =
-                        recipeData.steps?.reduce(
-                          (sum, step) => sum + (step.timerDuration || 0),
-                          0
-                        ) || 0;
-                      return totalSeconds > 0
-                        ? Math.round(totalSeconds / 60)
-                        : null;
-                    })();
+                    {/* Total Time Card */}
+                    {(() => {
+                      // Use recipe.totalTime if available, otherwise calculate from step timers
+                      const totalTime =
+                        recipeData.totalTime ||
+                        (() => {
+                          const totalSeconds =
+                            recipeData.steps?.reduce(
+                              (sum, step) => sum + (step.timerDuration || 0),
+                              0
+                            ) || 0;
+                          return totalSeconds > 0
+                            ? Math.round(totalSeconds / 60)
+                            : null;
+                        })();
 
-                  return totalTime !== null && totalTime !== undefined ? (
+                      return totalTime !== null && totalTime !== undefined ? (
+                        <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
+                          <Clock size={20} color="#5A6E6C" />
+                          <Text className="text-charcoal-gray font-semibold text-base mt-1">
+                            {totalTime} mins
+                          </Text>
+                          <Text className="text-charcoal-gray/60 text-xs mt-0.5">
+                            total
+                          </Text>
+                        </View>
+                      ) : null;
+                    })()}
+
+                    {/* Servings Card */}
                     <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                      <Clock size={20} color="#5A6E6C" />
+                      <Users size={20} color="#5A6E6C" />
                       <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                        {totalTime} mins
+                        {servings}
                       </Text>
                       <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                        total
+                        servings
                       </Text>
                     </View>
-                  ) : null;
-                })()}
+                  </View>
 
-                {/* Servings Card */}
-                <View className="flex-1 bg-soft-beige rounded-xl px-4 py-3 items-center">
-                  <Users size={20} color="#5A6E6C" />
-                  <Text className="text-charcoal-gray font-semibold text-base mt-1">
-                    {servings}
-                  </Text>
-                  <Text className="text-charcoal-gray/60 text-xs mt-0.5">
-                    servings
-                  </Text>
-                </View>
-              </View>
-
-              {/* Divider Line */}
-              <View className="h-px bg-warm-sand mb-4" />
+                  {/* Divider Line */}
+                  <View className="h-px bg-warm-sand mb-4" />
+                </>
+              )}
 
               {/* Star Rating */}
               <View className="flex-row items-center justify-center mb-4">
@@ -1816,8 +1832,59 @@ export default function RecipeDetailScreen() {
               {/* Divider Line */}
               <View className="h-px bg-warm-sand mb-6" />
 
+              {/* Empty Recipe State - for links without recipe data */}
+              {isEmptyRecipe && (
+                <View className="items-center py-8">
+                  {/* Icon */}
+                  <View className="bg-soft-beige rounded-full p-6 mb-6">
+                    <Bookmark size={48} color="#5A6E6C" />
+                  </View>
+
+                  {/* Message */}
+                  <Text
+                    className="text-xl font-bold text-charcoal-gray mb-3 text-center"
+                    style={{ fontFamily: "Lora_700Bold" }}
+                  >
+                    Saved Link
+                  </Text>
+                  <Text className="text-base text-charcoal-gray/70 text-center mb-8 px-4">
+                    No recipe details were found at this link, but you can still
+                    keep it saved for later reference.
+                  </Text>
+
+                  {/* Prominent Source URL Button */}
+                  {recipeData?.sourceUrl && (
+                    <RNTouchableOpacity
+                      onPress={async () => {
+                        try {
+                          const url = recipeData.sourceUrl;
+                          const canOpen = await Linking.canOpenURL(url);
+                          if (canOpen) {
+                            await Linking.openURL(url);
+                          }
+                        } catch (error) {
+                          Alert.alert("Error", "Could not open the link");
+                        }
+                      }}
+                      className="bg-dark-sage rounded-2xl px-8 py-4 flex-row items-center justify-center mb-4"
+                      activeOpacity={0.8}
+                      style={{ minWidth: 200 }}
+                    >
+                      <LinkIcon
+                        size={20}
+                        color="#FAF9F7"
+                        style={{ marginRight: 10 }}
+                      />
+                      <Text className="text-off-white text-base font-semibold">
+                        Visit Original Link
+                      </Text>
+                    </RNTouchableOpacity>
+                  )}
+                </View>
+              )}
+
               {/* Missing Fields Warning Banner */}
-              {missingFields.length > 0 && (
+              {!isEmptyRecipe && missingFields.length > 0 && (
                 <View className="mb-4 bg-dusty-rose/20 border-2 border-dusty-rose rounded-xl p-4">
                   <View className="flex-row items-start">
                     <Text className="text-dusty-rose text-lg mr-2">⚠️</Text>
@@ -1836,57 +1903,59 @@ export default function RecipeDetailScreen() {
               )}
 
               {/* Segmented Control */}
-              <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
-                <RNTouchableOpacity
-                  onPress={() => setActiveTab("ingredients")}
-                  className={`flex-1 py-3 rounded-lg items-center ${
-                    activeTab === "ingredients" ? "bg-dark-sage" : ""
-                  }`}
-                  activeOpacity={0.7}
-                  style={{ minHeight: 44, justifyContent: "center" }}
-                >
-                  <View className="flex-row items-center">
-                    <Text
-                      className={`font-semibold ${
-                        activeTab === "ingredients"
-                          ? "text-off-white"
-                          : "text-charcoal-gray"
-                      }`}
-                    >
-                      Ingredients
-                    </Text>
-                    {missingFields.includes("ingredients") && (
-                      <Text className="text-dusty-rose ml-1">⚠️</Text>
-                    )}
-                  </View>
-                </RNTouchableOpacity>
-                <RNTouchableOpacity
-                  onPress={() => setActiveTab("instructions")}
-                  className={`flex-1 py-3 rounded-lg items-center ${
-                    activeTab === "instructions" ? "bg-dark-sage" : ""
-                  }`}
-                  activeOpacity={0.7}
-                  style={{ minHeight: 44, justifyContent: "center" }}
-                >
-                  <View className="flex-row items-center">
-                    <Text
-                      className={`font-semibold ${
-                        activeTab === "instructions"
-                          ? "text-off-white"
-                          : "text-charcoal-gray"
-                      }`}
-                    >
-                      Instructions
-                    </Text>
-                    {missingFields.includes("steps") && (
-                      <Text className="text-dusty-rose ml-1">⚠️</Text>
-                    )}
-                  </View>
-                </RNTouchableOpacity>
-              </View>
+              {!isEmptyRecipe && (
+                <View className="flex-row bg-soft-beige rounded-xl p-1 mb-4">
+                  <RNTouchableOpacity
+                    onPress={() => setActiveTab("ingredients")}
+                    className={`flex-1 py-3 rounded-lg items-center ${
+                      activeTab === "ingredients" ? "bg-dark-sage" : ""
+                    }`}
+                    activeOpacity={0.7}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <View className="flex-row items-center">
+                      <Text
+                        className={`font-semibold ${
+                          activeTab === "ingredients"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Ingredients
+                      </Text>
+                      {missingFields.includes("ingredients") && (
+                        <Text className="text-dusty-rose ml-1">⚠️</Text>
+                      )}
+                    </View>
+                  </RNTouchableOpacity>
+                  <RNTouchableOpacity
+                    onPress={() => setActiveTab("instructions")}
+                    className={`flex-1 py-3 rounded-lg items-center ${
+                      activeTab === "instructions" ? "bg-dark-sage" : ""
+                    }`}
+                    activeOpacity={0.7}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <View className="flex-row items-center">
+                      <Text
+                        className={`font-semibold ${
+                          activeTab === "instructions"
+                            ? "text-off-white"
+                            : "text-charcoal-gray"
+                        }`}
+                      >
+                        Instructions
+                      </Text>
+                      {missingFields.includes("steps") && (
+                        <Text className="text-dusty-rose ml-1">⚠️</Text>
+                      )}
+                    </View>
+                  </RNTouchableOpacity>
+                </View>
+              )}
 
               {/* Ingredients Tab */}
-              {activeTab === "ingredients" && (
+              {!isEmptyRecipe && activeTab === "ingredients" && (
                 <View
                   className={
                     missingFields.includes("ingredients")
@@ -2884,7 +2953,7 @@ export default function RecipeDetailScreen() {
               )}
 
               {/* Instructions Tab */}
-              {activeTab === "instructions" && (
+              {!isEmptyRecipe && activeTab === "instructions" && (
                 <View
                   className={
                     missingFields.includes("steps")
