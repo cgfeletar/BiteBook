@@ -28,13 +28,10 @@ export function buildWebInviteLink(inviteId: string): string {
  */
 export function extractInviteIdFromUrl(url: string): string | null {
   // Match both web URLs and deep links
-  // Support both bitebookhq.app and saute.app for backward compatibility
   const bitebookMatch = url.match(/bitebookhq\.app\/invite\/([a-zA-Z0-9]+)/);
-  const sauteMatch = url.match(/saute\.app\/invite\/([a-zA-Z0-9]+)/);
-  const bitebookDeepLinkMatch = url.match(/bitebook:\/\/invite\/([a-zA-Z0-9]+)/);
-  const sauteDeepLinkMatch = url.match(/saute:\/\/invite\/([a-zA-Z0-9]+)/);
-  
-  const match = bitebookMatch || sauteMatch || bitebookDeepLinkMatch || sauteDeepLinkMatch;
+  const bitebookDeepLinkMatch = url.match(
+    /bitebook:\/\/invite\/([a-zA-Z0-9]+)/,
+  );
+  const match = bitebookMatch || bitebookDeepLinkMatch;
   return match ? match[1] : null;
 }
-

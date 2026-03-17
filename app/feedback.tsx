@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/src/store/useAuthStore";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import { ArrowLeft, Mail, Send } from "lucide-react-native";
 import { useState } from "react";
@@ -13,7 +14,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import * as Linking from "expo-linking";
 
 // Support email - update this with your Google Console support email
 const SUPPORT_EMAIL = "support@bitebookhq.app"; // TODO: Replace with your actual support email
@@ -35,8 +35,8 @@ export default function FeedbackScreen() {
     try {
       // Create email subject
       const emailSubject = subject.trim()
-        ? `[Saute Feedback] ${subject.trim()}`
-        : "[Saute Feedback] User Feedback";
+        ? `[BiteBook Feedback] ${subject.trim()}`
+        : "[BiteBook Feedback] User Feedback";
 
       // Create email body with user info
       const emailBody = `Hello,
@@ -44,14 +44,14 @@ export default function FeedbackScreen() {
 ${message.trim()}
 
 ---
-Sent from Saute App
+Sent from BiteBook App
 ${user?.email ? `User: ${user.email}` : ""}
 ${user?.displayName ? `Name: ${user.displayName}` : ""}
 `;
 
       // Create mailto link
       const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
-        emailSubject
+        emailSubject,
       )}&body=${encodeURIComponent(emailBody)}`;
 
       // Check if device can handle mailto links
@@ -69,19 +69,19 @@ ${user?.displayName ? `Name: ${user.displayName}` : ""}
               text: "OK",
               onPress: () => router.back(),
             },
-          ]
+          ],
         );
       } else {
         Alert.alert(
           "Email Not Available",
-          "Please configure an email account on your device to send feedback."
+          "Please configure an email account on your device to send feedback.",
         );
       }
     } catch (error) {
       console.error("Error sending feedback:", error);
       Alert.alert(
         "Error",
-        "Failed to open email app. Please try again or contact us directly."
+        "Failed to open email app. Please try again or contact us directly.",
       );
     } finally {
       setIsSending(false);
@@ -89,10 +89,7 @@ ${user?.displayName ? `Name: ${user.displayName}` : ""}
   };
 
   return (
-    <SafeAreaView
-      className="flex-1 bg-off-white"
-      edges={["top", "bottom"]}
-    >
+    <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1"
@@ -206,4 +203,3 @@ ${user?.displayName ? `Name: ${user.displayName}` : ""}
     </SafeAreaView>
   );
 }
-

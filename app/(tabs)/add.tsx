@@ -74,7 +74,7 @@ export default function AddScreen() {
         if (status !== "granted") {
           Alert.alert(
             "Permission Required",
-            "We need access to your photos to import recipes from images."
+            "We need access to your photos to import recipes from images.",
           );
         }
       }
@@ -107,7 +107,7 @@ export default function AddScreen() {
               asset.width > 2000 || asset.height > 2000
                 ? { width: 2000 }
                 : undefined,
-          }
+          },
         );
 
         setSelectedImage(manipulatedImage.uri);
@@ -125,7 +125,7 @@ export default function AddScreen() {
       if (status !== "granted") {
         Alert.alert(
           "Permission Required",
-          "We need access to your camera to take photos of recipes."
+          "We need access to your camera to take photos of recipes.",
         );
         return;
       }
@@ -151,7 +151,7 @@ export default function AddScreen() {
               asset.width > 2000 || asset.height > 2000
                 ? { width: 2000 }
                 : undefined,
-          }
+          },
         );
 
         setSelectedImage(manipulatedImage.uri);
@@ -177,7 +177,7 @@ export default function AddScreen() {
         {
           loading: authLoading,
           initialized: authInitialized,
-        }
+        },
       );
       return;
     }
@@ -286,7 +286,7 @@ export default function AddScreen() {
                 setIsLoading(false);
               },
             },
-          ]
+          ],
         );
         return;
       }
@@ -306,7 +306,7 @@ export default function AddScreen() {
                 handleRecipeImport(recipeData, missingFields);
               },
             },
-          ]
+          ],
         );
         return;
       }
@@ -349,7 +349,7 @@ export default function AddScreen() {
 
   const handleRecipeImport = async (
     recipeData: any,
-    missingFields: string[] = []
+    missingFields: string[] = [],
   ) => {
     // Add recipe to store
     const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
@@ -397,7 +397,7 @@ export default function AddScreen() {
         {
           loading: authLoading,
           initialized: authInitialized,
-        }
+        },
       );
       return;
     }
@@ -475,7 +475,7 @@ export default function AddScreen() {
                 setIsLoading(false);
               },
             },
-          ]
+          ],
         );
         return;
       }
@@ -485,7 +485,7 @@ export default function AddScreen() {
         "📝 Adding recipe with kitchenId:",
         user?.defaultKitchenId,
         "user:",
-        user?.uid
+        user?.uid,
       );
       const newRecipe = addRecipe(recipeData, user?.defaultKitchenId);
 
@@ -617,7 +617,10 @@ export default function AddScreen() {
                   <Text className="text-base font-semibold text-charcoal-gray mb-2">
                     Recipe URL
                   </Text>
-                  <View className="flex-row items-center bg-soft-beige rounded-xl px-4 border border-warm-sand/50" style={{ height: 48 }}>
+                  <View
+                    className="flex-row items-center bg-soft-beige rounded-xl px-4 border border-warm-sand/50"
+                    style={{ height: 48 }}
+                  >
                     <Link
                       size={20}
                       color="#5A6E6C"
@@ -789,31 +792,32 @@ export default function AddScreen() {
               </Text>
               {importMode === "url" ? (
                 <>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
-                    • Paste a recipe URL from any blog, website, or TikTok
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
+                    • Paste a recipe URL from any website or social media
+                    platform
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
-                    • AI extracts ingredients, instructions, and nutrition info
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
+                    • We extract ingredients, instructions & nutrition info
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
-                    • Cover image is automatically selected from the page
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
+                    • Cover image is taken from the page
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70">
-                    • Recipe appears in your feed immediately
+                  <Text className="text-xs text-charcoal-gray/70">
+                    • Recipe appears in your recipe book immediately
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
                     • Take a photo or select a screenshot of a recipe
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
                     • OCR extracts text from the image (typed text only)
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70 mb-1">
+                  <Text className="text-xs text-charcoal-gray/70 mb-1">
                     • AI parses the text into structured recipe data
                   </Text>
-                  <Text className="text-sm text-charcoal-gray/70">
+                  <Text className="text-xs text-charcoal-gray/70">
                     • Review and edit any missing fields
                   </Text>
                 </>

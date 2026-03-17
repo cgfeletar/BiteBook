@@ -72,7 +72,7 @@ export default function LoginScreen() {
     } catch (error: any) {
       Alert.alert(
         "Error",
-        error.message || "An error occurred. Please try again."
+        error.message || "An error occurred. Please try again.",
       );
     }
   };
@@ -129,7 +129,7 @@ export default function LoginScreen() {
               </Text>
               <Text className="text-base text-charcoal-gray/70">
                 {isSignUp
-                  ? "Join Saute to start managing your recipes"
+                  ? "Join BiteBook to start managing your recipes"
                   : "Welcome back! Sign in to continue"}
               </Text>
             </View>
