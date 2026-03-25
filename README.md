@@ -60,7 +60,7 @@ functions/               # Firebase Cloud Functions (recipe scraping, image proc
 - **Kitchen-based data model** — Recipes and shopping lists are scoped to "kitchens," enabling multi-user collaboration with shared state
 - **File-based routing** — Expo Router provides type-safe, file-system-based navigation with deep linking support
 
-## Getting Started
+## How to run (Personal notes)
 
 ### Prerequisites
 

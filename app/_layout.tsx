@@ -5,7 +5,8 @@ import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import "../global.css";
 import "../nativewind-setup";
@@ -72,14 +73,14 @@ export default function RootLayout() {
   }, [router]);
 
   return (
-    <AuthProvider>
-      <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
+      <AuthProvider>
         <ThemeProvider value={DefaultTheme}>
           <Stack screenOptions={{ headerShown: false }} />
           <StatusBar style="dark" />
         </ThemeProvider>
-      </View>
-    </AuthProvider>
+      </AuthProvider>
+    </GestureHandlerRootView>
   );
 }
 

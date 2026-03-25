@@ -99,11 +99,56 @@ export function RecipeHeader({
 
   return (
     <>
+      {/* Navigation buttons - always on top, always tappable */}
+      <SafeAreaView
+        edges={["top"]}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 20 }}
+        pointerEvents="box-none"
+      >
+        <View
+          className="flex-row items-center justify-between w-full px-4"
+          style={{ paddingVertical: 12 }}
+          pointerEvents="box-none"
+        >
+          <RNTouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+            style={{
+              width: 44,
+              height: 44,
+              backgroundColor: "rgba(231, 216, 201, 0.8)",
+              borderRadius: 22,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft size={20} color="#3E3E3E" pointerEvents="none" />
+          </RNTouchableOpacity>
+
+          <RNTouchableOpacity
+            onPress={onMenuPress}
+            hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
+            style={{
+              width: 44,
+              height: 44,
+              backgroundColor: "rgba(231, 216, 201, 0.8)",
+              borderRadius: 22,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            activeOpacity={0.7}
+          >
+            <MoreVertical size={20} color="#3E3E3E" pointerEvents="none" />
+          </RNTouchableOpacity>
+        </View>
+      </SafeAreaView>
+
       {/* Fixed Header Bar (appears on scroll) */}
       <SafeAreaView
         className="absolute top-0 left-0 right-0 z-10"
         edges={["top"]}
-        pointerEvents="box-none"
+        pointerEvents="none"
       >
         <Animated.View
           style={[
@@ -116,22 +161,9 @@ export function RecipeHeader({
               backgroundColor: "#FAF9F7",
             },
           ]}
-          pointerEvents="box-none"
         >
-          <RNTouchableOpacity
-            onPress={() => router.back()}
-            hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-            style={{
-              width: 44,
-              height: 44,
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1000,
-            }}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={24} color="#3E3E3E" pointerEvents="none" />
-          </RNTouchableOpacity>
+          {/* Spacer for back button */}
+          <View style={{ width: 44, height: 44 }} />
           <Text
             className="text-lg font-bold text-charcoal-gray ml-4 flex-1"
             numberOfLines={1}
@@ -139,20 +171,8 @@ export function RecipeHeader({
           >
             {title}
           </Text>
-          <RNTouchableOpacity
-            onPress={onMenuPress}
-            hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-            style={{
-              width: 44,
-              height: 44,
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1000,
-            }}
-            activeOpacity={0.7}
-          >
-            <MoreVertical size={24} color="#3E3E3E" pointerEvents="none" />
-          </RNTouchableOpacity>
+          {/* Spacer for menu button */}
+          <View style={{ width: 44, height: 44 }} />
         </Animated.View>
       </SafeAreaView>
 
@@ -189,50 +209,6 @@ export function RecipeHeader({
           className="absolute top-0 left-0 right-0 bottom-0"
           style={{ zIndex: 10, justifyContent: "flex-end" }}
         >
-          {/* Navigation buttons at top */}
-          <SafeAreaView
-            edges={["top"]}
-            style={{ position: "absolute", top: 0, left: 0, right: 0 }}
-          >
-            <View className="flex-row items-center justify-between w-full px-4">
-              <RNTouchableOpacity
-                onPress={() => router.back()}
-                hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                style={{
-                  width: 44,
-                  height: 44,
-                  backgroundColor: "rgba(231, 216, 201, 0.8)",
-                  borderRadius: 22,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                activeOpacity={0.7}
-              >
-                <ArrowLeft size={20} color="#3E3E3E" pointerEvents="none" />
-              </RNTouchableOpacity>
-
-              <RNTouchableOpacity
-                onPress={onMenuPress}
-                hitSlop={{ top: 22, bottom: 22, left: 22, right: 22 }}
-                style={{
-                  width: 44,
-                  height: 44,
-                  backgroundColor: "rgba(231, 216, 201, 0.8)",
-                  borderRadius: 22,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                activeOpacity={0.7}
-              >
-                <MoreVertical
-                  size={20}
-                  color="#3E3E3E"
-                  pointerEvents="none"
-                />
-              </RNTouchableOpacity>
-            </View>
-          </SafeAreaView>
-
           {/* Title and Author overlay */}
           <Animated.View
             style={[

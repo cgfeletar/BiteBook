@@ -42,9 +42,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import {
-  GestureHandlerRootView,
-} from "react-native-gesture-handler";
+import "react-native-gesture-handler";
 import Animated, {
   useAnimatedScrollHandler,
   useSharedValue,
@@ -638,7 +636,7 @@ export default function RecipeDetailScreen() {
   // ── Loading state ──
   if (!recipeData) {
     return (
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <SafeAreaView className="flex-1 bg-off-white" edges={["top", "bottom"]}>
           <View className="flex-1 items-center justify-center px-6">
             <Text className="text-charcoal-gray text-base">
@@ -646,13 +644,13 @@ export default function RecipeDetailScreen() {
             </Text>
           </View>
         </SafeAreaView>
-      </GestureHandlerRootView>
+      </View>
     );
   }
 
   // ── Render ──
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <View className="flex-1 bg-off-white">
         <RecipeHeader
           recipeData={recipeData}
@@ -1022,6 +1020,6 @@ export default function RecipeDetailScreen() {
           </View>
         </Animated.View>
       )}
-    </GestureHandlerRootView>
+    </View>
   );
 }
