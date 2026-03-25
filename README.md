@@ -2,26 +2,24 @@
 
 A full-stack collaborative recipe management and meal planning mobile app built with React Native, Expo, and Firebase. Users can save, organize, and share recipes, plan meals, manage shopping lists, and track pantry inventory — all in real-time across devices.
 
-[bitebookhq.app](https://bitebookhq.app/)
-
 <!-- Add screenshots here: ![Home Screen](assets/screenshots/home.png) -->
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| **Language** | TypeScript (strict mode) |
-| **Framework** | React Native 0.81 + Expo SDK 54 |
-| **React** | React 19 with React Compiler enabled |
-| **Navigation** | Expo Router (file-based routing) + React Navigation 7 |
-| **State Management** | Zustand with AsyncStorage persistence |
-| **Styling** | NativeWind (Tailwind CSS for React Native) |
-| **Backend** | Firebase Cloud Functions (Node 20, TypeScript) |
-| **Database** | Cloud Firestore (real-time subscriptions) |
-| **Authentication** | Firebase Auth (Email/Password, Google OAuth, Apple Sign-In) |
-| **Storage** | Firebase Storage (recipe images) |
-| **Image Processing** | Google Cloud Vision API, Sharp |
-| **Search** | Fuse.js (client-side fuzzy search) |
+| Layer                | Technology                                                  |
+| -------------------- | ----------------------------------------------------------- |
+| **Language**         | TypeScript (strict mode)                                    |
+| **Framework**        | React Native 0.81 + Expo SDK 54                             |
+| **React**            | React 19 with React Compiler enabled                        |
+| **Navigation**       | Expo Router (file-based routing) + React Navigation 7       |
+| **State Management** | Zustand with AsyncStorage persistence                       |
+| **Styling**          | NativeWind (Tailwind CSS for React Native)                  |
+| **Backend**          | Firebase Cloud Functions (Node 20, TypeScript)              |
+| **Database**         | Cloud Firestore (real-time subscriptions)                   |
+| **Authentication**   | Firebase Auth (Email/Password, Google OAuth, Apple Sign-In) |
+| **Storage**          | Firebase Storage (recipe images)                            |
+| **Image Processing** | Google Cloud Vision API, Sharp                              |
+| **Search**           | Fuse.js (client-side fuzzy search)                          |
 
 ## Features
 
@@ -96,16 +94,16 @@ firebase deploy --only firestore:rules,storage,functions
 
 ## Notable Libraries
 
-| Library | Purpose |
-|---|---|
-| `nativewind` + `tailwindcss` | Utility-first styling with a custom color palette (sage-green, warm-sand, mocha, etc.) |
-| `zustand` | Lightweight state management with middleware for persistence |
-| `expo-router` | File-based routing with typed routes |
-| `react-native-reanimated` | Performant animations |
-| `react-native-gesture-handler` | Native touch gesture support |
-| `fuse.js` | Client-side fuzzy search for recipes |
-| `@react-native-seoul/masonry-list` | Pinterest-style masonry grid layout |
-| `expo-image-picker` + `expo-image-manipulator` | Image capture and processing |
-| `expo-haptics` | Haptic feedback for tactile interactions |
-| `@expo-google-fonts/lora` | Custom typography |
-| `lucide-react-native` | Icon system |
+| Library                                        | Purpose                                                                                |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `nativewind` + `tailwindcss`                   | Utility-first styling with a custom color palette (sage-green, warm-sand, mocha, etc.) |
+| `zustand`                                      | Lightweight state management with middleware for persistence                           |
+| `expo-router`                                  | File-based routing with typed routes                                                   |
+| `react-native-reanimated`                      | Performant animations                                                                  |
+| `react-native-gesture-handler`                 | Native touch gesture support                                                           |
+| `fuse.js`                                      | Client-side fuzzy search for recipes                                                   |
+| `@react-native-seoul/masonry-list`             | Pinterest-style masonry grid layout                                                    |
+| `expo-image-picker` + `expo-image-manipulator` | Image capture and processing                                                           |
+| `expo-haptics`                                 | Haptic feedback for tactile interactions                                               |
+| `@expo-google-fonts/lora`                      | Custom typography                                                                      |
+| `lucide-react-native`                          | Icon system                                                                            |
