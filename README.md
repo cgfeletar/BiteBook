@@ -1,97 +1,111 @@
-# Welcome to your Expo app 👋
+# BiteBook
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A full-stack collaborative recipe management and meal planning mobile app built with React Native, Expo, and Firebase. Users can save, organize, and share recipes, plan meals, manage shopping lists, and track pantry inventory — all in real-time across devices.
 
-## Get started
+[bitebookhq.app](https://bitebookhq.app/)
 
-1. Install dependencies
+<!-- Add screenshots here: ![Home Screen](assets/screenshots/home.png) -->
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+| Layer | Technology |
+|---|---|
+| **Language** | TypeScript (strict mode) |
+| **Framework** | React Native 0.81 + Expo SDK 54 |
+| **React** | React 19 with React Compiler enabled |
+| **Navigation** | Expo Router (file-based routing) + React Navigation 7 |
+| **State Management** | Zustand with AsyncStorage persistence |
+| **Styling** | NativeWind (Tailwind CSS for React Native) |
+| **Backend** | Firebase Cloud Functions (Node 20, TypeScript) |
+| **Database** | Cloud Firestore (real-time subscriptions) |
+| **Authentication** | Firebase Auth (Email/Password, Google OAuth, Apple Sign-In) |
+| **Storage** | Firebase Storage (recipe images) |
+| **Image Processing** | Google Cloud Vision API, Sharp |
+| **Search** | Fuse.js (client-side fuzzy search) |
 
-   ```bash
-   npx expo start
-   ```
+## Features
 
-In the output, you'll find options to open the app in a
+- **Recipe Management** — Create, edit, and organize recipes with ingredients, instructions, nutrition info, ratings, and tags
+- **Smart Import** — Import recipes from URLs (web scraping via Cloud Functions) or photos (OCR via Google Cloud Vision)
+- **Meal Planning** — Plan meals across days with a dedicated calendar view
+- **Shopping Lists** — Auto-generated and manually managed shopping lists with aisle-based organization
+- **Pantry Tracking** — Track pantry inventory to know what you have on hand
+- **Kitchen Collaboration** — Share recipe collections with others via invite links and deep linking (`bitebook://`)
+- **Offline-First** — Local persistence with AsyncStorage; syncs to Firestore when online
+- **Cross-Platform** — Runs on iOS, Android, and web
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Architecture
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+app/                     # Expo Router file-based routes
+  (tabs)/                # Bottom tab navigation (Home, Add, Progress, Meal Plan, Shopping)
+  (auth)/                # Auth screens (login, signup)
+  recipe-detail.tsx      # Recipe detail modal
+  invite/[inviteId].tsx  # Dynamic deep link handling
+src/
+  config/                # Firebase configuration
+  services/              # Auth provider, Firestore service layer
+  store/                 # Zustand stores (auth, recipes, shopping, pantry, meal plan, progress)
+  hooks/                 # Custom React hooks
+  types/                 # TypeScript interfaces
+  utils/                 # Helper functions
+components/              # Reusable UI components
+  recipe-detail/         # Recipe detail sub-components
+  ui/                    # UI primitives
+functions/               # Firebase Cloud Functions (recipe scraping, image processing)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+**Key architectural decisions:**
 
-## Learn more
+- **Optimistic updates** — Local state updates instantly via Zustand; Firestore syncs in the background for a snappy UX
+- **Real-time sync** — Firestore `onSnapshot` listeners keep data consistent across devices
+- **Kitchen-based data model** — Recipes and shopping lists are scoped to "kitchens," enabling multi-user collaboration with shared state
+- **File-based routing** — Expo Router provides type-safe, file-system-based navigation with deep linking support
 
-To learn more about developing your project with Expo, look at the following resources:
+## Getting Started
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### Prerequisites
 
-## Join the community
+- Node.js 20+
+- Expo CLI (`npm install -g expo-cli`)
+- Firebase project with Firestore, Auth, Storage, and Cloud Functions enabled
+- iOS Simulator / Android Emulator or physical device with Expo Go
 
-Join our community of developers creating universal apps.
+### Installation
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+# Install dependencies
+npm install
 
-## Firebase Project
+# Start the development server
+npx expo start
 
-https://console.firebase.google.com/u/1/project/savorboard-5d4cc/overview
+# Run Cloud Functions locally
+cd functions && npm install && npm run serve
+```
 
-## Firebase deprication
+### Firebase Setup
 
-DEPRECATION NOTICE: Action required to deploy after March 2026
+1. Create a Firebase project and enable Firestore, Authentication (Email, Google, Apple), and Storage
+2. Add your Firebase config to `src/config/firebase.ts`
+3. Deploy Firestore rules and Cloud Functions:
 
-functions.config() API is deprecated.
-Cloud Runtime Configuration API, the Google Cloud service used to store function configuration data, will be shut down in March 2026. As a result, you must migrate away from using functions.config() to continue deploying your functions after March 2026.
+```bash
+firebase deploy --only firestore:rules,storage,functions
+```
 
-What this means for you:
+## Notable Libraries
 
-- The Firebase CLI commands for managing this configuration (functions:config:set, get, unset, clone, and export) are deprecated. These commands will no longer work after March 2026.
-- firebase deploy command will fail for functions that use the legacy functions.config() API after March 2026.
-
-Existing deployments will continue to work with their current configuration.
-
-See your migration options at: https://firebase.google.com/docs/functions/config-env#migrate-to-dotenv
-
-## Google LLM API Key
-
-https://aistudio.google.com/api-keys
-
-## Google cloud dashboard
-
-https://console.cloud.google.com/welcome/new?project=fabled-electron-480519-k5&authuser=1
-
-## Firebase Dashboard
-
-https://console.firebase.google.com/u/1/project/savorboard-5d4cc/overview
-
-## Firebase Commands
-
-firebase functions:list - list firebase calls and status
-
-## Google Cloud Keystore
-
-If you need SHA-1 later
-Option 1: Generate debug keystore manually
-
-# Create the debug keystorekeytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"# Then get SHA-1keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android | grep SHA1
-
-GoDaddy Websites:
-https://dashboard.godaddy.com/venture?ventureId=a01dbd51-7cf3-4020-aa02-856ace53d452
-https://bitebookhq.app/
+| Library | Purpose |
+|---|---|
+| `nativewind` + `tailwindcss` | Utility-first styling with a custom color palette (sage-green, warm-sand, mocha, etc.) |
+| `zustand` | Lightweight state management with middleware for persistence |
+| `expo-router` | File-based routing with typed routes |
+| `react-native-reanimated` | Performant animations |
+| `react-native-gesture-handler` | Native touch gesture support |
+| `fuse.js` | Client-side fuzzy search for recipes |
+| `@react-native-seoul/masonry-list` | Pinterest-style masonry grid layout |
+| `expo-image-picker` + `expo-image-manipulator` | Image capture and processing |
+| `expo-haptics` | Haptic feedback for tactile interactions |
+| `@expo-google-fonts/lora` | Custom typography |
+| `lucide-react-native` | Icon system |
